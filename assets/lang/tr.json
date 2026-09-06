@@ -1,0 +1,18 @@
+{
+  "common": {
+    "welcome": "Hoş geldiniz, ",
+    "loading": "Yükleniyor...",
+    "save": "Kaydet",
+    "cancel": "Vazgeç",
+    "confirm": "Onayla",
+    "delete": "Sil",
+    "edit": "Düzenle"
+  },
+  "validation": {
+    "required": ":attribute alanı zorunludur.",
+    "email": ":attribute geçerli bir e-posta adresi olmalıdır.",
+    "min": ":attribute en az :min karakter olmalıdır.",
+    "max": ":attribute en fazla :max karakter olabilir.",
+    "confirmed": ":attribute doğrulaması eşleşmiyor."
+  }
+}

@@ -52,6 +52,11 @@ app.*.map.json
 .env.local
 .env.*.local
 
+# Runtime env. Carries APP_KEY and is bundled as a Flutter asset, so it is
+# readable in a shipped web build. `.env.example` is the tracked template and a
+# release build has to provision the real file.
+.env
+
 # Personal per-machine instructions, by convention not committed.
 CLAUDE.local.md
 
@@ -63,3 +68,4 @@ CLAUDE.local.md
 # Committing this would force every contributor onto absolute paths from one
 # machine. Listed in .worktreeinclude so a worktree still gets a copy.
 pubspec_overrides.yaml
+.artisan/

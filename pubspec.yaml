@@ -24,6 +24,30 @@ dependencies:
   # CI resolving from pub.dev is what tells us that has actually shipped.
   fluttersdk_wind: ^1.5.0
 
+  # The Laravel-shaped half of the ecosystem: container, providers, routing,
+  # facades, the Eloquent-style ORM, and the `artisan` CLI that owns the design
+  # token pipeline (`design:sync`, `design:lint`, `make:component`).
+  #
+  # The ORM is CRUD-shaped and will need raw SQL through `DB.statement` and
+  # `DB.transaction` for the channel catalogue: no `index()` in Blueprint, no
+  # `whereIn`/`like`/`join` in the query builder, and a row-at-a-time
+  # `insertAll`. See `.ac/research/stack-decisions.md`.
+  magic: ^0.0.9
+  fluttersdk_artisan: ^0.0.14
+
+  # The debug trio, wired into lib/main.dart under kDebugMode so the release
+  # build tree-shakes them out. telescope makes every provider HTTP call
+  # inspectable without instrumenting it, which is the point for this product:
+  # provider quirks are HTTP quirks.
+  #
+  # These carets are floors that behave like pins. On a 0.0.x version pub reads
+  # `^0.0.4` as `>=0.0.4 <0.0.5`, so the patch is fixed and each of these has to
+  # be bumped by hand. magic:install wrote stale constraints here that could not
+  # resolve the published packages at all.
+  magic_devtools: ^0.0.4
+  fluttersdk_dusk: ^0.0.13
+  fluttersdk_telescope: ^0.0.5
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
@@ -34,3 +58,15 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/lang/en.json
+    - assets/lang/tr.json
+    # Runtime env, bundled as an asset because flutter_dotenv can only load it
+    # that way on web. Without this entry `Env` silently falls back to its
+    # defaults and the failure shows up as a wrong API_URL rather than an error.
+    #
+    # `.env` is gitignored and carries only public client config. A provider
+    # credential never goes here: those are per-user, live in `Vault` on the
+    # device, and a bundled asset is readable in a shipped web build.
+    - .env
