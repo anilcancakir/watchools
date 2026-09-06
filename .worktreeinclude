@@ -1,0 +1,7 @@
+# Gitignored files a fresh worktree needs copied in, one path per line.
+#
+# pubspec_overrides.yaml is the load-bearing one: without it the worktree
+# resolves the ecosystem packages from pub.dev and every test certifies the
+# published versions instead of the working trees, silently.
+pubspec_overrides.yaml
+.env.local

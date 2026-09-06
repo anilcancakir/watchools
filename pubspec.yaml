@@ -1,0 +1,36 @@
+name: watchools
+description: "Watchools: bring your own IPTV subscription, watch it well on every screen."
+homepage: https://watchools.com
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Declared hosted, resolved locally. The gitignored pubspec_overrides.yaml
+  # points this at the sibling checkout so an edit in Wind shows up on the next
+  # hot reload, while this file keeps a source pub can unify: `magic` depends on
+  # `fluttersdk_wind` hosted, and pub admits one source per package, so a `path:`
+  # here hard-fails version solving the moment magic joins the graph. A relative
+  # path here would also fail to resolve from a worktree.
+  #
+  # The caret is a floor, not a pin. It moves when Wind publishes the TV work
+  # this app needs (D-pad activation, focus traversal, a virtualized list), and
+  # CI resolving from pub.dev is what tells us that has actually shipped.
+  fluttersdk_wind: ^1.5.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

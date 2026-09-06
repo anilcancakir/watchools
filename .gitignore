@@ -1,0 +1,65 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget Preview related
+.widget_preview/
+
+# Local secrets. Real IPTV provider credentials used for playback testing live
+# here and must never reach the history: they unlock a third-party account.
+.env.local
+.env.*.local
+
+# Personal per-machine instructions, by convention not committed.
+CLAUDE.local.md
+
+# Agent runtime state. `.ac/research/` and `.ac/plans/` are deliberate project
+# artefacts and stay tracked; `.ac/state/` is per-run bookkeeping.
+.ac/state/
+
+# Local dependency overrides pointing at the sibling fluttersdk checkouts.
+# Committing this would force every contributor onto absolute paths from one
+# machine. Listed in .worktreeinclude so a worktree still gets a copy.
+pubspec_overrides.yaml
