@@ -1,0 +1,19 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - config
+        - database
+        - routes
+        - tests
+
+    # Level 9 is the highest that still allows `mixed`. Level 10 forbids it
+    # outright, which Laravel's own container and facade signatures cannot
+    # satisfy without a wall of ignores, and an ignore is banned here.
+    level: 9
+
+    # Baselines and ignores are deliberately absent. When this fails, the code
+    # gets fixed; a suppression is not an option in this project.
+    reportUnmatchedIgnoredErrors: true
