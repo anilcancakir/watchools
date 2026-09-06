@@ -7,65 +7,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Watchools is an IPTV **client**. Users bring their own provider subscription (Xtream Codes credentials or an M3U URL) and we give them the best viewing experience across every screen. We supply no streams and we never proxy video.
 
-Site `watchools.com`. Application identifier `com.watchools.app` on every platform.
+Site `watchools.com`. Application identifier `com.watchools.app` on every platform. Remote `git@github.com:anilcancakir/watchools.git`.
 
-The architecture research behind every decision here is `.ac/research/stack-decisions.md`. Read the section that covers your task before changing anything structural; it records what was measured and what is still unverified.
+The architecture research behind every decision here is `.ac/research/stack-decisions.md`. Read the section covering your task before changing anything structural; it records what was measured and what is still unverified.
 
 ## Stack
 
-Flutter 3.47 / Dart 3.13, six platforms scaffolded: android, ios, web, macos, windows, linux.
+One repository, two halves.
 
-`fluttersdk_wind` is declared **hosted** (`^1.5.0`) and resolved locally through the gitignored `pubspec_overrides.yaml`, which points at `/Users/anilcan/Code/fluttersdk/wind` by absolute path. Edits in Wind show up on the next hot reload.
+**Flutter** at the root: Flutter 3.47 / Dart 3.13, six platforms scaffolded (android, ios, web, macos, windows, linux). Android TV ships from the android target. Apple TV and Samsung Tizen need `flutter-tvos` and `flutter-tizen`, neither wired yet.
 
-Declare ecosystem packages hosted, never `path:`. `magic` depends on `fluttersdk_wind` hosted and pub admits one source per package, so a `path:` here hard-fails version solving the moment magic joins the graph, with an error that blames magic. A relative path also fails to resolve from a worktree under `.claude/worktrees/`.
+**Laravel** in `backend/`: Laravel 13, PHP 8.5, `fluttersdk/magic-starter-laravel` from a local path repository. Note that the starter's OneSignal dependency holds Guzzle at 7.x even though Laravel 13 ships 8.x; that downgrade is deliberate and `composer require` needs `-W` because of it.
 
-Not wired yet, and deliberately: `magic` (its `artisan` CLI arrives with the design tokens, its runtime surface with the data layer), any player package (arrives with the playback spike), `flutter-tizen` and `flutter-tvos` (separate toolchains, later).
+Ecosystem packages are declared **hosted** and resolved locally through the gitignored `pubspec_overrides.yaml`. Never write a `path:` dependency into `pubspec.yaml`: `magic` depends on `fluttersdk_wind` hosted, pub admits one source per package, and a `path:` here hard-fails version solving with an error that blames magic. A relative path also fails to resolve from a worktree.
+
+Carets on a `0.0.x` package behave like pins (`^0.0.4` means `>=0.0.4 <0.0.5`), so every ecosystem bump is by hand.
 
 ## Commands
 
 ```bash
-flutter analyze                 # must be clean, zero issues
-flutter test                    # must be green
-flutter run -d chrome           # web
-flutter run -d macos            # desktop
-flutter pub get                 # after editing a pubspec, not after editing Wind source
+# Flutter
+flutter analyze --fatal-infos --fatal-warnings   # the gate, zero issues
+flutter test --coverage                          # the gate, 90% minimum
+dart format lib test
+./bin/fsa <command>                              # artisan CLI, ~50ms startup
+./bin/fsa design:sync                            # DESIGN.md into the Wind theme
+./bin/fsa make:component <Name>                  # atomic component folder
+
+# Laravel, from backend/
+vendor/bin/pint --test                           # the gate
+vendor/bin/phpstan analyse --memory-limit=1G     # the gate, level 9
+php artisan test --coverage --min=90             # the gate
 ```
 
-There is no CI yet.
+CI runs all of these on every push and pull request. It resolves the ecosystem packages from pub.dev, so a job that is red after a local green means a sibling has unreleased work in it.
 
-## Repository state
+## Wind and Magic are not optional
 
-Nothing is built yet. `lib/main.dart` and `test/widget_test.dart` are still the untouched `flutter create` counter demo, Material widgets and `Colors.deepPurple` included. They are the exception to every rule below and they get deleted with the first Wind screen. Until then, `flutter analyze` passing does not mean the styling rules hold; no lint enforces them.
+This project exists partly to exercise both. Use them as the ecosystem intends rather than reaching past them.
 
-## Wind is the only styling API
+**Wind owns styling.** `className` strings and `W`-prefixed widgets, nothing else. Never `Colors.*`, `Color(0x...)`, `Color.fromARGB`, `Color.fromRGBO`, `Color.from`, or a raw `TextStyle` for anything a class can express. Import `package:flutter/widgets.dart` plus `material.dart show Icons`; building on Material widgets defeats the design system. Colours come from the semantic aliases in the generated theme, never from a scale value picked by hand.
 
-`className` strings, `W`-prefixed widgets, nothing else.
+**Magic owns everything below the widget.** Controllers resolved through `Magic.findOrPut`, views as `MagicStatefulView<XController>`, notification through `refreshUI()`, HTTP through the `Http` facade, lists through `MagicPaginator`, secrets through `Vault`, storage through the ORM, routes registered in a provider's `register()` rather than `boot()` because the router pre-builds during `Magic.init()`. Reaching for `dio`, `shared_preferences`, `sqflite` or a bare `Navigator` directly is the thing this rule exists to prevent.
 
-- Never `Colors.*`, never `Color(0x...)`, never `Color.fromARGB` / `Color.fromRGBO` / `Color.from`, never a raw `TextStyle` for anything a class can express. Colours come from the theme's semantic aliases.
-- Import `package:flutter/widgets.dart`, plus `material.dart show Icons` where an icon is needed. Building on Material widgets defeats the design system.
-- Wind's parser cache is static and outlives a single test. Every widget test calls `setUp(WindParser.clearCache)` or it can pass for the wrong reason.
-- Widget tests go through `wrapWithTheme()` in `test/support/wind_test_app.dart`. Without a `WindTheme` ancestor every class silently resolves to nothing.
+The five ecosystem skills are symlinked into `.claude/skills/` and the artisan MCP server is wired in `.mcp.json`. Load `wind-ui` before the first line of UI and `magic-framework` before touching anything below it.
+
+Two known limits to design around rather than fight. The Magic ORM is CRUD-shaped: no `index()` in `Blueprint`, no `whereIn` / `like` / `join` in the query builder, and a row-at-a-time `insertAll`. The channel catalogue goes through `DB.statement` and `DB.transaction`. And `wind/lib/src/core/platform_service.dart:43` maps `TargetPlatform.android` to `('android', true)`, so on Android TV the platform reads `android` **and `isMobile` is true**: every `mobile:` variant fires on a 55 inch screen, and Apple TV reads `ios` the same way.
 
 ## Wind gaps this project has to fill
 
-Wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no key handling), no focus traversal policy, and no virtualized list (`overflow-*` is a `SingleChildScrollView`, so a 10,000-channel list builds every row).
+Wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no key handling), no focus traversal policy, no virtualized list (`overflow-*` is a `SingleChildScrollView`, so a 10,000 channel list builds every row), and no TV form factor axis.
 
-It also has no TV form factor. `wind/lib/src/core/platform_service.dart:43` maps `TargetPlatform.android` to `('android', true)`, so on Android TV the platform reads `android` **and `isMobile` is true**: every `mobile:` variant fires on a 55-inch screen. Apple TV reads `ios` the same way.
+These are package gaps, not app gaps. Fix them in the sibling and follow the contribution flow in `.claude/rules/workflow.md`. Do not work around one locally.
 
-These are package gaps, not app gaps. When you hit one, fix it in `/Users/anilcan/Code/fluttersdk/wind` and commit it there, in that repo, as its own change. Do not work around it locally. That sibling is a separate git repository with its own history, and this project's session never loads its workspace `CLAUDE.md`.
+## Testing
+
+Test first, every time. A feature's test describes the contract before the implementation exists; a bug fix reproduces the bug before it is patched.
+
+Line coverage minimum is **90% on both halves**, enforced in CI. The repository does not meet it yet: the Flutter side sits at 13.6% because the generated scaffold under `lib/resources/views/` and `lib/app/providers/` has no tests, and the backend at 33.3%. Both numbers move when the scaffold is replaced with real screens and real tests, not by lowering the gate.
+
+Wind's parser cache is static and outlives a single test, so every widget test calls `setUp(WindParser.clearCache)` or it can pass for the wrong reason. Widget tests go through `wrapWithTheme()` in `test/support/wind_test_app.dart`; without a `WindTheme` ancestor every class silently resolves to nothing.
+
+`.env` is a real asset during `flutter test`, so a test asserting an `env()` default passes because `.env` supplies the same string, never because the default ran. Assert an overridden value instead.
+
+## Repository state
+
+The design phase has not started. `lib/resources/views/welcome_view.dart` is Magic's generated placeholder and goes with the first real screen. There is no player, no protocol layer and no data layer yet.
+
+## Provider requests
+
+Any HTTP call to a user's IPTV provider carries a per-provider `User-Agent`. Normalise the header key to exactly `User-Agent`: ExoPlayer's lookup is case sensitive and a lowercase key silently ships `User-Agent: ExoPlayer` instead. Treat `Referer` as optional, because Tizen cannot send it at all.
+
+Custom DNS is an onboarding problem, not a feature. No player engine exposes a resolver hook and no app in this category ships an in-app DNS setting.
+
+Never log a provider credential, never put one in a job payload, never commit one. `.env.local` is reserved and gitignored for real test credentials; nothing reads it yet.
 
 ## The player abstraction
 
 Playback goes behind one `PlaybackEngine` interface from the first playback screen, never a direct package call from a widget. Six implementations are coming (Media3, AVPlayer, media_kit, hls.js, Tizen AVPlay, tvOS) and retrofitting the interface later means rewriting every screen that touches playback.
 
-## Provider requests
-
-Any HTTP call to a user's IPTV provider carries a per-provider `User-Agent`. Normalise the header key to exactly `User-Agent`: ExoPlayer's lookup is case-sensitive and a lowercase key silently ships `User-Agent: ExoPlayer` instead. Treat `Referer` as optional, because Tizen cannot send it at all.
-
-Never log a provider credential, never put one in a job payload, never commit one. `.env.local` is reserved and gitignored for real test credentials; nothing reads it yet, and wiring it needs `flutter_dotenv` plus a `pubspec.yaml` `assets:` entry.
-
 ## Off-limits
 
-- No `magic` runtime surface (`MagicController`, `MagicStatefulView`, the `Http` facade, magic routing) until the data layer step. Its `artisan` CLI is a separate question and is allowed earlier for the design tokens.
-- No new top-level directory without saying why; the structure follows `depools` and `uptizm` in the sibling workspace.
+- Do not commit `pubspec_overrides.yaml`, `.env`, or `.env.local`. `.worktreeinclude` carries the first two into a worktree.
+- Do not add a lint suppression, a PHPStan baseline, or a `// ignore:` comment. Fix the cause.
 - Do not change the application identifier or the six-platform set without being asked.
+- Do not edit `**/*.g.dart`; regenerate through artisan.
