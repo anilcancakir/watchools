@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COVERAGE_MINIMUM: 90
+
+jobs:
+  flutter:
+    name: Flutter (analyze, test, coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The ecosystem packages resolve from pub.dev on CI. pubspec_overrides.yaml
+      # is gitignored precisely so this job certifies the PUBLISHED wind, magic
+      # and artisan rather than a working tree that only exists on one machine.
+      # A red job here after a local green one means a sibling has unreleased
+      # work in it; publish the sibling and bump the caret.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # `.env` is gitignored and bundled as an asset, so the build fails without
+      # it. CI gets the tracked template; it carries no secret.
+      - name: Provision .env
+        run: cp .env.example .env
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Test with coverage
+        run: flutter test --coverage
+
+      - name: Enforce coverage minimum
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          hit = found = 0
+          for line in open('coverage/lcov.info'):
+              if line.startswith('LF:'):
+                  found += int(line[3:])
+              elif line.startswith('LH:'):
+                  hit += int(line[3:])
+          minimum = float(os.environ['COVERAGE_MINIMUM'])
+          pct = 100 * hit / found if found else 0.0
+          print(f'Flutter line coverage: {hit}/{found} = {pct:.1f}% (minimum {minimum}%)')
+          if pct < minimum:
+              sys.exit(f'FAIL: coverage {pct:.1f}% is below the {minimum}% minimum')
+          PY
+
+  backend:
+    name: Laravel (pint, phpstan, test, coverage)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          # PCOV is faster than Xdebug for line coverage and this job needs
+          # nothing else Xdebug provides.
+          coverage: pcov
+
+      # magic-starter-laravel resolves from a local path repository, which does
+      # not exist on a runner. The sibling is checked out beside the app so the
+      # relative path in composer.json keeps resolving.
+      - name: Check out magic-starter-laravel
+        uses: actions/checkout@v4
+        with:
+          repository: fluttersdk/magic-starter-laravel
+          path: .siblings/magic-starter-laravel
+          token: ${{ secrets.FLUTTERSDK_TOKEN }}
+
+      - name: Point the path repository at the checkout
+        run: |
+          composer config repositories.magic-starter-laravel \
+            path "$GITHUB_WORKSPACE/.siblings/magic-starter-laravel"
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Provision .env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Lint
+        run: vendor/bin/pint --test
+
+      - name: Static analysis
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+      - name: Test with coverage
+        run: php artisan test --coverage --min=${{ env.COVERAGE_MINIMUM }}
