@@ -15,46 +15,35 @@ void main() {
   // from an earlier case can make a later one pass for the wrong reason.
   setUp(WindParser.clearCache);
 
-  testWidgets('renders a Wind widget through the local path dependency',
-      (tester) async {
-    await tester.pumpWidget(
-      wrapWithTheme(const WText('watchools', className: 'text-lg font-bold')),
-    );
+  testWidgets('renders a Wind widget through the local path dependency', (tester) async {
+    await tester.pumpWidget(wrapWithTheme(const WText('watchools', className: 'text-lg font-bold')));
 
     expect(find.text('watchools'), findsOneWidget);
   });
 
-  testWidgets('resolves a background class to the theme token it names',
-      (tester) async {
+  testWidgets('resolves a background class to the theme token it names', (tester) async {
     const targetKey = ValueKey('wiring-target');
 
     await tester.pumpWidget(
-      wrapWithTheme(
-        const WDiv(
-          key: targetKey,
-          className: 'bg-red-500 p-4',
-          child: WText('styled'),
-        ),
-      ),
+      wrapWithTheme(const WDiv(key: targetKey, className: 'bg-red-500 p-4', child: WText('styled'))),
     );
 
     final resolved = tester
-        .widgetList<DecoratedBox>(
-          find.descendant(
-            of: find.byKey(targetKey),
-            matching: find.byType(DecoratedBox),
-          ),
-        )
+        .widgetList<DecoratedBox>(find.descendant(of: find.byKey(targetKey), matching: find.byType(DecoratedBox)))
         .map((box) => box.decoration)
         .whereType<BoxDecoration>()
         .map((decoration) => decoration.color)
         .nonNulls;
 
+    // Wind's default scale is a `Map<String, dynamic>`, so the shade lookup is
+    // cast rather than chained: an unchecked `['red']![500]` is a dynamic call.
+    final Map<int, Color> redScale = wind_colors.colors['red'] as Map<int, Color>;
+
     // Asserting the exact token, not merely "some colour": a corrupted alias
     // table or a parser resolving `bg-red-100` would satisfy a presence check.
     expect(
       resolved.map((color) => color.toARGB32()),
-      contains(wind_colors.colors['red']![500]!.toARGB32()),
+      contains(redScale[500]!.toARGB32()),
       reason: 'bg-red-500 did not resolve to the red-500 token',
     );
   });
