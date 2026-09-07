@@ -99,8 +99,17 @@ class ShowcaseLayout extends StatelessWidget {
     final Episode? next = title.upNext;
     final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
 
+    // 440 at desktop, not 540.
+    //
+    // The hero, the toolbar, the category strip and the first rail come to 949
+    // pixels at 540, so on a 900 pixel window the resume rail's caption row was
+    // below the fold, and with it the star. The end-to-end walk found it by
+    // tapping a control that was in the semantics tree and outside the
+    // viewport: nothing moved, and the same case passed on a phone where the
+    // hero is shorter. A hero that pushes the first row's labels off the screen
+    // is a hero that is too tall, whatever it looks like on its own.
     return WDiv(
-      className: 'w-full h-[420px] sm:h-[540px]',
+      className: 'w-full h-[420px] sm:h-[440px]',
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[

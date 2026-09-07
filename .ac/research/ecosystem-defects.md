@@ -65,12 +65,12 @@ family.
 
 ## 4. `wind`: three hardcoded light greys with no dark peer
 
-- `lib/src/parser/parsers/border_parser.dart:221` —
+- `lib/src/parser/parsers/border_parser.dart:221`:
   `final defaultColor = color ?? const Color(0xFFE5E7EB); // gray-200`
-- `lib/src/widgets/w_input.dart:291` —
+- `lib/src/widgets/w_input.dart:291`:
   `static const Color _defaultBorderColor = Color(0xFFD1D5DB);`, painted by
   `_buildDecoration` whenever the className resolves no border
-- `lib/src/theme/wind_theme_data.dart:191` —
+- `lib/src/theme/wind_theme_data.dart:191`:
   `this.ringColor = const Color(0xFF3B82F6), // Tailwind blue-500`
 
 Each renders identically in light and dark, so a dark-first consumer gets a
@@ -84,10 +84,10 @@ resolve to `Colors.transparent`.
 
 ## 5. `wind`: `bg-[...]` rejects the 8-digit hex that `border-[...]` accepts
 
-- `background_parser.dart:25` — `#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})`
-- `border_parser.dart:38` — 3, 4, 6 **or 8**
-- `ring_parser.dart:35` and `shadow_parser.dart:25` — 3 **to** 8
-- `text_parser.dart:36` and `:84` — 3 or 6
+- `background_parser.dart:25`: `#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})`
+- `border_parser.dart:38`: 3, 4, 6 **or 8**
+- `ring_parser.dart:35` and `shadow_parser.dart:25`: 3 **to** 8
+- `text_parser.dart:36` and `:84`: 3 or 6
 
 So `bg-[#00000073]` resolves to no background at all while
 `border-[#00000073]` works, and nothing warns. The `/NN` opacity modifier is a

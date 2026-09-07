@@ -177,11 +177,11 @@ class RecordLayout extends StatelessWidget {
             ),
           ),
         ),
-        // The resume target under the poster, spelled out. Plex writes
-        // `Hazır — S12 · B24` here and it is the single line that saves a
-        // returning viewer from opening the episode list to find their place.
+        // The resume target under the poster, spelled out. Plex puts it here
+        // and it is the single line that saves a returning viewer from opening
+        // the episode list to find their place.
         WText(
-          title.isSeries && next != null ? 'Hazır — ${next.code} · ${next.title}' : title.lengthLabel,
+          title.isSeries && next != null ? 'Hazır: ${next.code} · ${next.title}' : title.lengthLabel,
           className: 'text-xs text-fg-muted text-center line-clamp-2',
         ),
       ],

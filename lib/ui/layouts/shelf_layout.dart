@@ -60,9 +60,7 @@ class ShelfLayout extends StatelessWidget {
             children: <Widget>[
               LibraryToolbar(controller: controller, wide: wide, trailing: _controls()),
               PageGutter.gap,
-              PageGutter.gap,
               LibraryCategories(controller: controller),
-              PageGutter.gap,
               WDiv(
                 className: 'flex-1 w-full',
                 child: controller.matches.isEmpty
@@ -282,7 +280,7 @@ class ShelfLayout extends StatelessWidget {
                 WDiv(
                   className: 'hidden lg:block shrink-0 w-16',
                   child: WText(
-                    rating == null ? '—' : '★ $rating',
+                    rating == null ? 'yok' : '★ $rating',
                     className: rating == null ? 'text-xs text-fg-disabled' : 'text-xs font-semibold text-fg',
                   ),
                 ),

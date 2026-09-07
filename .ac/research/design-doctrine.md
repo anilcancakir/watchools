@@ -74,7 +74,7 @@ downward. Not a blurred backdrop image, a colour wash.
 
 Left: the poster at about 250 pixels with a black square badge in the corner
 holding the unwatched count `29`, and beneath it the resume target spelled out:
-`Hazır — S12 · B24`.
+`Hazır, S12 · B24`.
 
 Right, stacked with real air between each: title at 36 pixels, year, genre, then
 a fact line holding a `TV-14` pill and a `71%` critic chip, then the action row.
