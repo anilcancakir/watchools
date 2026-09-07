@@ -8,9 +8,5 @@ import 'package:fluttersdk_dusk/cli.dart' show FluttersdkDuskArtisanProvider;
 import 'package:magic/cli.dart' show MagicArtisanProvider;
 
 List<ArtisanServiceProvider> autoDiscoveredProviders() {
-  return <ArtisanServiceProvider>[
-    FluttersdkDuskArtisanProvider(),
-    MagicArtisanProvider(),
-  ];
+  return <ArtisanServiceProvider>[FluttersdkDuskArtisanProvider(), MagicArtisanProvider()];
 }
-

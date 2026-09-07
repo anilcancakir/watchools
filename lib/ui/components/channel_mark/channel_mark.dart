@@ -33,12 +33,7 @@ class ChannelMark extends StatelessWidget {
   final String? className;
 
   /// Creates a [ChannelMark].
-  const ChannelMark({
-    super.key,
-    required this.channel,
-    this.size = 'md',
-    this.className,
-  });
+  const ChannelMark({super.key, required this.channel, this.size = 'md', this.className});
 
   /// Words a provider bolts onto half a line-up. Dropping them is what makes
   /// the initials distinguish one channel from another: without this, every row

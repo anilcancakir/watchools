@@ -14,13 +14,8 @@ TitleItem _movie({double progress = 0, int minutes = 120, double? rating}) => Ti
 Episode _ep(int season, int number, {double progress = 0}) =>
     Episode(season: season, number: number, title: 'B$number', minutes: 50, progress: progress);
 
-TitleItem _series(List<Episode> episodes) => TitleItem(
-  kind: TitleKind.series,
-  name: 'Bozkır Hattı',
-  category: 'Dram',
-  year: 2022,
-  episodes: episodes,
-);
+TitleItem _series(List<Episode> episodes) =>
+    TitleItem(kind: TitleKind.series, name: 'Bozkır Hattı', category: 'Dram', year: 2022, episodes: episodes);
 
 void main() {
   group('Episode', () {
@@ -47,12 +42,7 @@ void main() {
 
     test('prefers the part-watched episode over the next unwatched one', () {
       final Episode resume = _ep(2, 2, progress: 0.37);
-      final TitleItem series = _series(<Episode>[
-        _ep(1, 1, progress: 1),
-        _ep(2, 1, progress: 1),
-        resume,
-        _ep(2, 3),
-      ]);
+      final TitleItem series = _series(<Episode>[_ep(1, 1, progress: 1), _ep(2, 1, progress: 1), resume, _ep(2, 3)]);
 
       expect(series.upNext, same(resume));
     });

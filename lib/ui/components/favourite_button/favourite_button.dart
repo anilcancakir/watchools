@@ -58,12 +58,7 @@ class FavouriteButton extends StatelessWidget {
             className: slots['icon'] ?? '',
             states: states,
           ),
-          if (shape == 'pill')
-            WText(
-              starred ? 'Favoride' : 'Favori',
-              className: slots['label'] ?? '',
-              states: states,
-            ),
+          if (shape == 'pill') WText(starred ? 'Favoride' : 'Favori', className: slots['label'] ?? '', states: states),
         ],
       ),
     );

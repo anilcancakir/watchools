@@ -4,6 +4,7 @@
 // Source: *.preview.dart files discovered under the scan dir.
 
 import 'package:magic_devtools/preview.dart';
+
 import 'ui/components/artwork/artwork.preview.dart';
 import 'ui/components/channel_mark/channel_mark.preview.dart';
 import 'ui/components/channel_row/channel_row.preview.dart';
@@ -17,56 +18,15 @@ import 'ui/components/title_poster/title_poster.preview.dart';
 
 List<PreviewEntry> previewEntries() {
   return <PreviewEntry>[
-    PreviewEntry(
-      label: 'Artwork',
-      slug: 'artwork',
-      builder: (_) => const ArtworkPreview(),
-    ),
-    PreviewEntry(
-      label: 'ChannelMark',
-      slug: 'channel_mark',
-      builder: (_) => const ChannelMarkPreview(),
-    ),
-    PreviewEntry(
-      label: 'ChannelRow',
-      slug: 'channel_row',
-      builder: (_) => const ChannelRowPreview(),
-    ),
-    PreviewEntry(
-      label: 'EpgRow',
-      slug: 'epg_row',
-      builder: (_) => const EpgRowPreview(),
-    ),
-    PreviewEntry(
-      label: 'EpisodeRow',
-      slug: 'episode_row',
-      builder: (_) => const EpisodeRowPreview(),
-    ),
-    PreviewEntry(
-      label: 'FactChip',
-      slug: 'fact_chip',
-      builder: (_) => const FactChipPreview(),
-    ),
-    PreviewEntry(
-      label: 'FavouriteButton',
-      slug: 'favourite_button',
-      builder: (_) => const FavouriteButtonPreview(),
-    ),
-    PreviewEntry(
-      label: 'HeroBillboard',
-      slug: 'hero_billboard',
-      builder: (_) => const HeroBillboardPreview(),
-    ),
-    PreviewEntry(
-      label: 'StatusBadge',
-      slug: 'status_badge',
-      builder: (_) => const StatusBadgePreview(),
-    ),
-    PreviewEntry(
-      label: 'TitlePoster',
-      slug: 'title_poster',
-      builder: (_) => const TitlePosterPreview(),
-    ),
+    PreviewEntry(label: 'Artwork', slug: 'artwork', builder: (_) => const ArtworkPreview()),
+    PreviewEntry(label: 'ChannelMark', slug: 'channel_mark', builder: (_) => const ChannelMarkPreview()),
+    PreviewEntry(label: 'ChannelRow', slug: 'channel_row', builder: (_) => const ChannelRowPreview()),
+    PreviewEntry(label: 'EpgRow', slug: 'epg_row', builder: (_) => const EpgRowPreview()),
+    PreviewEntry(label: 'EpisodeRow', slug: 'episode_row', builder: (_) => const EpisodeRowPreview()),
+    PreviewEntry(label: 'FactChip', slug: 'fact_chip', builder: (_) => const FactChipPreview()),
+    PreviewEntry(label: 'FavouriteButton', slug: 'favourite_button', builder: (_) => const FavouriteButtonPreview()),
+    PreviewEntry(label: 'HeroBillboard', slug: 'hero_billboard', builder: (_) => const HeroBillboardPreview()),
+    PreviewEntry(label: 'StatusBadge', slug: 'status_badge', builder: (_) => const StatusBadgePreview()),
+    PreviewEntry(label: 'TitlePoster', slug: 'title_poster', builder: (_) => const TitlePosterPreview()),
   ];
 }
-

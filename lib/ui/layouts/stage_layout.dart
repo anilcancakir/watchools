@@ -99,8 +99,7 @@ class StageLayout extends StatelessWidget {
           className: 'flex flex-row items-baseline gap-2 px-1',
           children: <Widget>[
             WText(controller.countLabel, className: 'text-xs text-fg-muted'),
-            if (controller.noGuideNote != null)
-              WText(controller.noGuideNote!, className: 'text-xs text-fg-disabled'),
+            if (controller.noGuideNote != null) WText(controller.noGuideNote!, className: 'text-xs text-fg-disabled'),
             if (controller.group != 'Tümü')
               // The scope is stated rather than implied. Apple's rule is to
               // default to the broader scope and let the user narrow it, which
@@ -286,8 +285,7 @@ class StageLayout extends StatelessWidget {
   /// Three letters, not one. A provider's sections collide on their initial
   /// far too often to index by it: `Spor`, `Sinema` and `Sanat` all read `S`,
   /// and an index whose entries are indistinguishable is decoration.
-  static String _abbreviate(String group) =>
-      (group.length <= 3 ? group : group.substring(0, 3)).toUpperCase();
+  static String _abbreviate(String group) => (group.length <= 3 ? group : group.substring(0, 3)).toUpperCase();
 
   Widget _preview() {
     final Channel channel = controller.channel;
@@ -297,7 +295,10 @@ class StageLayout extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        Artwork(src: now?.imageUrl, fallback: const WDiv(className: 'bg-surface-container')),
+        Artwork(
+          src: now?.imageUrl,
+          fallback: const WDiv(className: 'bg-surface-container'),
+        ),
         // Two scrims rather than one. A single flat overlay dims the image
         // everywhere including the part carrying no text; a gradient keeps the
         // top of the frame bright and buys contrast only where the words are.

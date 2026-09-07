@@ -11,13 +11,7 @@ class ChannelMarkPreview extends StatelessWidget {
 
   /// Names chosen for what they break: a provider prefix, a technical suffix,
   /// a single word, a number in the name, and one that is nothing but noise.
-  static const List<String> _names = <String>[
-    'TRT 1',
-    'TR: BEIN SPORTS 1 HD',
-    'Discovery Channel',
-    'NTV',
-    'HD',
-  ];
+  static const List<String> _names = <String>['TRT 1', 'TR: BEIN SPORTS 1 HD', 'Discovery Channel', 'NTV', 'HD'];
 
   @override
   Widget build(BuildContext context) {

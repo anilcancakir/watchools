@@ -60,7 +60,10 @@ class NavRail extends StatelessWidget {
 
     return const WDiv(
       className: 'flex flex-row items-center gap-2 mb-6 px-1',
-      children: <Widget>[glyph, WText('Watchools', className: 'text-sm font-bold text-fg')],
+      children: <Widget>[
+        glyph,
+        WText('Watchools', className: 'text-sm font-bold text-fg'),
+      ],
     );
   }
 

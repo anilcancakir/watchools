@@ -34,11 +34,7 @@ class LibraryEmpty extends StatelessWidget {
 
   (IconData, String, String) _state() {
     if (controller.query.isNotEmpty) {
-      return (
-        Icons.search_off_outlined,
-        'Sonuç yok',
-        'Arama terimini değiştirin veya kapsamı Tümü olarak seçin.',
-      );
+      return (Icons.search_off_outlined, 'Sonuç yok', 'Arama terimini değiştirin veya kapsamı Tümü olarak seçin.');
     }
 
     return switch (controller.category) {

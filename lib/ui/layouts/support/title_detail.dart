@@ -38,12 +38,7 @@ class TitleDetail extends StatelessWidget {
   final bool dismissible;
 
   /// Creates the [TitleDetail].
-  const TitleDetail({
-    super.key,
-    required this.controller,
-    required this.wide,
-    this.dismissible = false,
-  });
+  const TitleDetail({super.key, required this.controller, required this.wide, this.dismissible = false});
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +113,10 @@ class TitleDetail extends StatelessWidget {
               // tonal panel rather than a stretched poster: upscaling a 2:3
               // poster to 16:9 is the artefact that makes a catalogue look
               // broken rather than sparse.
-              Artwork(src: backdrop, fallback: const WDiv(className: 'bg-surface-container')),
+              Artwork(
+                src: backdrop,
+                fallback: const WDiv(className: 'bg-surface-container'),
+              ),
               const DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -144,7 +142,8 @@ class TitleDetail extends StatelessWidget {
                 for (final String genre in title.genres) FactChip(label: genre),
               ],
             ),
-            if (title.synopsis != null) WText(title.synopsis!, className: 'text-sm text-fg-muted line-clamp-4 max-w-[680px]'),
+            if (title.synopsis != null)
+              WText(title.synopsis!, className: 'text-sm text-fg-muted line-clamp-4 max-w-[680px]'),
             _actions(title),
             if (title.facts.isNotEmpty)
               WDiv(
@@ -214,10 +213,7 @@ class TitleDetail extends StatelessWidget {
     if (seasons.length <= 1) {
       return WDiv(
         className: 'px-4 md:px-8 pt-6 pb-2',
-        child: WText(
-          '${title.episodes.length} bölüm',
-          className: 'text-[11px] font-bold text-fg-muted tracking-wide',
-        ),
+        child: WText('${title.episodes.length} bölüm', className: 'text-[11px] font-bold text-fg-muted tracking-wide'),
       );
     }
 

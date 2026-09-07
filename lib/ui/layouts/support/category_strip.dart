@@ -35,9 +35,7 @@ class CategoryStrip extends StatelessWidget {
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: pills ? 24 : 16),
-        children: <Widget>[
-          for (final String group in controller.groups) _item(group),
-        ],
+        children: <Widget>[for (final String group in controller.groups) _item(group)],
       ),
     );
   }

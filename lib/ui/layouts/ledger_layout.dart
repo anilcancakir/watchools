@@ -81,11 +81,26 @@ class LedgerLayout extends StatelessWidget {
       ''',
       children: <Widget>[
         WDiv(className: 'w-[40px] shrink-0'),
-        WDiv(className: 'flex-1 min-w-0', child: WText('BAŞLIK', className: 'text-[10px] font-bold tracking-wide')),
-        WDiv(className: 'hidden lg:block w-[120px] shrink-0', child: WText('TÜR', className: 'text-[10px] font-bold')),
-        WDiv(className: 'w-[54px] shrink-0', child: WText('YIL', className: 'text-[10px] font-bold')),
-        WDiv(className: 'w-[76px] shrink-0', child: WText('SÜRE', className: 'text-[10px] font-bold')),
-        WDiv(className: 'w-[54px] shrink-0', child: WText('PUAN', className: 'text-[10px] font-bold')),
+        WDiv(
+          className: 'flex-1 min-w-0',
+          child: WText('BAŞLIK', className: 'text-[10px] font-bold tracking-wide'),
+        ),
+        WDiv(
+          className: 'hidden lg:block w-[120px] shrink-0',
+          child: WText('TÜR', className: 'text-[10px] font-bold'),
+        ),
+        WDiv(
+          className: 'w-[54px] shrink-0',
+          child: WText('YIL', className: 'text-[10px] font-bold'),
+        ),
+        WDiv(
+          className: 'w-[76px] shrink-0',
+          child: WText('SÜRE', className: 'text-[10px] font-bold'),
+        ),
+        WDiv(
+          className: 'w-[54px] shrink-0',
+          child: WText('PUAN', className: 'text-[10px] font-bold'),
+        ),
         WDiv(
           className: 'hidden xl:block w-[92px] shrink-0',
           child: WText('KALİTE', className: 'text-[10px] font-bold'),
@@ -151,10 +166,7 @@ class LedgerLayout extends StatelessWidget {
                   _rating(title),
                   WDiv(
                     className: 'hidden xl:block w-[92px] shrink-0',
-                    child: WText(
-                      title.facts.isEmpty ? '—' : title.facts.first,
-                      className: 'text-xs text-fg-disabled',
-                    ),
+                    child: WText(title.facts.isEmpty ? '—' : title.facts.first, className: 'text-xs text-fg-disabled'),
                   ),
                 ],
               ],
@@ -265,7 +277,10 @@ class LedgerLayout extends StatelessWidget {
     final String? label = title.ratingLabel;
 
     if (label == null) {
-      return const WDiv(className: 'w-[54px] shrink-0', child: WText('—', className: 'text-xs text-fg-disabled'));
+      return const WDiv(
+        className: 'w-[54px] shrink-0',
+        child: WText('—', className: 'text-xs text-fg-disabled'),
+      );
     }
 
     return WDiv(

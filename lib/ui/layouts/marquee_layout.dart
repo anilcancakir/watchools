@@ -183,7 +183,10 @@ class MarqueeLayout extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          Artwork(src: now?.imageUrl, fallback: const WDiv(className: 'bg-surface-container')),
+          Artwork(
+            src: now?.imageUrl,
+            fallback: const WDiv(className: 'bg-surface-container'),
+          ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -362,10 +365,7 @@ class MarqueeLayout extends StatelessWidget {
               ],
             ),
           ),
-          WText(
-            now?.title ?? channel.name,
-            className: 'text-sm font-semibold text-fg-muted truncate selected:text-fg',
-          ),
+          WText(now?.title ?? channel.name, className: 'text-sm font-semibold text-fg-muted truncate selected:text-fg'),
           WText(
             now == null ? '${channel.numberLabel} · yayın akışı yok' : '${channel.name} · ${now.startLabel}',
             className: 'text-xs text-fg-disabled truncate',

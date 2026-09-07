@@ -277,11 +277,7 @@ class ChannelRow extends StatelessWidget {
   Widget _star() {
     return WDiv(
       className: 'shrink-0 mr-1',
-      child: FavouriteButton(
-        starred: channel.favourite,
-        subject: channel.name,
-        onToggle: onToggleFavourite,
-      ),
+      child: FavouriteButton(starred: channel.favourite, subject: channel.name, onToggle: onToggleFavourite),
     );
   }
 }

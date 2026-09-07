@@ -41,13 +41,7 @@ class Artwork extends StatelessWidget {
   final double? slotWidth;
 
   /// Creates an [Artwork].
-  const Artwork({
-    super.key,
-    required this.src,
-    required this.fallback,
-    this.fit = BoxFit.cover,
-    this.slotWidth,
-  });
+  const Artwork({super.key, required this.src, required this.fallback, this.fit = BoxFit.cover, this.slotWidth});
 
   @override
   Widget build(BuildContext context) {

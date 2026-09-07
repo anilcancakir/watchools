@@ -65,7 +65,9 @@ class ShowcaseLayout extends StatelessWidget {
             primary: true,
             slivers: <Widget>[
               SliverToBoxAdapter(child: _hero(context, wide)),
-              SliverToBoxAdapter(child: LibraryToolbar(controller: controller, wide: wide)),
+              SliverToBoxAdapter(
+                child: LibraryToolbar(controller: controller, wide: wide),
+              ),
               SliverToBoxAdapter(child: LibraryCategories(controller: controller)),
               if (shelves.isEmpty)
                 // The default `hasScrollBody: true` matters: false measures the
@@ -115,7 +117,10 @@ class ShowcaseLayout extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          Artwork(src: backdrop, fallback: const WDiv(className: 'bg-surface-container')),
+          Artwork(
+            src: backdrop,
+            fallback: const WDiv(className: 'bg-surface-container'),
+          ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(

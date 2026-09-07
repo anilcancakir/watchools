@@ -108,8 +108,7 @@ class MosaicLayout extends StatelessWidget {
           className: 'flex flex-col shrink-0',
           children: <Widget>[
             WText(controller.countLabel, className: 'text-xs text-fg-muted'),
-            if (controller.noGuideNote != null)
-              WText(controller.noGuideNote!, className: 'text-xs text-fg-disabled'),
+            if (controller.noGuideNote != null) WText(controller.noGuideNote!, className: 'text-xs text-fg-disabled'),
           ],
         ),
       ],
@@ -177,9 +176,7 @@ class MosaicLayout extends StatelessWidget {
                   // grid. The picked tile's 52.5% at 40 blur 50 down is
                   // Re-Lax's exactly, and it is the part that does the work.
                   boxShadow: selected
-                      ? const <BoxShadow>[
-                          BoxShadow(color: Color(0x86000000), blurRadius: 40, offset: Offset(0, 50)),
-                        ]
+                      ? const <BoxShadow>[BoxShadow(color: Color(0x86000000), blurRadius: 40, offset: Offset(0, 50))]
                       : null,
                 ),
                 child: AspectRatio(
@@ -268,7 +265,10 @@ class MosaicLayout extends StatelessWidget {
         bg-surface-container
       ''',
       children: <Widget>[
-        WDiv(className: 'hidden md:block', child: ChannelMark(channel: channel, size: 'lg')),
+        WDiv(
+          className: 'hidden md:block',
+          child: ChannelMark(channel: channel, size: 'lg'),
+        ),
         WDiv(
           className: 'flex-1 min-w-0',
           child: WDiv(

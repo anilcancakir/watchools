@@ -29,13 +29,7 @@ class EpisodeRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   /// Creates an [EpisodeRow].
-  const EpisodeRow({
-    super.key,
-    required this.episode,
-    this.density = 'compact',
-    this.selected = false,
-    this.onTap,
-  });
+  const EpisodeRow({super.key, required this.episode, this.density = 'compact', this.selected = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {

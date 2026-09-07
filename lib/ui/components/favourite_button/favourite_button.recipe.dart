@@ -26,16 +26,10 @@ WindSlotRecipe favouriteButtonRecipe() {
       'shape': <String, Map<String, String>>{
         // A star and nothing else. For a list row, where a background per row
         // is a second grid the eye has to read past.
-        'bare': <String, String>{
-          'box': 'size-11 rounded-lg gap-0 hover:bg-surface-container',
-          'icon': 'text-lg',
-        },
+        'bare': <String, String>{'box': 'size-11 rounded-lg gap-0 hover:bg-surface-container', 'icon': 'text-lg'},
         // A filled circle. For a bar or a strip, where the action sits among
         // other round controls.
-        'circle': <String, String>{
-          'box': 'size-11 rounded-full bg-surface-container-high',
-          'icon': 'text-lg',
-        },
+        'circle': <String, String>{'box': 'size-11 rounded-full bg-surface-container-high', 'icon': 'text-lg'},
         // A labelled pill. For a hero or a detail pane, where the action is
         // one of two or three and the word carries the state.
         'pill': <String, String>{
@@ -45,10 +39,7 @@ WindSlotRecipe favouriteButtonRecipe() {
         },
         // A small badge over artwork. For a tile or a card, where the star is
         // an indicator first and a target second.
-        'badge': <String, String>{
-          'box': 'size-7 rounded-full bg-scrim',
-          'icon': 'text-sm',
-        },
+        'badge': <String, String>{'box': 'size-7 rounded-full bg-scrim', 'icon': 'text-sm'},
       },
     },
     defaultVariants: <String, String>{'shape': 'bare'},

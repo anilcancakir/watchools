@@ -47,11 +47,7 @@ class SignalLayout extends StatelessWidget {
         WDiv(
           className: 'flex-1 flex flex-col min-w-0',
           children: <Widget>[
-            HeroBillboard(
-              channel: controller.channel,
-              programme: controller.programme,
-              nowMinute: GuideController.now,
-            ),
+            HeroBillboard(channel: controller.channel, programme: controller.programme, nowMinute: GuideController.now),
             _toolbar(showToggle: wide, mode: mode),
             CategoryStrip(controller: controller),
             WDiv(className: 'flex-1 min-w-0', child: _body(context, mode)),

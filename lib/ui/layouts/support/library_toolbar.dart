@@ -54,7 +54,12 @@ class LibraryToolbar extends StatelessWidget {
         if (wide)
           WDiv(
             className: 'flex flex-row items-center gap-3',
-            children: <Widget>[search, _scopes(), const WDiv(className: 'flex-1'), _count()],
+            children: <Widget>[
+              search,
+              _scopes(),
+              const WDiv(className: 'flex-1'),
+              _count(),
+            ],
           )
         else ...<Widget>[
           search,
@@ -102,9 +107,6 @@ class LibraryToolbar extends StatelessWidget {
     final String head = controller.countLabel;
     final String? note = controller.noArtworkNote;
 
-    return WText(
-      note == null ? head : '$head · $note',
-      className: 'shrink-0 text-xs text-fg-muted',
-    );
+    return WText(note == null ? head : '$head · $note', className: 'shrink-0 text-xs text-fg-muted');
   }
 }

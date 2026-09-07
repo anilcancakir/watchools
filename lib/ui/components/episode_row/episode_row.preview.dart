@@ -30,11 +30,7 @@ class EpisodeRowPreview extends StatelessWidget {
             className: 'flex flex-col gap-1 max-w-[560px]',
             children: <Widget>[
               for (final Episode episode in sample)
-                EpisodeRow(
-                  episode: episode,
-                  density: density,
-                  selected: identical(episode, series.upNext),
-                ),
+                EpisodeRow(episode: episode, density: density, selected: identical(episode, series.upNext)),
             ],
           ),
       ],
