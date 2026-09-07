@@ -96,7 +96,7 @@ Two things a widget test here cannot tell you, both measured. `flutter_test` sub
 
 A whole screen goes through `pumpScreen()` in `test/support/screen.dart` rather than `wrapWithTheme()`, which leaves the surface at the test default of 800x600: neither width this app is designed against, and on the wrong side of `md` from both.
 
-The walks are `tool/dusk/lineup_e2e.sh`, `tool/dusk/library_e2e.sh` and `tool/dusk/title_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: five of its comments record a way an earlier version of that gate passed unconditionally. `tool/dusk/probe.sh` sweeps all nine directions at both widths without asserting anything, and `tool/dusk/shots.sh` captures one screenshot each, which is what a design decision actually gets made from.
+The walks are `tool/dusk/lineup_e2e.sh`, `tool/dusk/library_e2e.sh` and `tool/dusk/title_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: five of its comments record a way an earlier version of that gate passed unconditionally. Beside them, `tool/dusk/shots.sh` captures one screenshot per surface (what a design decision actually gets made from) and `tool/dusk/switch_probe.sh` reduces one live-screen interaction to the shortest sequence that reproduces it. Neither asserts anything.
 
 Three of the walks' findings were things no unit test could reach: a direction that lost its favourite control at 414 pixels, a direction that stated the channel count and left the missing-EPG note to a rail below the fold, and a route change that threw twenty cascading layout assertions.
 
@@ -104,19 +104,28 @@ Three of the walks' findings were things no unit test could reach: a direction t
 
 ## Repository state
 
-The design phase is mid-flight and waiting on one decision. There are three screens (`/` live television, `/kutuphane` catalogue, `/baslik` one title) and each hosts **three competing directions** behind a floating switcher: nine in all, in `lib/ui/layouts/`. They exist so the choice can be made by looking rather than by describing, and the eight that lose go with the switcher.
+The design language is chosen. Nine competing layouts were built and compared side by side; four survive, in `lib/ui/layouts/`:
 
-The doctrine they are built on is `.ac/research/design-doctrine.md`, read off Netflix, Plex and Apple TV. Read it before changing anything about how a screen composes, especially Part three, which is where those three references stop applying to an IPTV client.
+| Route | Layout | File |
+|---|---|---|
+| `/` | `Şimdi`, live hero over editorial rails | `now_layout.dart` |
+| `/` | `Zaman`, broadcast grid on a time axis | `time_layout.dart` |
+| `/kutuphane` | `Vitrin`, hero over poster rails | `showcase_layout.dart` |
+| `/baslik` | `Perde`, cinematic, seasons beside episodes | `curtain_layout.dart` |
+
+The live screen ships **two** views because a line-up is the one surface with two questions ("what is on" and "what is on at nine"); the other two ship one each because a catalogue has no second question. The switch between the live views is a product control on both toolbars (`GuideViewSwitch`), not the floating switcher it replaced, and `GuideMode` on the controller is what it writes. `DESIGN.md`'s Screens section is the argument in full; read it before changing what a screen is for.
+
+The doctrine underneath is `.ac/research/design-doctrine.md`, read off Netflix, Plex and Apple TV. Read it before changing anything about how a screen composes, especially Part three, which is where those three references stop applying to an IPTV client.
 
 `DESIGN.md` exists and `lib/config/wind_theme.g.dart` is generated from it by `./bin/fsa design:sync`. The status colours the generator does not emit (live, catch-up, recording, EPG-now) are hand-written in `lib/config/watchools_status_tokens.dart`; change a hex in one and change it in the other.
 
 There is still no player, no protocol layer and no data layer. Every screen reads a fixture (`lib/app/support/guide_fixture.dart`, `lib/app/support/vod_fixture.dart`) through two `SimpleMagicController`s.
 
-**Three things the design phase has not settled**, in the order they will bite:
+**Three things the design phase left open**, in the order they will bite:
 
-- **There is no time model.** `GuideController.now` is a compile-time constant, and every progress bar, every "N dk kaldı", the grid's now line and the two live rails are computed from it. The doctrine makes the ticking clock the whole argument for the hero direction; nothing ticks. Choosing that direction or the grid commits to a clock source, a rebuild cadence, and a decision about what happens at a programme boundary while the user is mid-scroll.
-- **There is no focus or D-pad model.** Every direction already writes `focus:ring-2 focus:ring-focus-ring`, so the visual half is settled and consistent; activation and traversal are missing, and both are wind gaps rather than app gaps.
-- **The failure states are not designed.** Loading, provider unreachable, expired credentials. They are the same three states under every composition, so they do not discriminate between directions and can wait for the pick.
+- **There is no time model.** `GuideController.now` is a compile-time constant, and every progress bar, every "N dk kaldı", the grid's now line and the two live rails are computed from it. The doctrine makes the ticking clock the whole argument for `Şimdi`; nothing ticks. Both live views need a clock source, a rebuild cadence, and a decision about what happens at a programme boundary while the user is mid-scroll.
+- **There is no focus or D-pad model.** Every layout already writes `focus:ring-2 focus:ring-focus-ring`, so the visual half is settled and consistent; activation and traversal are missing, and both are wind gaps rather than app gaps.
+- **The failure states are not designed.** Loading, provider unreachable, expired credentials.
 
 `/baslik` carries no identifier yet, so the title screen renders whatever the catalogue last selected. It becomes `/baslik/:id` with the Xtream client.
 

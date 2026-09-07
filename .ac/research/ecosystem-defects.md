@@ -29,10 +29,12 @@ The `!hasGrowingChild` guard applies only to the `justify-*` branch. With
 `Flexible(child)`, which defaults to `flex: 1`, so it claims an equal share
 against a sibling that actually asked for the space.
 
-**Measured**, in `ChannelRow`: a 4 pixel accent bar and a 44 pixel number column
-each took a third of 318 free pixels, the identity column got 106 instead of
-270, and 164 pixels went unallocated. The comment immediately above that line
-describes this exact failure as already fixed for the other branch.
+**Measured**, in a `ChannelRow` component this repository no longer has (it went
+with the `Kule` layout, its only consumer): a 4 pixel accent bar and a 44 pixel
+number column each took a third of 318 free pixels, the identity column got 106
+instead of 270, and 164 pixels went unallocated. The comment immediately above
+that line describes this exact failure as already fixed for the other branch.
+The defect is in `wind` and is unaffected by the component going.
 
 **Fix**: extend the guard to the clip branch. `overflow-hidden` asks for
 shrinking, and a child that grows leaves nothing to shrink.

@@ -223,6 +223,79 @@ made the same move, absorbed a year of complaints, and reverted it on 18 August
 2026. On a 10-foot screen the channel list stays on the left, permanently
 visible, one D-pad press away.
 
+## Screens
+
+Three surfaces, chosen out of nine that were built and compared side by side.
+What follows is what each one is for, because the composition follows from that
+and not the other way round.
+
+**Canlı (`/`) ships two views of one line-up.** `Şimdi` is a live hero over
+editorial rails: full-bleed key art of whatever is on the selected channel, a
+progress bar along the bottom edge showing how much of the programme is gone,
+the successor named underneath, and rows titled with sentences a schedule can
+answer (`Daha yeni başladı`, `Birazdan başlıyor`) rather than with taxonomy.
+`Zaman` is a real broadcast grid: channels down, time across, a red now line,
+and past blocks drawn as outlines rather than fills because catch-up makes them
+playable rather than unavailable.
+
+Two views because they answer two different questions. `Şimdi` answers "what is
+on", `Zaman` answers "what is on at nine", and a broadcast line-up is the only
+surface in this product where those differ. A viewer opening the app in the
+evening wants the first and a viewer planning the evening wants the second.
+Neither layout can do the other's job without becoming it: a grid cannot promote
+anything, and a hero cannot show 20:55 and 21:30 at once.
+
+**Kütüphane (`/kutuphane`) ships one, `Vitrin`.** A shop window: one title
+promoted at hero scale, the resume rail underneath as 16:9 stills rather than
+posters, then the provider's own categories as poster rails. The aspect ratio is
+carrying meaning and it has to stay consistent: 2:3 is a title, 16:9 is a moment
+inside one, 1:1 is a brand. A viewer opening a catalogue without a title in mind
+wants to be told, and a grid tells them nothing.
+
+One view, and the asymmetry with the live screen is the point rather than an
+oversight. Everything in a catalogue is available at every moment, so there is
+no second question to cut it by. Scope (all, films, series) and category are the
+only two axes a viewer actually browses along, and both are on the toolbar.
+
+**Başlık (`/baslik`) ships one, `Perde`.** Cinematic and designed for a remote
+first: full-bleed backdrop, the title at display scale, one filled verb naming
+the episode it would resume, and then the part worth copying above all, the
+season list as a sibling column of the episode list rather than a dropdown. That
+is a D-pad decision. A dropdown costs open, travel, select, close, and hides the
+two facts that decide which season you want (how many there are, and how far
+into them you got). Two columns cost one horizontal press and keep both facts on
+screen. Below 900px the columns stack, and that is a genuine concession rather
+than a responsive trick.
+
+No poster appears on it. The backdrop already said what this is, and a poster
+beside a backdrop of the same title is the same information twice.
+
+### Rules the three share
+
+**One page container.** A search field, a category pill, a section heading, a
+grid cell and a list row all start at the same left edge, 24px, and the vertical
+distance between two blocks is the same 24. A page whose vertical and horizontal
+rhythms disagree reads as two designs stacked. The value lives in
+`lib/ui/layouts/support/page_gutter.dart` and is spent in three forms because
+three APIs need it.
+
+**A switch between views is chrome, not an overlay.** The live switch sits at
+the end of the toolbar line, in the same place in both views, shaped like the
+catalogue's scope tabs. Anything floating over scrollable content covers
+something: the switcher this replaced overlapped a favourite button by half a
+pixel and swallowed every tap aimed at it.
+
+**Missing data occupies its slot and says what is missing.** A large share of a
+real subscription arrives with no EPG, no poster, no synopsis and no cast. Every
+one of those is a designed state naming the provider as the source, and the
+counts are on screen without scrolling (`3 kanalda akış yok`, `4 başlıkta afiş
+yok`). A viewer who meets the gap one blank card at a time reads it as the app
+failing; stated once it becomes a fact about their subscription.
+
+**One filled verb per screen.** Netflix has one white Play, Plex has one amber
+Devam, and everything beside them is a ghost or an icon. This product follows
+that without exception.
+
 ## Colors
 
 Seventeen semantic roles drive everything; nothing else is hardcoded. The dark
@@ -332,10 +405,17 @@ The generator emits the two buttons above. Everything else is composed in
 `lib/ui/components/` as atomic folders through `./bin/fsa make:component`, each
 carrying a recipe and a preview.
 
-Three components define the product and are worth naming before they exist.
-The channel tile carries a logo, a name, a number in tabular figures, and at
-most one state badge. The EPG row is a horizontal time axis where the current
-programme is marked with `epg-now` and everything else is neutral. The player
-chrome is transparent over video and must never use a scrim heavier than 40
-percent, which is the ceiling Plex holds and the reason their artwork stays
-legible underneath.
+Fifteen exist. The load-bearing ones: `ChannelMark` (a logo, or the initials
+derived from the name when the provider sent none), `LiveTile` (a channel's
+artwork, its programme, its progress and a star), `StatusBadge` and `FactChip`
+(the state-versus-fact split, see Shapes), `TitlePoster`, `EpisodeRow`,
+`PlayProgress`, `Artwork` and `Scrim`.
+
+Two rules the set follows. A component with no consumer is deleted rather than
+kept for later, which is what happened to four of them when the losing layouts
+went. And nothing here paints a colour outside the semantic aliases; a component
+that needs a value the theme does not carry is a gap in the theme.
+
+The player chrome does not exist yet. When it does it is transparent over video
+and must never use a scrim heavier than 40 percent, which is the ceiling Plex
+holds and the reason their artwork stays legible underneath.
