@@ -113,17 +113,33 @@ class MarqueeLayout extends StatelessWidget {
                 ''',
               ),
             ),
-            WText(
-              controller.query.isEmpty ? '${controller.matches.length} kanal' : '${controller.matches.length} sonuç',
-              className: 'text-xs font-semibold text-fg',
+            // One string, not two. As separate children the count and the note
+            // overlapped at the right edge of the row: `shrink-0` keeps a child
+            // from being squeezed but does nothing about a row that has run out
+            // of width, and Wind clips that silently.
+            //
+            // On a scrim pill, like the category tabs beside it, because this
+            // sits over the brightest part of the billboard and white text on a
+            // pale sky clears nothing.
+            WDiv(
+              className: 'shrink-0 px-3 h-7 rounded-full bg-scrim flex items-center',
+              child: WText(_count(), className: 'text-xs font-semibold text-fg'),
             ),
-            if (controller.noGuideNote != null)
-              WText(controller.noGuideNote!, className: 'shrink-0 text-xs text-fg-muted'),
           ],
         ),
         CategoryStrip(controller: controller, pills: true, onScrim: true),
       ],
     );
+  }
+
+  /// How many channels the current filter left, and how many of them the
+  /// provider sent no guide for.
+  String _count() {
+    final int total = controller.matches.length;
+    final String head = controller.query.isEmpty ? '$total kanal' : '$total sonuç';
+    final String? note = controller.noGuideNote;
+
+    return note == null ? head : '$head · $note';
   }
 
   /// The rails, in the order a returning viewer wants them.
@@ -203,7 +219,10 @@ class MarqueeLayout extends StatelessWidget {
               ),
               WText(now?.title ?? channel.name, className: 'text-3xl md:text-5xl font-bold text-fg n-2'),
               if (now?.description != null)
-                WText(now!.description!, className: 'text-sm md:text-base text-fg-muted n-3'),
+                WDiv(
+                  className: 'max-w-[640px]',
+                  child: WText(now!.description!, className: 'text-sm md:text-base text-fg-muted n-3'),
+                ),
               _actions(channel),
             ],
           ),
