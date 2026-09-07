@@ -46,50 +46,61 @@ Future<void> pumpScreen(WidgetTester tester, Widget child, {Size size = desktop}
   tester.view.physicalSize = size;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(
-    MaterialApp(
-      home: WindTheme(
-        data: buildWatchoolsWindTheme().copyWith(brightness: Brightness.dark, syncWithSystem: false),
-        child: Scaffold(body: child),
+  // Errors are collected through `FlutterError.onError` rather than read back
+  // with `takeException`, and this is not a style preference.
+  //
+  // `takeException` does NOT hand back one error at a time when several are
+  // pending. It collapses them into a single synthetic failure reading
+  // `Multiple exceptions (2) were detected during the running of the current
+  // test`, and that string carries none of the individual messages. So the
+  // overflow filter below could not see the word `overflowed` on any frame
+  // that recorded more than one error, which is exactly the case the filter
+  // exists for: three directions failed this gate for two overflows apiece
+  // while the report printed above the failure named both of them.
+  //
+  // Installing the handler takes the errors before the binding records them,
+  // so nothing is left pending and each one arrives whole.
+  final List<FlutterErrorDetails> caught = <FlutterErrorDetails>[];
+  final void Function(FlutterErrorDetails)? previous = FlutterError.onError;
+  FlutterError.onError = caught.add;
+
+  try {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WindTheme(
+          data: buildWatchoolsWindTheme().copyWith(brightness: Brightness.dark, syncWithSystem: false),
+          child: Scaffold(body: child),
+        ),
       ),
-    ),
-  );
+    );
 
-  // A second pump lets the image futures settle. Every remote image in these
-  // fixtures fails under `flutter_test`, which answers every request with a
-  // 400, and that is exactly the fallback path worth exercising.
-  await tester.pump();
+    // A second pump lets the image futures settle. Every remote image in these
+    // fixtures fails under `flutter_test`, which answers every request with a
+    // 400, and that is exactly the fallback path worth exercising.
+    await tester.pump();
+  } finally {
+    FlutterError.onError = previous;
+  }
 
-  _drainExceptions(size);
+  _report(caught, size);
 }
 
-/// Empties the pending-exception queue, failing on anything that is not an
-/// overflow.
-///
-/// Drained in a loop rather than once, because `takeException` returns one at a
-/// time and a single frame can record several; leaving any behind fails the
-/// next assertion in the test for something that happened before it.
-void _drainExceptions(Size size) {
-  final List<Object> real = <Object>[];
-
-  for (
-    Object? thrown = TestWidgetsFlutterBinding.instance.takeException();
-    thrown != null;
-    thrown = TestWidgetsFlutterBinding.instance.takeException()
-  ) {
-    if (thrown is FlutterError && thrown.message.contains('overflowed by')) continue;
-    real.add(thrown);
-  }
+/// Fails on anything that is not an overflow.
+void _report(List<FlutterErrorDetails> caught, Size size) {
+  final List<FlutterErrorDetails> real = caught
+      .where((FlutterErrorDetails d) => !'${d.exception}'.contains('overflowed by'))
+      .toList();
 
   if (real.isEmpty) return;
 
-  for (final Object error in real) {
-    if (error is FlutterError) {
-      for (final DiagnosticsNode node in error.diagnostics) {
-        debugPrint(node.toStringDeep());
-      }
-    }
+  // Printed by hand, because taking the errors off `FlutterError.onError` also
+  // takes them off the path that would otherwise dump the render-object chain.
+  for (final FlutterErrorDetails details in real) {
+    debugPrint(details.toString());
   }
 
-  fail('threw while building or painting at ${size.width.toInt()}x${size.height.toInt()}: ${real.first}');
+  fail(
+    'threw while building or painting at ${size.width.toInt()}x${size.height.toInt()}: '
+    '${real.first.exception}',
+  );
 }

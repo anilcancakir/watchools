@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:watchools/app/controllers/guide_controller.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/models/programme.dart';
+import 'package:watchools/app/support/guide_fixture.dart';
 
 /// The line-up controller, which holds every claim the end-to-end walk can only
 /// assert through a semantics tree.
@@ -183,26 +184,76 @@ void main() {
   });
 
   group('the bake-off state', () {
-    test('layout and mode switch and hold', () {
-      expect(controller.layout, BrowseLayout.signal);
-      controller.showLayout(BrowseLayout.mosaic);
-      expect(controller.layout, BrowseLayout.mosaic);
+    test('direction switches and holds', () {
+      expect(controller.direction, GuideDirection.now);
 
-      expect(controller.mode, GuideMode.guide);
-      controller.showMode(GuideMode.list);
-      expect(controller.mode, GuideMode.list);
+      controller.showDirection(GuideDirection.time);
+      expect(controller.direction, GuideDirection.time);
     });
 
-    test('switching layout keeps the filters, which is the whole point', () {
+    test('switching direction keeps the filters, which is the whole point', () {
       controller.selectGroup('Spor');
       controller.search('e');
       final int matched = controller.matches.length;
 
-      controller.showLayout(BrowseLayout.stage);
+      controller.showDirection(GuideDirection.tower);
 
       expect(controller.group, 'Spor');
       expect(controller.query, 'e');
       expect(controller.matches.length, matched);
+    });
+  });
+
+  group('the editorial rails', () {
+    test('the two live rails answer questions only a schedule can', () {
+      final List<String> titles = controller.rails.map((GuideRail r) => r.title).toList();
+
+      expect(titles, contains('Daha yeni başladı'));
+      expect(titles, contains('Yarım saat içinde'));
+    });
+
+    test('a channel with no guide lands in its own rail, not in a group rail', () {
+      final GuideRail blind = controller.rails.firstWhere((GuideRail r) => r.title == 'Akış bilgisi olmayan kanallar');
+
+      expect(blind.channels, isNotEmpty);
+      expect(blind.channels.every((Channel c) => !c.hasSchedule), isTrue);
+
+      // And nowhere else: a channel with no EPG in a `Daha yeni başladı` rail
+      // would be a card claiming a programme it does not have.
+      for (final GuideRail rail in controller.rails) {
+        if (rail.title == 'Akış bilgisi olmayan kanallar') continue;
+        if (rail.source == 'Sağlayıcı grubu') continue;
+
+        expect(rail.channels.every((Channel c) => c.hasSchedule), isTrue, reason: rail.title);
+      }
+    });
+
+    test('an empty rail is dropped rather than rendered', () {
+      // Nothing is starred on first run, so the favourites rail must be absent
+      // rather than present and empty. An empty ROW is a claim about the
+      // schedule that is not true; an empty SLOT inside a row is a hole and is
+      // designed instead.
+      expect(controller.rails.any((GuideRail r) => r.title == 'Favorilerin'), isFalse);
+
+      controller.toggleFavourite(controller.channels.first);
+
+      expect(controller.rails.any((GuideRail r) => r.title == 'Favorilerin'), isTrue);
+    });
+
+    test('the rails follow the filter', () {
+      controller.selectGroup('Spor');
+
+      for (final GuideRail rail in controller.rails) {
+        expect(rail.channels.every((Channel c) => c.group == 'Spor'), isTrue, reason: rail.title);
+      }
+    });
+
+    test('the cache is dropped when the filter moves', () {
+      final int before = controller.rails.length;
+      controller.search('zzzzz');
+
+      expect(controller.rails.length, isNot(before));
+      expect(controller.rails, isEmpty);
     });
   });
 
@@ -213,9 +264,21 @@ void main() {
       expect(GuideController.windowStart % 30, 0);
     });
 
-    test('is wide enough to hold the fixture evening', () {
-      expect(GuideController.windowMinutes, 210);
+    test('covers prime time end to end rather than fitting a viewport', () {
+      // Five hours, 19:30 to 00:30. It was three and a half while the axis had
+      // to fit a laptop without scrolling; the grid scrolls now, so the window
+      // is a question about the evening rather than about the screen.
+      expect(GuideController.windowMinutes, 300);
       expect(GuideController.windowStart + GuideController.windowMinutes, greaterThan(GuideController.now));
+
+      // The last programme in the fixture has to fall inside it, or the grid
+      // draws a window with an empty right half and nothing says why.
+      final int lastEnd = guideFixture
+          .expand((Channel c) => c.schedule)
+          .map((Programme p) => p.endMinute)
+          .reduce((int a, int b) => a > b ? a : b);
+
+      expect(GuideController.windowStart + GuideController.windowMinutes, greaterThanOrEqualTo(lastEnd));
     });
   });
 }

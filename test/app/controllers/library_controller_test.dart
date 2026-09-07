@@ -152,38 +152,24 @@ void main() {
       expect(controller.season, 1);
     });
 
-    test('openDetail selects and shows, closeDetail returns', () {
-      expect(controller.detailOpen, isFalse);
-
-      controller.openDetail(bozkir());
-      expect(controller.detailOpen, isTrue);
-      expect(controller.selected.name, 'Bozkır Hattı');
-      expect(controller.season, 2);
-
-      controller.closeDetail();
-      expect(controller.detailOpen, isFalse);
-    });
-
-    test('switching layout closes it, because the layouts disagree about it', () {
-      // The shelf layout always shows the detail as a screen and the other two
-      // only below `xl`, so a detail opened in one followed you into another
-      // and left its browse surface unreachable without pressing back.
-      controller.openDetail(bozkir());
-      controller.showLayout(LibraryLayout.wall);
-
-      expect(controller.detailOpen, isFalse);
-    });
-
-    test('switching layout keeps the filters, which is the point of sharing', () {
+    test('switching direction keeps the filters, which is the point of sharing', () {
       controller.selectCategory('Dram');
       controller.showScope(LibraryScope.movies);
       final int matched = controller.matches.length;
 
-      controller.showLayout(LibraryLayout.ledger);
+      controller.showDirection(LibraryDirection.shelf);
 
       expect(controller.category, 'Dram');
       expect(controller.scope, LibraryScope.movies);
       expect(controller.matches.length, matched);
+    });
+
+    test('the detail direction is its own axis and does not disturb the browse one', () {
+      controller.showDirection(LibraryDirection.collection);
+      controller.showDetail(DetailDirection.sheet);
+
+      expect(controller.direction, LibraryDirection.collection);
+      expect(controller.detail, DetailDirection.sheet);
     });
 
     test('selecting a season holds', () {
