@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/models/title_item.dart';
+import '../artwork/index.dart';
 import 'episode_row.recipe.dart';
 
 /// One episode of a series.
@@ -84,17 +85,14 @@ class EpisodeRow extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            if (episode.imageUrl == null)
-              const WDiv(
-                className: 'flex items-center justify-center',
+            Artwork(
+              src: episode.imageUrl,
+              slotWidth: 128,
+              fallback: const WDiv(
+                className: 'size-full flex items-center justify-center',
                 child: WIcon(Icons.image_not_supported_outlined, className: 'text-sm text-fg-disabled'),
-              )
-            else
-              Image.network(
-                episode.imageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
+            ),
             if (episode.inProgress)
               Positioned(
                 left: 0,

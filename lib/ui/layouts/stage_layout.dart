@@ -5,6 +5,7 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/guide_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../components/artwork/index.dart';
 import '../components/channel_mark/index.dart';
 import '../components/fact_chip/index.dart';
 import '../components/favourite_button/index.dart';
@@ -35,9 +36,11 @@ import 'support/nav_rail.dart';
 /// index is alphabetical because a music library is sorted that way; a line-up
 /// is not, and re-sorting it discards the only structure the provider sent.
 ///
-/// The trailing edge of a row carries nothing. Apple's guidance is explicit
-/// that an index and a trailing row control fight each other, so favouriting
-/// moved into the preview pane, where the object it acts on is unambiguous.
+/// The trailing edge of a row carries nothing on two columns. Apple's guidance
+/// that an index and a trailing row control fight each other is the reason the
+/// jump rail can have that edge to itself; the reason favouriting is a sibling
+/// of the row's anchor rather than a child of it is measured rather than
+/// borrowed, and it is recorded at `_row` where the fix is.
 @immutable
 class StageLayout extends StatelessWidget {
   /// The shared line-up state.
@@ -95,7 +98,7 @@ class StageLayout extends StatelessWidget {
         WDiv(
           className: 'flex flex-row items-baseline gap-2 px-1',
           children: <Widget>[
-            WText('${controller.matches.length} kanal', className: 'text-xs text-fg-muted'),
+            WText(controller.countLabel, className: 'text-xs text-fg-muted'),
             if (controller.noGuideNote != null)
               WText(controller.noGuideNote!, className: 'text-xs text-fg-disabled'),
             if (controller.group != 'Tümü')
@@ -146,9 +149,14 @@ class StageLayout extends StatelessWidget {
   }
 
   Widget _rows({required bool showStar}) {
-    // One flat list of headers and rows rather than nested builders: a
-    // `ListView` per section builds every section eagerly, which is exactly
-    // what a ten thousand channel line-up cannot afford.
+    // One flat list rather than a `ListView` per section, which would build
+    // every section eagerly.
+    //
+    // Honest about what this does not buy: the widgets are still CONSTRUCTED
+    // for every row on every build and only MOUNTED lazily, so at ten thousand
+    // channels this is ten thousand allocations per keystroke. Index arithmetic
+    // over `sections` inside `itemBuilder` gets the rest, and is the change to
+    // make if this direction wins rather than a change to make to all four.
     final List<Widget> items = <Widget>[];
 
     for (final (String, List<Channel>) section in controller.sections) {
@@ -289,8 +297,7 @@ class StageLayout extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        if (now?.imageUrl != null)
-          Image.network(now!.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+        Artwork(src: now?.imageUrl, fallback: const WDiv(className: 'bg-surface-container')),
         // Two scrims rather than one. A single flat overlay dims the image
         // everywhere including the part carrying no text; a gradient keeps the
         // top of the frame bright and buys contrast only where the words are.
@@ -387,7 +394,7 @@ class StageLayout extends StatelessWidget {
             WText('$remaining dk kaldı', className: 'text-xs font-semibold text-epg-now'),
           ],
         ),
-        if (now.description != null) WText(now.description!, className: 'text-sm text-fg-muted n-3'),
+        if (now.description != null) WText(now.description!, className: 'text-sm text-fg-muted line-clamp-3'),
       ],
     );
   }

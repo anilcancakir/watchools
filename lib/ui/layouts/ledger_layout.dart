@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
 import '../../app/models/title_item.dart';
+import '../components/artwork/index.dart';
 import '../components/favourite_button/index.dart';
 import 'support/library_categories.dart';
 import 'support/library_empty.dart';
@@ -126,7 +127,7 @@ class LedgerLayout extends StatelessWidget {
           className: 'flex-1 min-w-0',
           child: WAnchor(
             onTap: () => split ? controller.select(title) : controller.openDetail(title),
-            semanticLabel: '${title.name} ${title.year}',
+            semanticLabel: _label(title),
             child: WDiv(
               className: 'flex flex-row items-center gap-3 h-14 px-2 md:px-2 focus:ring-2 focus:ring-focus-ring',
               children: <Widget>[
@@ -169,6 +170,26 @@ class LedgerLayout extends StatelessWidget {
     );
   }
 
+  /// Everything the columns say, in one sentence.
+  ///
+  /// A `WAnchor`'s `semanticLabel` replaces the text of everything beneath it,
+  /// so a row labelled with just a name and a year hid its own kind badge, its
+  /// runtime, its rating and its resume note. This layout's whole argument is
+  /// that it can be scanned by a fact rather than by a picture, and a screen
+  /// reader was getting none of the facts.
+  String _label(TitleItem title) {
+    final List<String> parts = <String>[
+      title.name,
+      title.isSeries ? 'dizi' : 'film',
+      '${title.year}',
+      title.lengthLabel,
+      if (title.ratingLabel != null) 'puan ${title.ratingLabel}',
+      if (title.inProgress) _resumeNote(title),
+    ];
+
+    return parts.join(', ');
+  }
+
   /// A 2:3 thumbnail at 28 by 42.
   ///
   /// Small enough that it is an identifier rather than artwork, which is the
@@ -184,16 +205,11 @@ class LedgerLayout extends StatelessWidget {
         bg-surface-container-high
         flex items-center justify-center
       ''',
-      child: poster == null
-          ? WText(title.name.substring(0, 1).toUpperCase(), className: 'text-xs font-bold text-fg-disabled')
-          : Image.network(
-              poster,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => WText(
-                title.name.substring(0, 1).toUpperCase(),
-                className: 'text-xs font-bold text-fg-disabled',
-              ),
-            ),
+      child: Artwork(
+        src: poster,
+        slotWidth: 28,
+        fallback: WText(title.name.substring(0, 1).toUpperCase(), className: 'text-xs font-bold text-fg-disabled'),
+      ),
     );
   }
 

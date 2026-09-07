@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/models/channel.dart';
+import '../artwork/index.dart';
 import 'channel_mark.recipe.dart';
 
 /// The channel's identity in a box: its `tvg-logo` when the provider sent one,
@@ -23,6 +24,10 @@ class ChannelMark extends StatelessWidget {
 
   /// Recipe size axis: `sm`, `md`, `lg` or `xl`.
   final String size;
+
+  /// The rendered edge of each size, so the decode can be sized to the slot.
+  /// Mirrors the recipe; the two have to move together.
+  static const Map<String, double> _edges = <String, double>{'sm': 32, 'md': 40, 'lg': 56, 'xl': 72};
 
   /// Appended to the recipe output, for spacing and state at the call site.
   final String? className;
@@ -85,13 +90,12 @@ class ChannelMark extends StatelessWidget {
 
     return WDiv(
       className: className == null ? base : '$base $className',
-      child: logoUrl == null
-          ? WText(initialsOf(channel.name), className: 'font-bold text-fg-muted')
-          : Image.network(
-              logoUrl,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => WText(initialsOf(channel.name), className: 'font-bold text-fg-muted'),
-            ),
+      child: Artwork(
+        src: logoUrl,
+        fit: BoxFit.contain,
+        slotWidth: _edges[size],
+        fallback: WText(initialsOf(channel.name), className: 'font-bold text-fg-muted'),
+      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
 import '../../app/models/title_item.dart';
+import '../components/artwork/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/title_poster/index.dart';
 import 'support/library_categories.dart';
@@ -114,10 +115,7 @@ class ShowcaseLayout extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          if (backdrop == null)
-            const WDiv(className: 'bg-surface-container')
-          else
-            Image.network(backdrop, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+          Artwork(src: backdrop, fallback: const WDiv(className: 'bg-surface-container')),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -154,12 +152,12 @@ class ShowcaseLayout extends StatelessWidget {
               WAnchor(
                 onTap: () => controller.openDetail(title),
                 semanticLabel: '${title.name} ayrıntıları',
-                child: WText(title.name, className: 'text-3xl md:text-5xl font-bold text-fg n-2'),
+                child: WText(title.name, className: 'text-3xl md:text-5xl font-bold text-fg line-clamp-2'),
               ),
               if (title.synopsis != null && wide)
                 WDiv(
                   className: 'max-w-[640px]',
-                  child: WText(title.synopsis!, className: 'text-sm md:text-base text-fg-muted n-3'),
+                  child: WText(title.synopsis!, className: 'text-sm md:text-base text-fg-muted line-clamp-3'),
                 ),
               _actions(title),
             ],
@@ -218,12 +216,14 @@ class ShowcaseLayout extends StatelessWidget {
     return WDiv(
       className: 'flex flex-col gap-3 pt-6',
       children: <Widget>[
-        WDiv(
-          className: 'flex flex-row items-baseline gap-2 px-6 md:px-12',
-          children: <Widget>[
-            WText(heading, className: 'text-base font-bold text-fg'),
-            WText('${titles.length}', className: 'text-xs font-semibold text-fg-disabled'),
-          ],
+        MergeSemantics(
+          child: WDiv(
+            className: 'flex flex-row items-baseline gap-2 px-6 md:px-12',
+            children: <Widget>[
+              WText(heading, className: 'text-base font-bold text-fg'),
+              WText('${titles.length}', className: 'text-xs font-semibold text-fg-disabled'),
+            ],
+          ),
         ),
         SizedBox(
           // 168 of poster at 2:3 is 252, plus two label lines. A shelf that

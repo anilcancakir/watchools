@@ -5,6 +5,7 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/guide_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../components/artwork/index.dart';
 import '../components/channel_mark/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/status_badge/index.dart';
@@ -135,8 +136,7 @@ class MarqueeLayout extends StatelessWidget {
   /// How many channels the current filter left, and how many of them the
   /// provider sent no guide for.
   String _count() {
-    final int total = controller.matches.length;
-    final String head = controller.query.isEmpty ? '$total kanal' : '$total sonuç';
+    final String head = controller.countLabel;
     final String? note = controller.noGuideNote;
 
     return note == null ? head : '$head · $note';
@@ -183,8 +183,7 @@ class MarqueeLayout extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          if (now?.imageUrl != null)
-            Image.network(now!.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+          Artwork(src: now?.imageUrl, fallback: const WDiv(className: 'bg-surface-container')),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -217,11 +216,11 @@ class MarqueeLayout extends StatelessWidget {
                   StatusBadge(status: channel.status),
                 ],
               ),
-              WText(now?.title ?? channel.name, className: 'text-3xl md:text-5xl font-bold text-fg n-2'),
+              WText(now?.title ?? channel.name, className: 'text-3xl md:text-5xl font-bold text-fg line-clamp-2'),
               if (now?.description != null)
                 WDiv(
                   className: 'max-w-[640px]',
-                  child: WText(now!.description!, className: 'text-sm md:text-base text-fg-muted n-3'),
+                  child: WText(now!.description!, className: 'text-sm md:text-base text-fg-muted line-clamp-3'),
                 ),
               _actions(channel),
             ],
@@ -266,12 +265,14 @@ class MarqueeLayout extends StatelessWidget {
     return WDiv(
       className: 'flex flex-col gap-3 pt-6',
       children: <Widget>[
-        WDiv(
-          className: 'flex flex-row items-baseline gap-2 px-6 md:px-12',
-          children: <Widget>[
-            WText(title, className: 'text-base font-bold text-fg'),
-            WText('${channels.length}', className: 'text-xs font-semibold text-fg-disabled'),
-          ],
+        MergeSemantics(
+          child: WDiv(
+            className: 'flex flex-row items-baseline gap-2 px-6 md:px-12',
+            children: <Widget>[
+              WText(title, className: 'text-base font-bold text-fg'),
+              WText('${channels.length}', className: 'text-xs font-semibold text-fg-disabled'),
+            ],
+          ),
         ),
         SizedBox(
           // 158 of card plus the two label lines. Measured rather than
@@ -317,13 +318,14 @@ class MarqueeLayout extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                if (now?.imageUrl != null)
-                  Image.network(now!.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink())
-                else
-                  // The honest cost of this layout, rendered rather than
-                  // argued. A channel with no still gets its mark on an empty
-                  // card, and most of a real line-up looks like this.
-                  Center(child: _placeholder(channel)),
+                // The fallback is the honest cost of this layout, rendered
+                // rather than argued: a channel with no still gets its mark on
+                // an empty card, and most of a real line-up looks like this.
+                Artwork(
+                  src: now?.imageUrl,
+                  slotWidth: 280,
+                  fallback: Center(child: _placeholder(channel)),
+                ),
                 Positioned(
                   left: 8,
                   top: 8,

@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 
 import '../../../app/models/channel.dart';
 import '../../../app/models/programme.dart';
+import '../artwork/index.dart';
 import '../fact_chip/index.dart';
 import '../status_badge/index.dart';
 
@@ -59,13 +60,13 @@ class HeroBillboard extends StatelessWidget {
       return const WDiv(className: 'bg-surface-container-high');
     }
 
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      alignment: Alignment.topCenter,
-      // A backdrop that fails to load must not leave a white hole in a
-      // dark-first UI. Providers serve broken logo and still URLs constantly.
-      errorBuilder: (_, _, _) => const WDiv(className: 'bg-surface-container-high'),
+    // No `slotWidth`: a full-bleed backdrop's slot IS the viewport, so there is
+    // nothing to save by decoding smaller and a guessed width would soften it.
+    // The fallback keeps a failed fetch from leaving a white hole in a
+    // dark-first UI, which providers cause constantly.
+    return Artwork(
+      src: url,
+      fallback: const WDiv(className: 'bg-surface-container-high'),
     );
   }
 
