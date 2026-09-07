@@ -2,12 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/controllers/library_controller.dart';
+import 'page_gutter.dart';
+import 'search_field.dart';
 
-/// Search, scope and the count, shared by every catalogue layout.
+/// Search, scope and the count, shared by every catalogue direction.
 ///
-/// Unlike the line-up, the three catalogue layouts do share this bar. The
+/// Unlike the line-up, the three catalogue directions do share this bar. The
 /// scope switch (everything, films, series) is not a styling decision, it is
-/// what the screen is showing, and giving each layout its own version would
+/// what the screen is showing, and giving each direction its own version would
 /// mean comparing three different products.
 ///
 /// The count and the missing-artwork note are one string. As two children they
@@ -25,40 +27,44 @@ class LibraryToolbar extends StatelessWidget {
   /// axis leaves the field too narrow to show a word of what was typed.
   final bool wide;
 
+  /// The direction's own controls, right-aligned on a wide bar and dropped on a
+  /// narrow one. Plex's card-size slider and sort menu live here.
+  final Widget? trailing;
+
   /// Creates the [LibraryToolbar].
-  const LibraryToolbar({super.key, required this.controller, required this.wide});
+  const LibraryToolbar({super.key, required this.controller, required this.wide, this.trailing});
 
   @override
   Widget build(BuildContext context) {
+    // Fixed above `sm` rather than `flex-1` with a maximum beside it, which
+    // does not clamp: `flex-1` is an `Expanded` and its tight minimum beats a
+    // `ConstrainedBox` maximum. Written the other way the field either filled
+    // the row or, once the direction added three control groups to the same
+    // line, was squeezed down to four characters of its own placeholder.
     final Widget search = WDiv(
-      className: wide ? 'flex-1 max-w-[360px] min-w-0' : 'w-full min-w-0',
-      child: WInput(
-        value: controller.query,
-        onChanged: controller.search,
-        placeholder: 'Film, dizi veya bölüm ara',
-        semanticLabel: 'Film, dizi veya bölüm ara',
-        className: '''
-          border-0
-          rounded-full px-4 py-2.5
-          bg-surface-container
-          text-sm text-fg
-          hover:bg-surface-container-high
-          focus:ring-2 focus:ring-focus-ring
-        ''',
-      ),
+      className: wide ? 'w-[360px] shrink-0' : 'w-full min-w-0',
+      child: SearchField(value: controller.query, onChanged: controller.search, subject: 'Film, dizi veya bölüm ara'),
     );
 
+    // `PageGutter.x` interpolated rather than written out. Interpolating a
+    // CONSTANT is safe for Wind's parse cache, which keys on the string's value
+    // and gets the same one every build; the rule against interpolation is
+    // about a caller's variable, which mints a fresh cache entry per value.
     return WDiv(
-      className: 'flex flex-col gap-2 px-4 md:px-8 pt-5',
+      className: 'flex flex-col gap-2 ${PageGutter.x} ${PageGutter.top}',
       children: <Widget>[
         if (wide)
+          // `wrap` with no `flex` beside it, because Wind's display family
+          // resolves first-wins and would discard the wrap. The direction that
+          // adds a sort group, a density group and a view toggle to this line
+          // needs it: at 1100 pixels they and the field do not share one row.
           WDiv(
-            className: 'flex flex-row items-center gap-3',
+            className: 'wrap items-center gap-3',
             children: <Widget>[
               search,
               _scopes(),
-              const WDiv(className: 'flex-1'),
               _count(),
+              if (trailing != null) WDiv(className: 'shrink-0', child: trailing),
             ],
           )
         else ...<Widget>[
@@ -67,6 +73,16 @@ class LibraryToolbar extends StatelessWidget {
           // number ("15 başlık · 4 başlıkta afiş yok"), and on one line beside
           // three scope tabs it overflowed the row by 31 pixels.
           WDiv(className: 'flex flex-row items-center', children: <Widget>[_scopes()]),
+          // The direction's controls get their own line rather than being
+          // dropped. Plex keeps its sort and its card size on a phone, and it
+          // is right to: a five thousand title catalogue is harder to arrange
+          // on a small screen, not easier, so that is where the controls matter
+          // most.
+          // Placed directly, not inside a `flex flex-row` wrapper. A Row gives
+          // its child unbounded width on the main axis, so the control group's
+          // own `wrap` never had a width to wrap against and ran 163 pixels
+          // past a 414 pixel screen.
+          ?trailing,
           _count(),
         ],
       ],

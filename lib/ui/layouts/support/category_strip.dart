@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/controllers/guide_controller.dart';
+import 'page_gutter.dart';
 
 /// The horizontal category strip.
 ///
@@ -30,11 +31,15 @@ class CategoryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Exactly the chip's own height. The box used to be 52 against a 36 pixel
+    // chip, so it carried eight pixels of invisible margin above and below that
+    // nothing else on the page shared, and the strip sat closer to the hero
+    // above it than to the heading below it.
     return SizedBox(
-      height: pills ? 52 : 44,
+      height: pills ? PageGutter.stripHeight : 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: pills ? 24 : 16),
+        padding: PageGutter.horizontal,
         children: <Widget>[for (final String group in controller.groups) _item(group)],
       ),
     );
@@ -52,7 +57,7 @@ class CategoryStrip extends StatelessWidget {
         className: pills && onScrim
             ? '''
               flex flex-row items-center gap-1.5
-              mr-2 my-2 px-4 rounded-full h-9
+              mr-2 px-4 rounded-full h-9
               bg-scrim
               text-sm font-semibold text-fg
               hover:bg-scrim-strong
@@ -62,7 +67,7 @@ class CategoryStrip extends StatelessWidget {
             : pills
             ? '''
               flex flex-row items-center gap-1.5
-              mr-2 my-2 px-4 rounded-full h-9
+              mr-2 px-4 rounded-full h-9
               bg-surface-container
               text-sm font-semibold text-fg-muted
               hover:bg-surface-container-high hover:text-fg

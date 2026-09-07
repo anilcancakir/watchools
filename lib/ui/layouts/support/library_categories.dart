@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/controllers/library_controller.dart';
+import 'page_gutter.dart';
 
 /// The catalogue category strip.
 ///
@@ -25,11 +26,13 @@ class LibraryCategories extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Exactly the chip's own height, so the page above and below owns all the
+    // spacing. See `PageGutter.stripHeight`.
     return SizedBox(
-      height: 52,
+      height: PageGutter.stripHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: PageGutter.horizontal,
         children: <Widget>[for (final String category in controller.categories) _item(category)],
       ),
     );
@@ -44,7 +47,7 @@ class LibraryCategories extends StatelessWidget {
       child: WDiv(
         className: '''
           flex flex-row items-center gap-1.5
-          mr-2 my-2 px-4 rounded-full h-9
+          mr-2 px-4 rounded-full h-9
           bg-surface-container
           text-sm font-semibold text-fg-muted
           hover:bg-surface-container-high hover:text-fg
