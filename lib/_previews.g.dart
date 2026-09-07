@@ -4,6 +4,7 @@
 // Source: *.preview.dart files discovered under the scan dir.
 
 import 'package:magic_devtools/preview.dart';
+import 'ui/components/artwork/artwork.preview.dart';
 import 'ui/components/channel_mark/channel_mark.preview.dart';
 import 'ui/components/channel_row/channel_row.preview.dart';
 import 'ui/components/epg_row/epg_row.preview.dart';
@@ -16,6 +17,11 @@ import 'ui/components/title_poster/title_poster.preview.dart';
 
 List<PreviewEntry> previewEntries() {
   return <PreviewEntry>[
+    PreviewEntry(
+      label: 'Artwork',
+      slug: 'artwork',
+      builder: (_) => const ArtworkPreview(),
+    ),
     PreviewEntry(
       label: 'ChannelMark',
       slug: 'channel_mark',
