@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Dusk end-to-end walk of the line-up screen.
+# Dusk end-to-end walk of the live television screen.
 #
-# Every browse layout has to carry the same three capabilities, on a phone and
-# on a desktop: search the whole line-up, star a channel, and say something
-# useful about a channel the provider sent no EPG for. This asserts all three on
-# all four at both widths, and fails on any app exception.
+# Every direction has to carry the same four capabilities, on a phone and on a
+# desktop: search the whole line-up, star a channel, narrow by category and get
+# back out again, and say something useful about a channel the provider sent no
+# EPG for. This asserts all four on all three at both widths, and fails on any
+# app exception.
 #
 # It drives the app through dusk rather than a browser automation library, so
 # what it exercises is the running Flutter tree and the same semantics labels a
@@ -30,23 +31,27 @@ mkdir -p "$OUT"
 # shellcheck source=tool/dusk/_lib.sh
 source "$(dirname "$0")/_lib.sh"
 
-# Something only this layout renders.
+# Something only this direction renders, at this width.
 #
-# Without it the walk asserts nothing but layout-agnostic facts, so a missed
-# switcher tap or a regressed `showLayout` would let every check pass against
-# the default layout four times over.
-layout_marker() {
-  case "$1" in
-    # Each of these has to hold at BOTH widths, which the first attempt did
-    # not: Sinyal's mode toggle and Sahne's jump rail are both desktop-only, so
-    # the mobile pass reported the wrong layout on screen.
-    Sinyal) printf 'button "Bilgi"' ;;
-    # The merged heading node ends the line after the name and carries its
-    # count on the next, so the anchor is the line end rather than a space.
-    # The category strip's own child text closes its quote on the same line.
-    Vitrin) printf 'text "Ulusal$' ;;
-    Sahne)  printf 'text "ULUSAL' ;;
-    Mozaik) printf 'SEÇİLİ KANAL' ;;
+# Without it the walk asserts nothing but direction-agnostic facts, so a missed
+# switcher tap or a regressed `showDirection` would let every check pass against
+# the default direction three times over.
+#
+# Two markers for Kule rather than one, and that is not a compromise: its
+# detail panel becomes a docked bar below 1100 pixels, so the two widths really
+# do render different things and one marker for both would have to be something
+# neither of them is about. Şimdi and Zaman each have one that holds at both.
+direction_marker() {
+  case "$1-$2" in
+    # An editorial rail title. Only this direction builds rails.
+    Şimdi-*) printf 'Daha yeni başladı' ;;
+    # The panel's technical stack heading, desktop only.
+    Kule-desktop) printf 'text "Künye' ;;
+    # The dock's caption, which ends on the programme's end time. The tile
+    # caption in Şimdi ends on the minutes remaining instead.
+    Kule-mobile) printf 'TRT 1 · 20:55' ;;
+    # The ruler's day label. Nothing else in the app draws a time axis.
+    Zaman-*) printf 'BUGÜN' ;;
   esac
 }
 
@@ -61,7 +66,7 @@ star_ref() {
   ref_matching 'favorilere ekle'
 }
 
-walk_layout() {
+walk_direction() {
   local label="$1" profile="$2" width="$3" height="$4"
   local slug snap ref
   slug="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')-$profile"
@@ -81,19 +86,20 @@ walk_layout() {
 
   snap="$OUT/$slug.snap.yaml"
   $FSA dusk:snap >"$snap" 2>/dev/null
-  $FSA dusk:screenshot --output "$OUT/$slug.png" >/dev/null 2>&1
+  $FSA dusk:screenshot --output="$OUT/$slug.png" >/dev/null 2>&1
 
-  # 0. This layout, and not whichever one was on screen before.
-  expect_in_file "$snap" "$(layout_marker "$label")" "$label: is the layout on screen"
+  # 0. This direction, and not whichever one was on screen before.
+  expect_in_file "$snap" "$(direction_marker "$label" "$profile")" "$label: is the direction on screen"
 
-  # 1. Search reaches the whole line-up from this layout.
+  # 1. Search reaches the whole line-up from here.
   expect_in_file "$snap" 'textbox' "$label: has a search field"
 
-  # 2. Favourites are actionable here, not only from another layout.
+  # 2. Favourites are actionable here, not only from another direction.
   expect_in_file "$snap" 'favorilere ekle|favorilerden çıkar' "$label: has a favourite control"
 
-  # 3. The provider sending no EPG is a designed state, not a hole.
-  expect_in_file "$snap" -i 'akış yok' "$label: names the no-schedule case"
+  # 3. The provider sending no EPG is a designed state, not a hole. Each
+  #    direction words it differently on purpose, so the pattern is loose.
+  expect_in_file "$snap" -i 'akış (bilgisi )?(yok|gelmedi)' "$label: names the no-schedule case"
 
   # 4. Nothing overflowed. Flutter reports this to the console rather than
   #    throwing, so it is invisible to `dusk:exceptions`.
@@ -151,7 +157,7 @@ walk_layout() {
     sleep 2
     expect_no_exceptions "$label search"
     $FSA dusk:snap >"$OUT/$slug.search.yaml" 2>/dev/null
-    $FSA dusk:screenshot --output "$OUT/$slug.search.png" >/dev/null 2>&1
+    $FSA dusk:screenshot --output="$OUT/$slug.search.png" >/dev/null 2>&1
     # The count, not the word `Spor`: the category strip renders that at all
     # times, so asserting on it passed whether the search worked or not.
     expect_in_file "$OUT/$slug.search.yaml" '2 sonuç' "$label: search narrows to two results"
@@ -160,19 +166,19 @@ walk_layout() {
     sleep 2
     expect_no_exceptions "$label empty search"
     $FSA dusk:snap >"$OUT/$slug.empty.yaml" 2>/dev/null
-    $FSA dusk:screenshot --output "$OUT/$slug.empty.png" >/dev/null 2>&1
+    $FSA dusk:screenshot --output="$OUT/$slug.empty.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.empty.yaml" 'Sonuç yok' "$label: empty search has an empty state"
   fi
 }
 
-log "Dusk line-up walk, artefacts in $OUT"
+log "Dusk live-television walk, artefacts in $OUT"
 $FSA dusk:reset_overlays >/dev/null 2>&1
 
 for profile in "desktop 1440 900" "mobile 414 896"; do
   # shellcheck disable=SC2086
   set -- $profile
-  for label in Sinyal Vitrin Sahne Mozaik; do
-    walk_layout "$label" "$1" "$2" "$3"
+  for label in Şimdi Kule Zaman; do
+    walk_direction "$label" "$1" "$2" "$3"
   done
 done
 

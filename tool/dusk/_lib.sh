@@ -43,6 +43,12 @@ refute_in_file() {
 #
 # Counted on `"fatal":`, which every exception entry carries and the response
 # envelope does not.
+#
+# One more thing worth knowing about the store: `dusk:exceptions --clear` empties
+# the render-error half and leaves the `FlutterError` half behind. A cleared
+# store therefore still reports the previous run's overflows, with their original
+# timestamps, until the app is restarted. `reset_app` restarts, so the walks are
+# unaffected; a hand-run `--clear` is not enough to trust a zero.
 expect_no_exceptions() {
   local body count
   body="$($FSA dusk:exceptions 2>/dev/null)"

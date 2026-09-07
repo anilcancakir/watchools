@@ -2,10 +2,14 @@
 #
 # Dusk end-to-end walk of the catalogue screen.
 #
-# The same contract as the line-up walk, plus the two things a VOD library has
-# that a channel list does not: a scope switch between films and series, and a
-# series that has to open on the episode the viewer left off at rather than on
-# season one. Both are asserted on a phone and on a desktop.
+# The same contract as the live walk, plus the two things a VOD library has that
+# a channel list does not: a scope switch between films and series, and a search
+# that has to reach episode titles rather than stopping at the top level. Both
+# are asserted on a phone and on a desktop.
+#
+# The detail screen is a route of its own now and has its own walk. What this
+# one asserts about it is only that opening a title GETS there, which is the
+# seam between the two.
 #
 # What a green run does NOT prove: anything about a real device, a D-pad, or
 # text scaling. It runs on web at scale 1.0 with a mouse.
@@ -26,17 +30,22 @@ mkdir -p "$OUT"
 # shellcheck source=tool/dusk/_lib.sh
 source "$(dirname "$0")/_lib.sh"
 
-# Something only this layout renders.
-layout_marker() {
+# Something only this direction renders, and at both widths.
+#
+# All three hold on a phone as well as a desktop, which the previous set did
+# not: two of its three markers were desktop-only chrome, so the mobile pass
+# reported the wrong direction on screen and every check under it certified
+# whatever happened to be there.
+direction_marker() {
   case "$1" in
-    # Each has to hold at BOTH widths. Defter's column header is desktop-only,
-    # so `BAŞLIK` reported the wrong layout on the mobile pass, and the DİZİ
-    # badge is invisible to the semantics tree because the row's own label
-    # replaces its descendants. The resume note in that label is Defter's: the
-    # other two show progress as a bar with no words.
-    Duvar)  printf 'button "Sessiz Şehir 2024"' ;;
-    Defter) printf 'sırada|dk kaldı' ;;
-    Sergi)  printf 'ayrıntıları' ;;
+    # The resume rail's source line. Only this direction builds a hero and
+    # rails, and only it names where the resume point came from.
+    Vitrin)     printf 'Bu cihazda kaldığın yer' ;;
+    # The grid/table toggle. Only this direction hands the user controls, and
+    # they now keep their own line on a phone rather than being dropped.
+    Raf)        printf 'Liste görünümü' ;;
+    # The provider rail, which is this direction's own borrowing from Apple.
+    Koleksiyon) printf 'Kaynakların' ;;
   esac
 }
 
@@ -53,7 +62,7 @@ star_ref() {
   ref_matching "\"$STAR_SUBJECT favorilere ekle\""
 }
 
-walk_layout() {
+walk_direction() {
   local label="$1" profile="$2" width="$3" height="$4"
   local slug snap ref
   slug="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')-$profile"
@@ -73,9 +82,9 @@ walk_layout() {
 
   snap="$OUT/$slug.snap.yaml"
   $FSA dusk:snap >"$snap" 2>/dev/null
-  $FSA dusk:screenshot --output "$OUT/$slug.png" >/dev/null 2>&1
+  $FSA dusk:screenshot --output="$OUT/$slug.png" >/dev/null 2>&1
 
-  expect_in_file "$snap" "$(layout_marker "$label")" "$label: is the layout on screen"
+  expect_in_file "$snap" "$(direction_marker "$label")" "$label: is the direction on screen"
   expect_in_file "$snap" 'textbox' "$label: has a search field"
   expect_in_file "$snap" 'favorilere ekle|favorilerden çıkar' "$label: has a favourite control"
   # A title the provider sent no artwork for is stated rather than left blank.
@@ -106,44 +115,40 @@ walk_layout() {
     sleep 2
     expect_no_exceptions "$label series scope"
     $FSA dusk:snap >"$OUT/$slug.series.yaml" 2>/dev/null
-    $FSA dusk:screenshot --output "$OUT/$slug.series.png" >/dev/null 2>&1
+    $FSA dusk:screenshot --output="$OUT/$slug.series.png" >/dev/null 2>&1
     refute_in_file "$OUT/$slug.series.yaml" 'Sessiz Şehir' "$label: series scope excludes films"
     expect_in_file "$OUT/$slug.series.yaml" '5 başlık' "$label: series scope narrows the count"
 
-    # The resume point. `Bozkır Hattı` is finished through S02B01 and part way
-    # into S02B02, so the play button has exactly one right answer and season
-    # two is the one that must be open.
-    # Matched on the name and filtered past the favourite button, rather than
-    # on the label's shape: the label is a full sentence now (name, kind, year,
-    # length, rating, resume note) because a `WAnchor` label replaces the text
-    # of everything under it, and a matcher keyed to the old `name year` shape
-    # broke the moment that was fixed.
-    local seriesitem
-    seriesitem="$($FSA dusk:snap 2>/dev/null | rg 'Bozkır Hattı' | rg -v 'favori' \
+    # Opening a title leaves for the title route. That is the seam this walk
+    # owns; what the title screen then renders is the title walk's business.
+    #
+    # Matched on the name and filtered past the favourite button rather than on
+    # the label's shape: a `WAnchor` label replaces the text of everything under
+    # it, so the label is a full sentence and its wording differs by direction.
+    local item
+    item="$($FSA dusk:snap 2>/dev/null | rg 'Bozkır Hattı' | rg -v 'favori' \
       | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1)"
-    if [ -z "$seriesitem" ]; then
+    if [ -z "$item" ]; then
       fail "$label: the fixture series is not reachable in series scope"
     else
-      $FSA dusk:tap --ref "$seriesitem" >/dev/null 2>&1
-      sleep 2
-      expect_no_exceptions "$label series select"
-      $FSA dusk:snap >"$OUT/$slug.detail.yaml" 2>/dev/null
-      $FSA dusk:screenshot --output "$OUT/$slug.detail.png" >/dev/null 2>&1
-      expect_in_file "$OUT/$slug.detail.yaml" 'S02B02 oynat' "$label: resumes at the right episode"
-      # The first episode of season two, which is always at the top of the list
-      # whatever the viewport. Asserting on the last one tested the fold.
-      expect_in_file "$OUT/$slug.detail.yaml" 'S02B01' "$label: opens the season the resume point is in"
-      refute_overflow "$OUT/$slug.detail.yaml" "$label detail"
-    fi
+      $FSA dusk:tap --ref "$item" >/dev/null 2>&1
+      sleep 3
+      expect_no_exceptions "$label open title"
+      $FSA dusk:snap >"$OUT/$slug.opened.yaml" 2>/dev/null
+      $FSA dusk:screenshot --output="$OUT/$slug.opened.png" >/dev/null 2>&1
+      # The title screen's own switcher, which the catalogue screen does not
+      # have. Asserting on the title's NAME would pass without navigating.
+      expect_in_file "$OUT/$slug.opened.yaml" 'button "Künye: ' "$label: opening a title reaches the title route"
 
-    # Back out of the detail if the layout opened one. The library chrome only
-    # exists on the library, which is correct, so the walk has to leave.
-    local backref
-    backref="$(ref_matching 'Kütüphaneye dön')"
-    if [ -n "$backref" ]; then
-      $FSA dusk:tap --ref "$backref" >/dev/null 2>&1
-      sleep 2
-      expect_no_exceptions "$label detail dismiss"
+      # Navigated rather than popped. `dusk:navigate_back` pops the active
+      # Navigator, and under `MaterialApp.router` that leaves the router's own
+      # location behind: the catalogue chrome came back but every control on it
+      # was unreachable, so the four checks after this one failed for a reason
+      # that had nothing to do with them. Whether BACK works is the title walk's
+      # assertion; this one only needs to be on the catalogue again.
+      $FSA dusk:navigate --route "$ROUTE" >/dev/null 2>&1
+      sleep 3
+      expect_no_exceptions "$label return to the catalogue"
     fi
 
     local allref
@@ -171,14 +176,14 @@ walk_layout() {
     sleep 2
     expect_no_exceptions "$label episode search"
     $FSA dusk:snap >"$OUT/$slug.search.yaml" 2>/dev/null
-    $FSA dusk:screenshot --output "$OUT/$slug.search.png" >/dev/null 2>&1
+    $FSA dusk:screenshot --output="$OUT/$slug.search.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.search.yaml" '1 sonuç' "$label: search reaches episode titles"
 
     $FSA dusk:fill --ref "$sref" --text 'zzzzzz' >/dev/null 2>&1
     sleep 2
     expect_no_exceptions "$label empty search"
     $FSA dusk:snap >"$OUT/$slug.empty.yaml" 2>/dev/null
-    $FSA dusk:screenshot --output "$OUT/$slug.empty.png" >/dev/null 2>&1
+    $FSA dusk:screenshot --output="$OUT/$slug.empty.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.empty.yaml" 'Sonuç yok' "$label: empty search has an empty state"
   fi
 }
@@ -189,8 +194,8 @@ $FSA dusk:reset_overlays >/dev/null 2>&1
 for profile in "desktop 1440 900" "mobile 414 896"; do
   # shellcheck disable=SC2086
   set -- $profile
-  for label in Duvar Defter Sergi; do
-    walk_layout "$label" "$1" "$2" "$3"
+  for label in Vitrin Raf Koleksiyon; do
+    walk_direction "$label" "$1" "$2" "$3"
   done
 done
 
