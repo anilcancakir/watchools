@@ -15,6 +15,7 @@ import 'config/logging.dart';
 import 'config/network.dart';
 import 'config/routing.dart';
 import 'config/view.dart';
+import 'config/watchools_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,5 +48,8 @@ void main() async {
     MagicDuskIntegration.install();
   }
 
-  runApp(const MagicApplication(title: 'Watchools', titleSuffix: 'Watchools'));
+  // Dark-first, not dark-only: the light palette exists and clears AA, but
+  // nothing exposes a switch yet, so pinning the mode keeps the app off a
+  // half-designed daytime theme rather than leaving it to the OS.
+  runApp(MagicApplication(title: 'Watchools', windTheme: buildWatchoolsWindTheme(), themeMode: ThemeMode.dark));
 }

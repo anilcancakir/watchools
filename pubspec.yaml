@@ -70,3 +70,14 @@ flutter:
     # credential never goes here: those are per-user, live in `Vault` on the
     # device, and a bundled asset is readable in a shipped web build.
     - .env
+
+  fonts:
+    # One variable file, no `weight:` keys. Since Flutter 3.41 `TextStyle
+    # .fontWeight` drives the `wght` axis directly, so the single asset covers
+    # 400 through 900. Six static cuts would be 389 KB against this 172 KB.
+    #
+    # Renamed off the upstream `SchibstedGrotesk[wght].ttf`: square brackets in
+    # an asset path are a needless risk across six platforms.
+    - family: Schibsted Grotesk
+      fonts:
+        - asset: assets/fonts/SchibstedGrotesk-Variable.ttf
