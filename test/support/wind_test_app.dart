@@ -23,10 +23,20 @@ import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 /// ```dart
 /// await tester.pumpWidget(wrapWithTheme(const WText('Hi', className: 'text-lg')));
 /// ```
-Widget wrapWithTheme(Widget child, {WindThemeData? themeData}) {
+/// Pass [brightness] to pin which half of every `'<light> dark:<dark>'` alias
+/// resolves. The app is dark-first, so a test that does not pin it asserts
+/// against the light half and will not catch a dark-mode regression.
+///
+/// `syncWithSystem` is forced off alongside it. Wind documents this as
+/// divergence F05: a declarative `brightness` is overridden by the system
+/// value unless sync is disabled, so setting brightness alone leaves the test
+/// resolving whatever the host machine is set to.
+Widget wrapWithTheme(Widget child, {WindThemeData? themeData, Brightness brightness = Brightness.light}) {
+  final WindThemeData base = themeData ?? WindThemeData();
+
   return MaterialApp(
     home: WindTheme(
-      data: themeData ?? WindThemeData(),
+      data: base.copyWith(brightness: brightness, syncWithSystem: false),
       child: Scaffold(body: child),
     ),
   );

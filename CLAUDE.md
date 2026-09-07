@@ -23,6 +23,8 @@ Ecosystem packages are declared **hosted** and resolved locally through the giti
 
 `pubspec.lock` is committed and must be the **hosted-only** one. A local `pub get` with the overrides active rewrites it with sibling paths; leave those unstaged. `.gitignore` carries the regeneration recipe.
 
+The same applies to the generated plugin registrants under `android/`, `ios/`, `macos/`, `linux/` and `windows/`. They are written by `pub get` and their contents depend on which resolution was active, so a registrant generated under the overrides can name a different plugin than the one CI builds. Regenerate them with the overrides moved aside, alongside the lock.
+
 ## Commands
 
 ```bash
