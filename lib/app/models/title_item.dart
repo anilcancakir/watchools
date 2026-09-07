@@ -71,6 +71,27 @@ class Episode {
   String get runtimeLabel => '$minutes dk';
 }
 
+/// One person in a title's cast or crew.
+///
+/// The portrait is nullable and usually null. Every reference renders a missing
+/// one as a grey circle carrying initials rather than dropping the person, and
+/// that is the whole reason this is a type rather than a pair of strings: the
+/// fallback has to be somebody's decision.
+@immutable
+class CastMember {
+  /// The person's name.
+  final String name;
+
+  /// What they did: a character name, `Yönetmen`, `Senarist`.
+  final String role;
+
+  /// The portrait, or null.
+  final String? imageUrl;
+
+  /// Creates a [CastMember].
+  const CastMember({required this.name, required this.role, this.imageUrl});
+}
+
 /// One movie or series in the user's VOD catalogue.
 ///
 /// A plain value type for the same reason [Episode] is: there is no data layer
@@ -113,6 +134,10 @@ class TitleItem {
   /// Technical facts, rendered as neutral chips: `4K`, `H.265`, `5.1`.
   final List<String> facts;
 
+  /// Cast and crew, in billing order. Empty is common in a real feed and is a
+  /// designed state on the detail screen rather than a dropped section.
+  final List<CastMember> cast;
+
   /// Every episode, flat and ordered. Empty for a movie.
   ///
   /// Flat rather than nested by season, because a provider sends it flat and
@@ -140,6 +165,7 @@ class TitleItem {
     this.genres = const <String>[],
     this.synopsis,
     this.facts = const <String>[],
+    this.cast = const <CastMember>[],
     this.episodes = const <Episode>[],
     this.progress = 0,
     this.favourite = false,
@@ -184,6 +210,22 @@ class TitleItem {
     return progress > 0.03 && progress < 0.92;
   }
 
+  /// How many episodes the viewer has not started, or null for a movie and for
+  /// a fully-watched series.
+  ///
+  /// Plex puts this in a square badge on the corner of the poster rather than
+  /// in the caption, and it is the single most useful number on a series card:
+  /// it answers "is there anything here for me" without opening anything. Null
+  /// rather than zero, so the caller renders no badge instead of a badge
+  /// announcing nothing.
+  int? get unwatchedCount {
+    if (!isSeries) return null;
+
+    final int count = episodes.where((Episode e) => e.progress <= 0.03).length;
+
+    return count == 0 ? null : count;
+  }
+
   /// `1s 52dk` for a movie, `3 sezon` for a series.
   String get lengthLabel {
     if (isSeries) return '${seasons.length} sezon';
@@ -211,6 +253,7 @@ class TitleItem {
     genres: genres,
     synopsis: synopsis,
     facts: facts,
+    cast: cast,
     episodes: episodes,
     progress: progress,
     favourite: !favourite,

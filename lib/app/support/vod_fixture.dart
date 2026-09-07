@@ -36,6 +36,14 @@ const List<String> vodCategories = <String>[
 String _poster(String seed) => 'https://picsum.photos/seed/$seed/400/600';
 String _backdrop(String seed) => 'https://picsum.photos/seed/$seed/1280/720';
 
+/// Two square portraits, shared across the cast lists.
+///
+/// Constants rather than a helper, because a `const CastMember` needs a const
+/// URL. Two rather than one per person on purpose: the point of the fixture is
+/// the ratio of portraits to blanks, not the variety of faces.
+const String _portraitOne = 'https://picsum.photos/seed/portre-1/200/200';
+const String _portraitTwo = 'https://picsum.photos/seed/portre-2/200/200';
+
 /// The fixture catalogue: movies first, then series.
 final List<TitleItem> vodFixture = <TitleItem>[
   // A part-watched flagship with everything filled in. The best case, and the
@@ -55,6 +63,17 @@ final List<TitleItem> vodFixture = <TitleItem>[
         'süren dedektifin yirmi dört saati. Kalabalığın arasında kaybolmak, '
         'aradığın kişiden çok kendini kaybetmek anlamına geliyor.',
     facts: const <String>['4K', 'HDR', 'H.265', '5.1'],
+    // Two of the five carry no portrait, which is the ratio a real feed sends
+    // and the reason the cast rail's fallback is a designed state rather than a
+    // gap. `Aylin Gürses` also has no photo AND the longest name, which is what
+    // the two-line clamp under a circle is there for.
+    cast: const <CastMember>[
+      CastMember(name: 'Deniz Aksoy', role: 'Komiser Ferhat', imageUrl: _portraitOne),
+      CastMember(name: 'Selin Yalçın', role: 'Nihal'),
+      CastMember(name: 'Mert Öztürk', role: 'Sabri', imageUrl: _portraitTwo),
+      CastMember(name: 'Aylin Gürses Karahan', role: 'Yönetmen'),
+      CastMember(name: 'Kaan Demirsoy', role: 'Senarist'),
+    ],
     progress: 0.41,
     favourite: true,
   ),
@@ -186,6 +205,12 @@ final List<TitleItem> vodFixture = <TitleItem>[
         'ailelerin üç kuşaklık hikâyesi.',
     facts: const <String>['4K', 'HDR', 'H.265', '5.1'],
     favourite: true,
+    cast: const <CastMember>[
+      CastMember(name: 'Hakan Beyaz', role: 'Rasim', imageUrl: _portraitOne),
+      CastMember(name: 'Elif Tanrıkulu', role: 'Zehra'),
+      CastMember(name: 'Orhan Kılıç', role: 'Mühendis Cemil', imageUrl: _portraitTwo),
+      CastMember(name: 'Nurgül Seven', role: 'Yönetmen'),
+    ],
     episodes: <Episode>[
       Episode(
         season: 1,
