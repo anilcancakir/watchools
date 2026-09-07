@@ -68,11 +68,17 @@ These are package gaps, not app gaps. Fix them in the sibling and follow the con
 
 ## Testing
 
-The coverage target is **90% on both halves**. The backend is there. The Flutter floor is currently **40%**, over a denominator that excludes Magic's generated scaffold, and it ratchets up in the same pull request as each screen's tests, never in one of its own.
+The coverage target is **90% on both halves** and both halves are there, over a denominator that excludes Magic's generated scaffold. A floor moves in the same pull request as the tests that earned it, never in a commit of its own.
 
 One property of `flutter test --coverage` shapes how to read a red run: lcov only carries files the tests actually import, so the denominator moves when a test imports something new. Read the step's printed `hit/found` before assuming a regression.
 
 Wind's parser cache is static and outlives a single test, so every widget test calls `setUp(WindParser.clearCache)` or it can pass for the wrong reason. Widget tests go through `wrapWithTheme()` in `test/support/wind_test_app.dart`; without a `WindTheme` ancestor every class silently resolves to nothing.
+
+Two things a widget test here cannot tell you, both measured. `flutter_test` substitutes a font whose every glyph is a square of the font size (four characters at `fontSize: 14` measure exactly 56 logical pixels), so text is half again to twice as wide as in Schibsted Grotesk and **overflow assertions are meaningless**: `test/support/screen.dart` ignores overflow deliberately and records why. And a widget test never touches the real engine, so a CanvasKit crash or an absorbed semantics label only shows up in the dusk walks.
+
+A whole screen goes through `pumpScreen()` in `test/support/screen.dart` rather than `wrapWithTheme()`, which leaves the surface at the test default of 800x600: neither width this app is designed against, and on the wrong side of `md` from both.
+
+The walks are `tool/dusk/lineup_e2e.sh` and `tool/dusk/library_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: four of its comments record a way an earlier version of that gate passed unconditionally.
 
 `.env` is a real asset during `flutter test`, so a test asserting an `env()` default passes because `.env` supplies the same string, never because the default ran. Assert an overridden value instead.
 
