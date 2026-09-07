@@ -18,7 +18,7 @@ import 'support/library_toolbar.dart';
 import 'support/nav_rail.dart';
 import 'support/page_gutter.dart';
 
-/// Direction one: the catalogue as a shop window.
+/// `Vitrin`: the catalogue as a shop window.
 ///
 /// Netflix's browse screen. One title is promoted at hero scale and everything
 /// else is a rail, because the screen's job here is to end the decision rather
@@ -66,7 +66,7 @@ class ShowcaseLayout extends StatelessWidget {
                         return _posterRail(name, items, wide);
                       },
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                    const SliverToBoxAdapter(child: PageGutter.gap),
                   ],
                 ),
         ),

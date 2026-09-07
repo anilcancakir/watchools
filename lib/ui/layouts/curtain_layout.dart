@@ -13,7 +13,7 @@ import '../components/section_header/index.dart';
 import 'support/page_gutter.dart';
 import 'support/title_sections.dart';
 
-/// Detail direction two: the cinematic one, designed for a remote first.
+/// `Perde`: the title screen, cinematic and designed for a remote first.
 ///
 /// Netflix's television detail screen. Full-bleed artwork, the title at display
 /// scale, one white-weight verb, and then the part worth copying above all: the
@@ -25,7 +25,7 @@ import 'support/title_sections.dart';
 /// columns cost one horizontal press, and both facts are on screen the whole
 /// time.
 ///
-/// The other thing this direction takes from Netflix is what it leaves out. No
+/// The other thing this screen takes from Netflix is what it leaves out. No
 /// poster appears anywhere: the artwork already said what this is, and a poster
 /// beside a backdrop of the same title is the same information twice.
 @immutable
@@ -54,17 +54,17 @@ class CurtainLayout extends StatelessWidget {
           else
             const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           // The technical stack, on a series as well as a film. It used to be
-          // in the film branch only, so this direction was the one that dropped
-          // the doctrine's seventh rule exactly where the pages are longest and
-          // a viewer is most likely to be checking whether a stream is what the
-          // provider called it.
+          // in the film branch only, so the screen dropped the doctrine's
+          // seventh rule exactly where the pages are longest and a viewer is
+          // most likely to be checking whether a stream is what the provider
+          // called it.
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           SliverToBoxAdapter(child: TitleSections.specs(title)),
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           SliverToBoxAdapter(child: TitleSections.cast(title)),
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           SliverToBoxAdapter(child: TitleSections.related(controller, title)),
-          const SliverToBoxAdapter(child: SizedBox(height: 96)),
+          const SliverToBoxAdapter(child: PageGutter.gap),
         ],
       ),
     );
@@ -86,7 +86,7 @@ class CurtainLayout extends StatelessWidget {
           Scrim.left,
           Scrim.bottom,
           Positioned(
-            top: 16,
+            top: PageGutter.value,
             left: PageGutter.value,
             child: WAnchor(
               onTap: () => MagicRoute.back(),
@@ -148,11 +148,10 @@ class CurtainLayout extends StatelessWidget {
             ),
           ],
         ),
-        // The empty case says so rather than leaving a gap. This direction is
-        // the one that had no such state at all: a provider that sends no
-        // synopsis is the common case, and a hero that simply omits the
-        // paragraph reads as a page that failed to load rather than as a
-        // provider that sent nothing.
+        // The empty case says so rather than leaving a gap. This screen had no
+        // such state at all: a provider that sends no synopsis is the common
+        // case, and a hero that simply omits the paragraph reads as a page that
+        // failed to load rather than as a provider that sent nothing.
         if (title.synopsis == null)
           const WText('Sağlayıcı bu başlık için özet göndermedi.', className: 'text-base text-fg-disabled')
         else if (wide)
@@ -182,7 +181,7 @@ class CurtainLayout extends StatelessWidget {
   ///
   /// Below 900 pixels there is no room for both, so the seasons become the
   /// shared horizontal chip rail. That is a real concession rather than a
-  /// responsive trick: the two-column arrangement is this direction's whole
+  /// responsive trick: the two-column arrangement is this screen's whole
   /// argument, and it only holds at television and desktop widths.
   Widget _seasonSplit(TitleItem title, bool wide) {
     if (!wide) {

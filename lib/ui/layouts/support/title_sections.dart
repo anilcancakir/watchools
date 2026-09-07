@@ -13,13 +13,14 @@ import '../../components/section_header/index.dart';
 import '../../components/title_poster/index.dart';
 import 'page_gutter.dart';
 
-/// The sections all three detail directions share.
+/// The title screen's sections: seasons, episodes, cast, technical stack and
+/// the play verb.
 ///
-/// Extracted because there are exactly three callers, which is the bar: a
-/// season list, an episode list, a cast rail and a technical stack are the same
-/// content in all three, and the directions differ in how they COMPOSE those,
-/// not in what a season chip looks like. Letting each direction own its own
-/// copy would make the comparison a comparison of four accidental variations.
+/// A namespace rather than an abstraction. It was extracted when three detail
+/// layouts competed and shared this content, and it is kept now that one ships
+/// for a plainer reason: `CurtainLayout` is already the longest file in the app
+/// and folding five hundred lines of section builders back into it buys
+/// nothing. Nothing here varies by caller, so there is no interface to regret.
 abstract final class TitleSections {
   /// The season selector, as a row of posters with unwatched counts.
   ///
@@ -90,8 +91,8 @@ abstract final class TitleSections {
 
   /// The episode list for whichever season is selected.
   ///
-  /// [density] is `full` where the direction has room for a still and a
-  /// synopsis, and `compact` where it does not.
+  /// [density] is `full` where the caller has room for a still and a synopsis,
+  /// and `compact` where it does not.
   static Widget episodes(LibraryController controller, TitleItem title, {String density = 'full'}) {
     if (!title.isSeries) return const SizedBox.shrink();
 

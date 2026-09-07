@@ -138,7 +138,7 @@ void main() {
     });
   });
 
-  group('the detail surface', () {
+  group('the title screen', () {
     test('opens on the season the next episode is in, not season one', () {
       controller.select(bozkir());
 
@@ -152,24 +152,20 @@ void main() {
       expect(controller.season, 1);
     });
 
-    test('switching direction keeps the filters, which is the point of sharing', () {
+    test('opening a title leaves the catalogue filters alone', () {
+      // The two routes share one controller, so the title screen is the one
+      // place a stray write would silently reset what the viewer had narrowed
+      // to and only show up when they pressed back.
       controller.selectCategory('Dram');
       controller.showScope(LibraryScope.movies);
       final int matched = controller.matches.length;
 
-      controller.showDirection(LibraryDirection.shelf);
+      controller.select(controller.matches.last);
+      controller.selectSeason(1);
 
       expect(controller.category, 'Dram');
       expect(controller.scope, LibraryScope.movies);
       expect(controller.matches.length, matched);
-    });
-
-    test('the detail direction is its own axis and does not disturb the browse one', () {
-      controller.showDirection(LibraryDirection.collection);
-      controller.showDetail(DetailDirection.sheet);
-
-      expect(controller.direction, LibraryDirection.collection);
-      expect(controller.detail, DetailDirection.sheet);
     });
 
     test('selecting a season holds', () {
@@ -200,7 +196,7 @@ void main() {
     });
   });
 
-  group('the shelves the showcase layout draws', () {
+  group('the rails Vitrin draws', () {
     test('continueWatching is what was started and not finished', () {
       expect(controller.continueWatching, isNotEmpty);
       expect(controller.continueWatching.every((TitleItem t) => t.inProgress), isTrue);

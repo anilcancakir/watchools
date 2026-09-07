@@ -11,18 +11,19 @@ import '../components/favourite_button/index.dart';
 import '../components/status_badge/index.dart';
 import 'support/category_strip.dart';
 import 'support/guide_empty.dart';
+import 'support/guide_view_switch.dart';
 import 'support/nav_rail.dart';
 import 'support/page_gutter.dart';
 import 'support/search_field.dart';
 import 'support/time_axis.dart';
 
-/// Direction three: a real broadcast grid.
+/// `Zaman`: a real broadcast grid.
 ///
-/// The only direction where 20:55 and 21:30 are on screen at the same moment,
-/// and the only one where a programme that already ended is reachable. Both
-/// follow from the same choice: time is an axis rather than a label, so the
-/// past is simply the part of the axis to the left of the now line, and
-/// catch-up turns it into something you can play.
+/// The only view where 20:55 and 21:30 are on screen at the same moment, and
+/// the only one where a programme that already ended is reachable. Both follow
+/// from the same choice: time is an axis rather than a label, so the past is
+/// simply the part of the axis to the left of the now line, and catch-up turns
+/// it into something you can play.
 ///
 /// No reference does this, because none of them has to. Netflix and Plex are
 /// catalogues where every item is available at every moment; a broadcast
@@ -91,7 +92,7 @@ class _TimeLayoutState extends State<TimeLayout> {
     // The scheduler phase is the load-bearing one. `jumpTo` from inside the
     // persistent-callbacks phase asks for a render mid-frame, and on Flutter
     // web a hot restart has already disposed the old `EngineFlutterView` by the
-    // time that render lands: every interaction with this direction produced
+    // time that render lands: every interaction with this view produced
     // `Trying to render a disposed EngineFlutterView`
     // (`engine/window.dart:99`). It was invisible until the walk's exception
     // gate was re-armed, because the framework reports it through
@@ -153,32 +154,63 @@ class _TimeLayoutState extends State<TimeLayout> {
     );
   }
 
-  /// The search field and the count.
+  /// The search field, the count and the view switch.
   ///
-  /// Fixed-width and spaced apart on a wide bar; sharing the row on a narrow
-  /// one. `w-full shrink-0` on both is what the first version wrote, and it
-  /// overflowed by exactly the count's width: `w-full` claims the whole row and
-  /// `shrink-0` then refuses to give any of it back.
+  /// The same arrangement `Şimdi` puts over its hero, at the same widths, in
+  /// the same order: search, then the count, then the switch anchoring the
+  /// right edge. The two views are meant to feel like two cuts of one screen
+  /// rather than two screens, and a control that moves between them is the
+  /// fastest way to break that.
+  ///
+  /// One line above `sm` and two below it. The count is a whole sentence
+  /// (`23 kanal · 3 kanalda akış yok`), and beside a field and a two-segment
+  /// switch it does not share 366 pixels with them.
+  ///
+  /// The field is fixed-width above `sm` rather than `flex-1` with a maximum
+  /// beside it: `flex-1` is an `Expanded` and its tight minimum beats the
+  /// maximum. `w-full shrink-0` is what the first version wrote and it
+  /// overflowed by exactly the count's width, because `w-full` claims the whole
+  /// row and `shrink-0` then refuses to give any of it back.
   Widget _toolbar({required bool wide}) {
     final String? note = controller.noGuideNote;
 
-    return WDiv(
-      className: 'flex flex-row items-center gap-4 w-full ${PageGutter.x} ${PageGutter.top}',
-      children: <Widget>[
-        WDiv(
-          // A fixed width above `sm`, not `flex-1` with a maximum beside it:
-          // `flex-1` is an `Expanded` and its tight minimum beats the maximum.
-          className: wide ? 'w-[470px] shrink-0' : 'flex-1 min-w-0',
-          child: SearchField(value: controller.query, onChanged: controller.search),
-        ),
-        if (wide) const WDiv(className: 'flex-1'),
-        WDiv(
-          className: 'shrink-0',
-          child: WText(
-            note == null ? controller.countLabel : '${controller.countLabel} · $note',
-            className: 'text-xs text-fg-muted line-clamp-1',
+    final Widget search = WDiv(
+      className: wide ? 'w-[470px] shrink-0' : 'w-full',
+      child: SearchField(value: controller.query, onChanged: controller.search),
+    );
+
+    final Widget count = WDiv(
+      className: 'shrink-0',
+      child: WText(
+        note == null ? controller.countLabel : '${controller.countLabel} · $note',
+        className: 'text-xs text-fg-muted line-clamp-1',
+      ),
+    );
+
+    if (!wide) {
+      return WDiv(
+        className: 'flex flex-col items-start gap-2 w-full ${PageGutter.x} ${PageGutter.top}',
+        children: <Widget>[
+          search,
+          WDiv(
+            className: 'flex flex-row items-center gap-2 w-full',
+            children: <Widget>[
+              count,
+              const WDiv(className: 'flex-1'),
+              GuideViewSwitch(controller: controller),
+            ],
           ),
-        ),
+        ],
+      );
+    }
+
+    return WDiv(
+      className: 'flex flex-row items-center gap-3 w-full ${PageGutter.x} ${PageGutter.top}',
+      children: <Widget>[
+        search,
+        const WDiv(className: 'flex-1'),
+        count,
+        GuideViewSwitch(controller: controller),
       ],
     );
   }
@@ -255,7 +287,7 @@ class _TimeLayoutState extends State<TimeLayout> {
                           ),
                         ),
                         // The now line, drawn over every row at once. It is the
-                        // one element in this direction that belongs to the
+                        // one element in this view that belongs to the
                         // whole grid rather than to a row, so it is painted on
                         // top of the list rather than repeated inside it.
                         const Positioned(
@@ -284,11 +316,19 @@ class _TimeLayoutState extends State<TimeLayout> {
   /// the number is the only thing that separates two channels a provider gave
   /// near-identical names.
   ///
+  /// It stacks the mark over the number rather than putting them in a row, and
+  /// that is arithmetic rather than taste. In a row the 120 pixel column leaves
+  /// the number twenty pixels after the star, the padding, the gaps and a 32
+  /// pixel mark, and `001` needs nineteen at eleven point tabular: it fitted by
+  /// a hair, wrapped one character per line the moment anything grew, and a
+  /// four digit line-up would have wrapped outright. Stacked, the number has
+  /// the whole cell width and the two together are 52 of the 60 available.
+  ///
   /// The star stays. The first version of this cut it along with the name and
   /// the end-to-end walk failed on `Zaman: has a favourite control` at 414
   /// pixels: favourites are the one thing that makes a ten thousand channel
-  /// line-up usable, so a direction that cannot star on a phone is a direction
-  /// that does not work on a phone.
+  /// line-up usable, so a view that cannot star on a phone is a view that does
+  /// not work on a phone.
   Widget _identityCell(Channel channel, {required bool narrow}) {
     final bool selected = identical(channel, controller.channel);
 
@@ -301,12 +341,20 @@ class _TimeLayoutState extends State<TimeLayout> {
             onTap: () => controller.selectChannel(channel),
             semanticLabel: '${channel.numberLabel} ${channel.name}',
             child: WDiv(
-              className: '''
-                flex flex-row items-center gap-2 w-full h-[60px] px-2 rounded-lg
-                hover:bg-surface-container
-                focus:ring-2 focus:ring-focus-ring
-                selected:bg-surface-container-high
-              ''',
+              className: narrow
+                  ? '''
+                    flex flex-col items-center justify-center gap-1
+                    w-full h-[60px] px-1 rounded-lg
+                    hover:bg-surface-container
+                    focus:ring-2 focus:ring-focus-ring
+                    selected:bg-surface-container-high
+                  '''
+                  : '''
+                    flex flex-row items-center gap-2 w-full h-[60px] px-2 rounded-lg
+                    hover:bg-surface-container
+                    focus:ring-2 focus:ring-focus-ring
+                    selected:bg-surface-container-high
+                  ''',
               states: selected ? const <String>{'selected'} : const <String>{},
               children: <Widget>[
                 WDiv(
@@ -315,7 +363,7 @@ class _TimeLayoutState extends State<TimeLayout> {
                 ),
                 if (narrow)
                   WDiv(
-                    className: 'flex-1 min-w-0',
+                    className: 'shrink-0',
                     child: WText(
                       channel.numberLabel,
                       className: 'text-[11px] text-fg-disabled',

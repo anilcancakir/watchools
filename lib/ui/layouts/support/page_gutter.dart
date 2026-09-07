@@ -4,10 +4,11 @@ import 'package:flutter/widgets.dart';
 ///
 /// Every screen in this app sits inside the same container, and the left edge
 /// of a search field, a category pill, a section heading, a grid cell and a
-/// list row all line up on it. That sounds obvious and it was not true: the
-/// nine directions were written with gutters of 12, 16, 20, 24 and 32 pixels
-/// depending on which file the widget happened to live in, so a toolbar and the
-/// strip directly beneath it started at different places on the same screen.
+/// list row all line up on it. That sounds obvious and it was not true: while
+/// nine layouts competed they were written with gutters of 12, 16, 20, 24 and
+/// 32 pixels depending on which file the widget happened to live in, so a
+/// toolbar and the strip directly beneath it started at different places on the
+/// same screen.
 ///
 /// The value is 24. It was chosen by being the one already used by the rails,
 /// which are the widest surfaces and the hardest to move.
@@ -29,7 +30,7 @@ abstract final class PageGutter {
   ///
   /// The same number as the horizontal gutter, and for the same reason: a page
   /// whose vertical rhythm and horizontal rhythm disagree reads as two designs
-  /// stacked. The directions were written with 20, 28, 32 and 36 in different
+  /// stacked. The layouts were written with 20, 28, 32 and 36 in different
   /// files, and the visible result was a category strip sitting eight pixels
   /// under the hero above it and thirty six above the heading below it.
   static const String top = 'pt-6';
@@ -48,13 +49,6 @@ abstract final class PageGutter {
 
   /// Horizontal insets, for a `ListView` or a `GridView`.
   static const EdgeInsets horizontal = EdgeInsets.symmetric(horizontal: value);
-
-  /// Horizontal insets plus room at the bottom for the floating switcher.
-  ///
-  /// The switcher is scaffolding and goes when a direction is chosen, but a
-  /// scrollable whose last row sits under it cannot be reached at all, which
-  /// would hide the very thing being compared.
-  static const EdgeInsets scrollable = EdgeInsets.fromLTRB(value, value, value, 96);
 
   /// The height of a horizontal chip strip.
   ///

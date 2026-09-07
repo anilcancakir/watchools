@@ -4,9 +4,6 @@ import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
 import '../../ui/layouts/curtain_layout.dart';
-import '../../ui/layouts/direction_switcher.dart';
-import '../../ui/layouts/record_layout.dart';
-import '../../ui/layouts/sheet_layout.dart';
 
 /// The title screen: one movie or one series.
 ///
@@ -28,31 +25,8 @@ class TitleView extends MagicStatefulView<LibraryController> {
 }
 
 class _TitleViewState extends MagicStatefulViewState<LibraryController, TitleView> {
-  static const List<DirectionOption> _options = <DirectionOption>[
-    DirectionOption(name: 'Künye', summary: 'Afiş solda, etiketli olgular sağda'),
-    DirectionOption(name: 'Perde', summary: 'Sinematik, sezon ve bölüm iki sütun'),
-    DirectionOption(name: 'Sayfa', summary: 'Mobil düzen, teknik künye ön planda'),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: <Widget>[
-          Positioned.fill(child: _body()),
-          DirectionSwitcher(
-            options: _options,
-            selected: controller.detail.index,
-            onSelect: (int index) => controller.showDetail(DetailDirection.values[index]),
-          ),
-        ],
-      ),
-    );
+    return Scaffold(body: CurtainLayout(controller: controller));
   }
-
-  Widget _body() => switch (controller.detail) {
-    DetailDirection.record => RecordLayout(controller: controller),
-    DetailDirection.curtain => CurtainLayout(controller: controller),
-    DetailDirection.sheet => SheetLayout(controller: controller),
-  };
 }

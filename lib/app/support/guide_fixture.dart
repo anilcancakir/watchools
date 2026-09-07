@@ -206,7 +206,7 @@ final List<Channel> guideFixture = <Channel>[
   // From here down the provider sent no EPG. This is not an edge case: on a
   // real line-up it is routinely half the channels, and it is the reason the
   // guide and the list are separate views. A time axis has nothing to draw for
-  // these, so the toolbars state how many, and the grid direction draws them
+  // these, so the toolbars state how many, and the grid view draws them
   // with a full-window block saying so.
   // ---------------------------------------------------------------------------
   const Channel(

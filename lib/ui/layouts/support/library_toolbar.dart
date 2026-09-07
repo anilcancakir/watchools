@@ -5,12 +5,12 @@ import '../../../app/controllers/library_controller.dart';
 import 'page_gutter.dart';
 import 'search_field.dart';
 
-/// Search, scope and the count, shared by every catalogue direction.
+/// Search, scope and the count: the catalogue's toolbar.
 ///
-/// Unlike the line-up, the three catalogue directions do share this bar. The
-/// scope switch (everything, films, series) is not a styling decision, it is
-/// what the screen is showing, and giving each direction its own version would
-/// mean comparing three different products.
+/// The scope switch (everything, films, series) is not a styling decision, it
+/// is what the screen is showing. It is shaped like the line-up's view switch
+/// on purpose, and sits in the same place, because both answer "same catalogue,
+/// which cut" and two idioms for one idea is one too many.
 ///
 /// The count and the missing-artwork note are one string. As two children they
 /// overlapped at the right edge of a narrow row, and `shrink-0` protects a
@@ -27,20 +27,14 @@ class LibraryToolbar extends StatelessWidget {
   /// axis leaves the field too narrow to show a word of what was typed.
   final bool wide;
 
-  /// The direction's own controls, right-aligned on a wide bar and dropped on a
-  /// narrow one. Plex's card-size slider and sort menu live here.
-  final Widget? trailing;
-
   /// Creates the [LibraryToolbar].
-  const LibraryToolbar({super.key, required this.controller, required this.wide, this.trailing});
+  const LibraryToolbar({super.key, required this.controller, required this.wide});
 
   @override
   Widget build(BuildContext context) {
     // Fixed above `sm` rather than `flex-1` with a maximum beside it, which
     // does not clamp: `flex-1` is an `Expanded` and its tight minimum beats a
-    // `ConstrainedBox` maximum. Written the other way the field either filled
-    // the row or, once the direction added three control groups to the same
-    // line, was squeezed down to four characters of its own placeholder.
+    // `ConstrainedBox` maximum. Written the other way the field filled the row.
     final Widget search = WDiv(
       className: wide ? 'w-[360px] shrink-0' : 'w-full min-w-0',
       child: SearchField(value: controller.query, onChanged: controller.search, subject: 'Film, dizi veya bölüm ara'),
@@ -56,34 +50,16 @@ class LibraryToolbar extends StatelessWidget {
         if (wide)
           // `wrap` with no `flex` beside it. They are the same parser family and
           // the last one written wins, so `wrap` alone cannot be broken by
-          // someone adding a class in front of it. The direction that puts a
-          // sort group, a density group and a view toggle on this line needs
-          // the wrap: at 1100 pixels they and the field do not share one row.
-          WDiv(
-            className: 'wrap items-center gap-3',
-            children: <Widget>[
-              search,
-              _scopes(),
-              _count(),
-              if (trailing != null) WDiv(className: 'shrink-0', child: trailing),
-            ],
-          )
+          // someone adding a class in front of it. Kept rather than reduced to
+          // a plain row: a provider's own category names run long, and the bar
+          // has to survive one arriving here later.
+          WDiv(className: 'wrap items-center gap-3', children: <Widget>[search, _scopes(), _count()])
         else ...<Widget>[
           search,
           // Three lines rather than two. The count is a sentence rather than a
           // number ("15 başlık · 4 başlıkta afiş yok"), and on one line beside
           // three scope tabs it overflowed the row by 31 pixels.
           WDiv(className: 'flex flex-row items-center', children: <Widget>[_scopes()]),
-          // The direction's controls get their own line rather than being
-          // dropped. Plex keeps its sort and its card size on a phone, and it
-          // is right to: a five thousand title catalogue is harder to arrange
-          // on a small screen, not easier, so that is where the controls matter
-          // most.
-          // Placed directly, not inside a `flex flex-row` wrapper. A Row gives
-          // its child unbounded width on the main axis, so the control group's
-          // own `wrap` never had a width to wrap against and ran 163 pixels
-          // past a 414 pixel screen.
-          ?trailing,
           _count(),
         ],
       ],

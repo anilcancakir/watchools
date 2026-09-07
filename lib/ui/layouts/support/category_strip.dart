@@ -5,29 +5,25 @@ import 'package:magic/magic.dart';
 import '../../../app/controllers/guide_controller.dart';
 import 'page_gutter.dart';
 
-/// The horizontal category strip.
+/// The horizontal category strip on the live screen.
 ///
 /// It scrolls rather than wrapping. A provider sends dozens of `group-title`
 /// values with no ordering and no consistent naming, so a strip that tries to
 /// fit them all pushes the content off the screen.
+///
+/// Pills, and the same pills the catalogue's [LibraryCategories] draws: same
+/// height, same radius, same selected fill. It used to be pills in one live
+/// view and underlined tabs in the other, which was defensible while they were
+/// competing designs and is not now that one switch flips between them. The
+/// same control changing shape mid-screen is the "two designs stacked" failure
+/// the page container exists to prevent.
 @immutable
 class CategoryStrip extends StatelessWidget {
   /// The shared line-up state.
   final GuideController controller;
 
-  /// Underline the selected item (a tab bar) or fill it (a pill row). Both
-  /// idioms are in the wild; the pill reads better without a rule under it.
-  final bool pills;
-
-  /// Whether the strip sits over artwork rather than over a surface.
-  ///
-  /// A pill in `bg-surface-container` disappears against a bright still and
-  /// muddies a dark one, so over artwork the resting fill becomes a scrim. Only
-  /// meaningful together with [pills].
-  final bool onScrim;
-
   /// Creates the [CategoryStrip].
-  const CategoryStrip({super.key, required this.controller, this.pills = false, this.onScrim = false});
+  const CategoryStrip({super.key, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +32,7 @@ class CategoryStrip extends StatelessWidget {
     // nothing else on the page shared, and the strip sat closer to the hero
     // above it than to the heading below it.
     return SizedBox(
-      height: pills ? PageGutter.stripHeight : 44,
+      height: PageGutter.stripHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: PageGutter.horizontal,
@@ -54,34 +50,15 @@ class CategoryStrip extends StatelessWidget {
       // than a contract.
       semanticLabel: '$group kategorisi',
       child: WDiv(
-        className: pills && onScrim
-            ? '''
-              flex flex-row items-center gap-1.5
-              mr-2 px-4 rounded-full h-9
-              bg-scrim
-              text-sm font-semibold text-fg
-              hover:bg-scrim-strong
-              focus:ring-2 focus:ring-focus-ring
-              selected:bg-inverse selected:text-on-inverse
-            '''
-            : pills
-            ? '''
-              flex flex-row items-center gap-1.5
-              mr-2 px-4 rounded-full h-9
-              bg-surface-container
-              text-sm font-semibold text-fg-muted
-              hover:bg-surface-container-high hover:text-fg
-              focus:ring-2 focus:ring-focus-ring
-              selected:bg-inverse selected:text-on-inverse
-            '''
-            : '''
-              flex flex-row items-center gap-1.5
-              mr-6 py-3 border-b-2 border-transparent
-              text-sm font-semibold text-fg-disabled
-              hover:text-fg-muted
-              focus:ring-2 focus:ring-focus-ring
-              selected:text-fg selected:border-color-epg-now
-            ''',
+        className: '''
+          flex flex-row items-center gap-1.5
+          mr-2 px-4 rounded-full h-9
+          bg-surface-container
+          text-sm font-semibold text-fg-muted
+          hover:bg-surface-container-high hover:text-fg
+          focus:ring-2 focus:ring-focus-ring
+          selected:bg-inverse selected:text-on-inverse
+        ''',
         states: controller.group == group ? const <String>{'selected'} : const <String>{},
         children: <Widget>[
           if (group == 'Favoriler') const WIcon(Icons.star_rounded, className: 'text-sm'),

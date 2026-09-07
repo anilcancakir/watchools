@@ -173,8 +173,8 @@ class TitleItem {
   /// Every episode, flat and ordered. Empty for a movie.
   ///
   /// Flat rather than nested by season, because a provider sends it flat and
-  /// because grouping is a view concern: the two directions that group by
-  /// season and the one that does not both read the same list.
+  /// because grouping is a view concern: the title screen groups by season and
+  /// the catalogue's search reads the same list straight through.
   final List<Episode> episodes;
 
   /// How far through a movie the viewer got, 0 to 1. Always zero for a series,

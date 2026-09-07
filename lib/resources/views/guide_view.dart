@@ -3,19 +3,21 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/guide_controller.dart';
-import '../../ui/layouts/direction_switcher.dart';
 import '../../ui/layouts/now_layout.dart';
 import '../../ui/layouts/time_layout.dart';
-import '../../ui/layouts/tower_layout.dart';
 
 /// The live television screen.
 ///
-/// It hosts three competing directions rather than one, because the decision
-/// underneath is not styling: it is what this screen is for. Each direction
-/// descends from a different reference and answers that differently, and they
-/// are reachable side by side so the answer can be chosen by looking.
+/// It hosts two layouts rather than one, and that is a product decision rather
+/// than an unfinished bake-off. `Şimdi` answers "what is on", `Zaman` answers
+/// "what is on at nine", and a live line-up is the one surface where those are
+/// different questions: a catalogue has no equivalent of the second, because
+/// everything in it is available at every moment.
 ///
-/// The switcher is scaffolding. It goes with the directions that lose.
+/// Both read one [GuideController], so the query, the category and the
+/// selection survive the switch. The control that does the switching is part of
+/// each layout's toolbar rather than an overlay here, so it sits inside the
+/// page container and cannot cover the content behind it.
 ///
 /// The data is a fixture. There is no protocol layer yet, and this screen
 /// exists to settle the design language before the Xtream client lands.
@@ -28,34 +30,13 @@ class GuideView extends MagicStatefulView<GuideController> {
 }
 
 class _GuideViewState extends MagicStatefulViewState<GuideController, GuideView> {
-  static const List<DirectionOption> _options = <DirectionOption>[
-    DirectionOption(name: 'Şimdi', summary: 'Canlı önizleme ve editoryal raylar'),
-    DirectionOption(name: 'Kule', summary: 'Kenar çubuğu, yoğun liste ve künye paneli'),
-    DirectionOption(name: 'Zaman', summary: 'Gerçek yayın ızgarası ve zaman ekseni'),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    // A Flutter `Stack`, not a `WDiv` carrying `relative`. A multi-child WDiv
-    // composes a Column whatever its position class says, so the switcher's
-    // `Positioned` landed in a Flex and threw ParentDataWidget.
     return Scaffold(
-      body: Stack(
-        children: <Widget>[
-          Positioned.fill(child: _body()),
-          DirectionSwitcher(
-            options: _options,
-            selected: controller.direction.index,
-            onSelect: (int index) => controller.showDirection(GuideDirection.values[index]),
-          ),
-        ],
-      ),
+      body: switch (controller.mode) {
+        GuideMode.now => NowLayout(controller: controller),
+        GuideMode.grid => TimeLayout(controller: controller),
+      },
     );
   }
-
-  Widget _body() => switch (controller.direction) {
-    GuideDirection.now => NowLayout(controller: controller),
-    GuideDirection.tower => TowerLayout(controller: controller),
-    GuideDirection.time => TimeLayout(controller: controller),
-  };
 }

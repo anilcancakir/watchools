@@ -5,28 +5,25 @@ import '../models/channel.dart';
 import '../models/programme.dart';
 import '../support/guide_fixture.dart';
 
-/// The three directions on offer while the design language is being chosen.
+/// The two ways to look at the same line-up.
 ///
-/// Each one is descended from a different reference, and they disagree about
-/// what the screen is for rather than about how it looks. That is the choice
-/// being put to the user; the styling follows from it.
-enum GuideDirection {
-  /// Netflix's television screen, rebuilt around a subject that changes every
-  /// forty minutes. A live hero that ticks, over editorial rails.
+/// Both ship. They are not two styles of one screen, they answer two different
+/// questions: [now] answers "what is on", [grid] answers "what is on at nine".
+/// A viewer opening the app in the evening wants the first and a viewer
+/// planning the evening wants the second, and neither layout can do the other's
+/// job without becoming it.
+enum GuideMode {
+  /// A live hero that ticks, over editorial rails. Netflix's television screen,
+  /// rebuilt around a subject that changes every forty minutes.
   now,
-
-  /// Plex's web library. A labelled sidebar, a dense virtualised list and one
-  /// sticky panel that is the only thing that moves. Built for the line-up
-  /// sizes a real provider ships.
-  tower,
 
   /// A real broadcast grid: channels down, time across, a now line, and past
   /// blocks that are reachable because catch-up makes them playable. The only
-  /// direction where 20:55 and 21:30 are visible at the same moment.
-  time,
+  /// view where 20:55 and 21:30 are visible at the same moment.
+  grid,
 }
 
-/// One editorial rail on the [GuideDirection.now] screen.
+/// One editorial rail on the [GuideMode.now] screen.
 ///
 /// The title is a sentence with a point of view, not a taxonomy label, and the
 /// source line says where the row came from. Both halves are Netflix's and
@@ -48,13 +45,13 @@ class GuideRail {
 }
 
 /// Everything the line-up screen knows: the channels, the filters, the
-/// selection, and which layout is on show.
+/// selection, and which of the two views is on show.
 ///
 /// A [SimpleMagicController] rather than a [MagicController] with a state
 /// mixin: the data is a fixture, so there is no request to be loading or
 /// failing. It becomes a loading controller when the Xtream client lands.
 class GuideController extends SimpleMagicController {
-  /// Resolved once and shared by every layout, so switching between them keeps
+  /// Resolved once and shared by both views, so switching between them keeps
   /// the query, the category and the favourites the user just set.
   static GuideController get instance => Magic.findOrPut(GuideController.new);
 
@@ -78,7 +75,7 @@ class GuideController extends SimpleMagicController {
   /// The line-up, in provider order. Mutable only through [toggleFavourite].
   final List<Channel> channels = List<Channel>.of(guideFixture);
 
-  GuideDirection _direction = GuideDirection.now;
+  GuideMode _mode = GuideMode.now;
   String _group = 'Tümü';
   String _query = '';
   late Channel _channel = channels.first;
@@ -93,8 +90,8 @@ class GuideController extends SimpleMagicController {
   List<(String, List<Channel>)>? _sectionCache;
   List<GuideRail>? _railCache;
 
-  /// Which direction is on show.
-  GuideDirection get direction => _direction;
+  /// Which of the two views is on show.
+  GuideMode get mode => _mode;
 
   /// The selected category, `Tümü` or `Favoriler` included.
   String get group => _group;
@@ -138,9 +135,9 @@ class GuideController extends SimpleMagicController {
 
   /// The subset of [matches] that carries a schedule.
   ///
-  /// Not "what the time axis can draw" any more: the grid direction draws every
+  /// Not "what the time axis can draw" any more: the grid view draws every
   /// match, and gives a channel with no EPG a full-window block saying so. This
-  /// exists for [withoutSchedule], which is the count the toolbars state.
+  /// exists for [withoutSchedule], which is the count both toolbars state.
   List<Channel> get scheduled => _scheduledCache ??= matches.where((Channel c) => c.hasSchedule).toList();
 
   /// [matches] cut into runs of the same `group-title`, in line-up order.
@@ -196,7 +193,7 @@ class GuideController extends SimpleMagicController {
   /// The editorial rails, filtered by the current group and query.
   ///
   /// The first two rows are the ones no catalogue product can offer, and they
-  /// are the reason this direction exists: "you have not missed much" and
+  /// are the reason this view exists: "you have not missed much" and
   /// "starts shortly" are questions only a live schedule can answer, and a
   /// static channel grid answers neither. Everything below them is the
   /// provider's own grouping, which is the only structure a real playlist
@@ -266,20 +263,20 @@ class GuideController extends SimpleMagicController {
   /// How many channels the current filter left, worded for whether a search is
   /// active.
   ///
-  /// On the controller rather than per layout: two of the four said `N kanal`
-  /// whatever the query, so a search that had narrowed the list to two still
-  /// reported the whole line-up. Same number, four spellings, is how a count
-  /// stops being trusted.
+  /// On the controller rather than per view: while four layouts competed, two
+  /// of them said `N kanal` whatever the query, so a search that had narrowed
+  /// the list to two still reported the whole line-up. Same number, four
+  /// spellings, is how a count stops being trusted.
   String get countLabel {
     final int total = matches.length;
 
     return query.trim().isEmpty ? '$total kanal' : '$total sonuç';
   }
 
-  /// The one-line statement every layout makes about missing guide data, or
-  /// null when the provider covered the whole selection.
+  /// The one-line statement both views make about missing guide data, or null
+  /// when the provider covered the whole selection.
   ///
-  /// It is on screen without scrolling, in all four layouts, on purpose. A
+  /// It is on screen without scrolling, in both views, on purpose. A
   /// large share of a real line-up arrives with no EPG, and a user who meets
   /// that one channel at a time reads it as the app failing rather than as the
   /// provider not sending it. Stating the count once turns a recurring glitch
@@ -294,10 +291,12 @@ class GuideController extends SimpleMagicController {
   /// come from the provider's `group-title` values.
   List<String> get groups => guideGroups;
 
-  /// Switches direction. Filters and favourites survive the switch on purpose:
-  /// comparing two directions on different data compares the data.
-  void showDirection(GuideDirection direction) {
-    _direction = direction;
+  /// Switches view. The query, the category and the selection all survive it,
+  /// which is the whole reason both views read one controller: a viewer who has
+  /// narrowed to Spor and then wants to see it on a time axis has not changed
+  /// their mind about Spor.
+  void showMode(GuideMode mode) {
+    _mode = mode;
     refreshUI();
   }
 

@@ -292,8 +292,9 @@ final List<TitleItem> vodFixture = <TitleItem>[
       Episode(season: 1, number: 4, title: 'Liman', minutes: 42, imageUrl: _backdrop('ada-s1b4')),
     ],
   ),
-  // A series with no poster at all: the case the poster-led directions have to
-  // answer for, and the reason one of them is not poster-led.
+  // A series with no poster at all: the case every poster-led surface in the
+  // app has to answer for, and the reason the title screen leads with a
+  // backdrop and typography rather than with an afiş.
   const TitleItem(
     kind: TitleKind.series,
     name: 'Mahalle Defteri',

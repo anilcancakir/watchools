@@ -183,24 +183,35 @@ void main() {
     });
   });
 
-  group('the bake-off state', () {
-    test('direction switches and holds', () {
-      expect(controller.direction, GuideDirection.now);
+  group('the view switch', () {
+    test('arrives on Şimdi and holds a switch to Zaman', () {
+      expect(controller.mode, GuideMode.now);
 
-      controller.showDirection(GuideDirection.time);
-      expect(controller.direction, GuideDirection.time);
+      controller.showMode(GuideMode.grid);
+      expect(controller.mode, GuideMode.grid);
     });
 
-    test('switching direction keeps the filters, which is the whole point', () {
+    test('switching view keeps the filters, which is why both read one controller', () {
       controller.selectGroup('Spor');
       controller.search('e');
       final int matched = controller.matches.length;
 
-      controller.showDirection(GuideDirection.tower);
+      controller.showMode(GuideMode.grid);
 
       expect(controller.group, 'Spor');
       expect(controller.query, 'e');
       expect(controller.matches.length, matched);
+    });
+
+    test('switching view keeps the selected channel and its programme', () {
+      final Channel target = controller.channels.firstWhere((Channel c) => c.hasSchedule);
+      controller.selectChannel(target);
+      final Programme? live = controller.programme;
+
+      controller.showMode(GuideMode.grid);
+
+      expect(controller.channel, same(target));
+      expect(controller.programme, same(live));
     });
   });
 
