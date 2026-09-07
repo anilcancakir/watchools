@@ -7,10 +7,12 @@ import 'package:magic_devtools/preview.dart';
 import 'ui/components/channel_mark/channel_mark.preview.dart';
 import 'ui/components/channel_row/channel_row.preview.dart';
 import 'ui/components/epg_row/epg_row.preview.dart';
+import 'ui/components/episode_row/episode_row.preview.dart';
 import 'ui/components/fact_chip/fact_chip.preview.dart';
 import 'ui/components/favourite_button/favourite_button.preview.dart';
 import 'ui/components/hero_billboard/hero_billboard.preview.dart';
 import 'ui/components/status_badge/status_badge.preview.dart';
+import 'ui/components/title_poster/title_poster.preview.dart';
 
 List<PreviewEntry> previewEntries() {
   return <PreviewEntry>[
@@ -28,6 +30,11 @@ List<PreviewEntry> previewEntries() {
       label: 'EpgRow',
       slug: 'epg_row',
       builder: (_) => const EpgRowPreview(),
+    ),
+    PreviewEntry(
+      label: 'EpisodeRow',
+      slug: 'episode_row',
+      builder: (_) => const EpisodeRowPreview(),
     ),
     PreviewEntry(
       label: 'FactChip',
@@ -48,6 +55,11 @@ List<PreviewEntry> previewEntries() {
       label: 'StatusBadge',
       slug: 'status_badge',
       builder: (_) => const StatusBadgePreview(),
+    ),
+    PreviewEntry(
+      label: 'TitlePoster',
+      slug: 'title_poster',
+      builder: (_) => const TitlePosterPreview(),
     ),
   ];
 }
