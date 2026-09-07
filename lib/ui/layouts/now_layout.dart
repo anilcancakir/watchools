@@ -122,42 +122,7 @@ class NowLayout extends StatelessWidget {
             top: 16,
             left: PageGutter.value,
             right: PageGutter.value,
-            child: WDiv(
-              className: 'flex flex-row items-center gap-3 w-full',
-              children: <Widget>[
-                WDiv(
-                  // Fixed above `sm`, growing below it. A `flex-1` with a
-                  // `max-w-*` beside it does not clamp: `flex-1` is an
-                  // `Expanded`, whose tight minimum beats the maximum.
-                  className: wide ? 'w-[470px] shrink-0' : 'flex-1 min-w-0',
-                  child: _search(),
-                ),
-                // The missing-guide note rides with the count, as it does in
-                // the other two directions. Without it this one stated the
-                // count and left the EPG gap to a rail below the fold, so a
-                // user met it one blank card at a time and read it as the app
-                // failing rather than as their provider not sending it. Stating
-                // the number once turns a recurring glitch into a fact about
-                // their subscription.
-                // On a scrim, like the search field beside it. This is the one
-                // line in the hero that sits over unscrimmed artwork, and the
-                // fixture's first backdrop is a bright sky: muted foreground on
-                // it was well under the contrast floor the rest of this palette
-                // is tested against.
-                WDiv(
-                  className: 'flex-1 min-w-0 flex flex-row justify-end',
-                  children: <Widget>[
-                    WDiv(
-                      className: 'shrink-0 rounded-full bg-scrim-strong px-3 py-1.5',
-                      child: WText(
-                        note == null ? controller.countLabel : '${controller.countLabel} · $note',
-                        className: 'text-xs font-semibold text-fg line-clamp-1',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            child: _heroBar(note: note, wide: wide),
           ),
           // `Align`, and it is load-bearing rather than decorative. A
           // `Positioned` carrying both `left` and `right` hands its child a
@@ -187,6 +152,56 @@ class NowLayout extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  /// The search field and the missing-guide count, over the hero's artwork.
+  ///
+  /// Side by side on a wide screen and stacked on a narrow one. Stacked is not
+  /// a fallback: at 414 pixels the count is a whole sentence
+  /// (`1 sonuç · 1 kanalda akış yok`), and once the field has text its clear
+  /// button appears and the row runs 5.6 pixels past the screen. The catalogue
+  /// toolbar reached the same conclusion for the same reason.
+  ///
+  /// The count carries the missing-guide note as the other two directions do.
+  /// Without it this one stated the count and left the EPG gap to a rail below
+  /// the fold, so a user met it one blank card at a time and read it as the app
+  /// failing rather than as their provider not sending it.
+  ///
+  /// On a scrim, because it is the one line in this hero sitting over unscrimmed
+  /// artwork and the fixture's first backdrop is a bright sky.
+  Widget _heroBar({required String? note, required bool wide}) {
+    final Widget count = WDiv(
+      className: 'shrink-0 rounded-full bg-scrim-strong px-3 py-1.5',
+      child: WText(
+        note == null ? controller.countLabel : '${controller.countLabel} · $note',
+        className: 'text-xs font-semibold text-fg line-clamp-1',
+      ),
+    );
+
+    if (!wide) {
+      return WDiv(
+        className: 'flex flex-col items-start gap-2 w-full',
+        children: <Widget>[
+          WDiv(className: 'w-full', child: _search()),
+          count,
+        ],
+      );
+    }
+
+    return WDiv(
+      className: 'flex flex-row items-center gap-3 w-full',
+      children: <Widget>[
+        WDiv(className: 'w-[470px] shrink-0', child: _search()),
+        // A bare spacer, then the chip as a `shrink-0` child of the row itself.
+        // The panelled direction's toolbar uses the same shape, and the reason
+        // to copy it rather than nest is that a `flex-1` wrapper around a
+        // `flex flex-row justify-end` puts two classes of one parser family on
+        // one element: the last wins and the grow claim is the one that loses.
+        // Written that way this overflowed the hero by 22 pixels.
+        const WDiv(className: 'flex-1'),
+        count,
+      ],
     );
   }
 
