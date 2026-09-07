@@ -101,9 +101,13 @@ void main() {
     });
 
     testWidgets('n-N, which the app used to spend, resolves to nothing', (WidgetTester tester) async {
-      // Kept as a regression marker rather than as an aspiration. Wind's docs
-      // list `n-{n}` but only `line-clamp-{n}` is implemented, and this is the
-      // assertion that would have caught the nine dead tokens.
+      // Kept as a regression marker rather than as an aspiration. `n-3` is a
+      // token this app invented and spent in nine places; Wind implements
+      // `line-clamp-{n}` and nothing else, and an unrecognised token drops
+      // silently, so nine texts had no `maxLines` and the analyser could not
+      // see it. The earlier claim that Wind's own docs promised `n-{n}` was a
+      // misread of a table cell and is retracted in
+      // `.ac/research/ecosystem-defects.md`; this assertion stands on its own.
       final WindStyle style = await resolve(tester, 'n-3');
 
       expect(style.maxLines, isNull);

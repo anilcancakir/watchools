@@ -1,11 +1,17 @@
 # Ecosystem defects found building the design phase
 
-Ten defects in the sibling packages, each reproduced against a specific line
+Seven defects in the sibling packages, each reproduced against a specific line
 and each currently worked around in this app with a comment at the site. Per
 `.claude/rules/workflow.md` the fix belongs in the sibling, on its own branch,
 with its own CI green, following that repository's own rules.
 
 Ordered by how much they cost a consumer who does not know about them.
+
+**Four entries were retracted after a review read the sibling source rather than
+this file.** They are kept at the bottom under `Retracted`, with what was
+actually true, because a defect list that only ever grows is a list nobody
+trusts and because three of them had already been quoted as fact in code
+comments here.
 
 ## 1. `wind`: a clipping row steals the grow share from its own flex child
 
@@ -45,25 +51,7 @@ narrow check looks like an oversight rather than a decision.
 
 **Local workaround**: wrap the anchor in `WDiv(className: 'shrink-0', ...)`.
 
-## 3. `wind`: the display family resolves first-wins, against its own docs
-
-`lib/src/parser/parsers/flexbox_grid_parser.dart:239`
-
-```dart
-if (displayType == null && _displayMap.containsKey(className)) {
-```
-
-Guarding on `displayType == null` means the FIRST display token wins, while
-Wind's documented rule is that the last class in a parser family wins. So
-`flex flex-row items-center wrap` takes `flex` and silently discards `wrap`, and
-the row can never wrap. Five rows in this app were affected.
-
-**Fix**: assign unconditionally, matching the documented rule and every other
-family.
-
-**Local workaround**: write `wrap` with no `flex` beside it.
-
-## 4. `wind`: three hardcoded light greys with no dark peer
+## 3. `wind`: three hardcoded light greys with no dark peer
 
 - `lib/src/parser/parsers/border_parser.dart:221`:
   `final defaultColor = color ?? const Color(0xFFE5E7EB); // gray-200`
@@ -82,7 +70,7 @@ than a shade map, so `isValidColor` fails and the near-white is used.
 **Fix**: resolve all three from the theme, and make `border-transparent`
 resolve to `Colors.transparent`.
 
-## 5. `wind`: `bg-[...]` rejects the 8-digit hex that `border-[...]` accepts
+## 4. `wind`: `bg-[...]` rejects the 8-digit hex that `border-[...]` accepts
 
 - `background_parser.dart:25`: `#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})`
 - `border_parser.dart:38`: 3, 4, 6 **or 8**
@@ -96,7 +84,7 @@ feature.
 
 **Fix**: one shared arbitrary-colour pattern across the parsers.
 
-## 6. `wind`: the ring colour regex cannot match a hyphenated alias
+## 5. `wind`: the ring colour regex cannot match a hyphenated alias
 
 `lib/src/parser/parsers/ring_parser.dart:29`
 
@@ -111,16 +99,7 @@ to be declared.
 
 **Fix**: admit a hyphenated colour name, as the border parser's alias path does.
 
-## 7. `wind` docs: `n-{n}` is documented and not implemented
-
-`doc/typography/text-overflow.md` lists `n-{n}` mapping to `maxLines: n` plus an
-ellipsis. `text_parser.dart` implements `line-clamp-{n}` and nothing else, so
-nine texts in this app had no `maxLines` and no ellipsis and the analyser could
-not see it.
-
-**Fix**: correct the doc, or implement the alias.
-
-## 8. `magic`: the loading placeholder has no route table
+## 6. `magic`: the loading placeholder has no route table
 
 `lib/src/foundation/magic_app_widget.dart:243`
 
@@ -134,26 +113,7 @@ URL is not the root and it is noise in any exception gate.
 **Fix**: an `onUnknownRoute` on the placeholder that returns the same
 placeholder.
 
-## 9. `wind`: `w-full` inside a `flex-1` brings down a route change
-
-`w-full` composes a `FractionallySizedBox` inside a `LayoutBuilder`. Inside a
-child that is already tight (`flex-1`, which Wind composes as an `Expanded`)
-that pair is redundant, and when it is torn down mid-layout by a route change
-it throws a cascade: one `Unexpected null value` from `viewport.dart:478`, then
-about twenty `RenderBox was not laid out` assertions walking back up the chain,
-then `!semantics.parentDataDirty is not true`.
-
-**Reproduced** in the collection direction: opening a title from a
-`wrap gap-3 w-full` sitting inside a `flex-1 min-w-0` produced twenty
-exceptions on every navigation, in both directions, at both widths. Removing
-the redundant `w-full` removes all of them.
-
-**Fix**: skip the fractional wrapper when the incoming width constraint is
-already tight. `w-full` under a tight constraint cannot mean anything else.
-
-**Local workaround**: never write `w-full` on a child of a `flex-1`.
-
-## 10. `wind`: `WInput` paints a hairline unless the width is zero
+## 7. `wind`: `WInput` paints a hairline unless the width is zero
 
 `lib/src/widgets/w_input.dart:758`
 
@@ -167,7 +127,7 @@ if (parsed?.border is Border) {
 ```
 
 Only a zero WIDTH drops the border. `border-transparent` takes the first branch
-and, through defect 4, resolves to a near-white `#E5E7EB` rather than to
+and, through defect 3, resolves to a near-white `#E5E7EB` rather than to
 nothing, so a field written to have no border gets the most visible one in the
 app. Every search field in this app rendered a bright rounded rectangle on a
 dark surface until `border-transparent` was changed to `border-0`.
@@ -175,16 +135,45 @@ dark surface until `border-transparent` was changed to `border-0`.
 **Fix**: honour a transparent colour as well as a zero width, and resolve
 `_defaultBorderColor` from the theme.
 
-## 11. `dusk`: `exceptions --clear` empties half the store
+---
 
-`dusk:exceptions` returns two kinds of entry, `"type":"overflow"` from the
-render-error walk and `"type":"FlutterError"` from the framework's own handler.
-`--clear` empties the first and leaves the second, with its original timestamp,
-so a cleared store still reports the previous run's overflows and a zero cannot
-be trusted without a restart.
+## Retracted
 
-**Local workaround**: the walks reset by hot-restarting rather than clearing,
-which they already did for unrelated reasons.
+Four entries that were here and should not have been. Each was written from a
+symptom this app really hit, and each named a mechanism that the sibling source
+does not contain. Kept so the same misreading does not get filed twice.
+
+**`wind`: the display family resolves first-wins.** It does not.
+`flexbox_grid_parser.dart:226` is `for (var i = classes.length - 1; i >= 0; i--)`,
+so the loop runs BACKWARDS and the `displayType == null` guard implements
+last-class-wins, which is the documented rule and the same pattern every other
+family in that method uses. `flex flex-row items-center wrap` resolves both a
+wrap and a horizontal direction, and `_buildWrapStructure` consumes both. The
+rows that would not wrap were written `wrap` first and `flex` after, which is
+last-class-wins working correctly. Writing `wrap` alone is still the right code;
+it is just not a workaround for anything.
+
+**`wind` docs: `n-{n}` is documented and not implemented.** The doc has no such
+entry. `doc/typography/text-overflow.md:55` reads
+`| line-clamp-{n} | maxLines: n, overflow: ellipsis |`, which is implemented at
+`text_parser.dart:117`. This was a table cell misread. The nine texts that had
+no `maxLines` had none because they were written with a token this app invented,
+not because the doc promised one.
+
+**`wind`: `w-full` inside a `flex-1` brings down a route change.** The crash was
+real and removing the `w-full` removed it, but the stated mechanism is not the
+code: `w_div.dart:1639` says "w-full: SizedBox(width: infinity), no LayoutBuilder
+needed" and `:1686` does exactly that. `FractionallySizedBox` is the `w-1/2`
+branch and is never reached on the width-only path. `w-full` sits under a
+`flex-1` in six other places in this app and nothing crashes in any of them, so
+whatever the collection direction hit is not "`w-full` under a tight parent".
+Reproduce it before filing it again.
+
+**`dusk`: `exceptions --clear` empties half the store.** It empties dusk's own
+buffer, which is all it claims to own: `ext_exceptions.dart` states that "a
+wired telescope owns its own store". The surviving entries are telescope's, and
+the fix, if one is wanted, is a clear on telescope rather than a change to dusk.
+The walks reset by hot-restarting, so nothing here depends on it.
 
 ---
 
