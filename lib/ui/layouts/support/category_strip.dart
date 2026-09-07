@@ -31,12 +31,30 @@ class CategoryStrip extends StatelessWidget {
     // chip, so it carried eight pixels of invisible margin above and below that
     // nothing else on the page shared, and the strip sat closer to the hero
     // above it than to the heading below it.
+    final List<String> groups = controller.groups;
+
+    // `ListView.builder`, not `ListView(children: [...])`, and the reason is
+    // narrower than it first looks. The list form does NOT build every chip:
+    // `SliverChildListDelegate.build` is `children[index]`
+    // (`scroll_delegate.dart:772`), so only mounted indices are ever built, and
+    // the measured `WDiv` build count was identical either way.
+    //
+    // What it does is ALLOCATE a widget object per group every time this
+    // method runs, and this method runs on every controller notify, which means
+    // every keystroke. At two hundred groups that is two hundred allocations
+    // per character for thirteen chips anyone can see. The builder allocates
+    // the thirteen.
+    //
+    // Below the harness's noise floor at this scale. Kept because it is the
+    // shape that does not degrade when a provider sends eight hundred groups.
     return SizedBox(
       height: PageGutter.stripHeight,
-      child: ListView(
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: PageGutter.horizontal,
-        children: <Widget>[for (final String group in controller.groups) _item(group)],
+        itemCount: groups.length,
+        addAutomaticKeepAlives: false,
+        itemBuilder: (BuildContext context, int index) => _item(groups[index]),
       ),
     );
   }

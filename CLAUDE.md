@@ -90,6 +90,20 @@ None of these is a defect. All four look like they should work and quietly do no
 
 Every screen sits inside the same box, and `lib/ui/layouts/support/page_gutter.dart` is the only place its numbers live. `PageGutter.x` horizontally, `PageGutter.top` and `PageGutter.gap` between blocks, `PageGutter.inner` within a block, all 24 except the last. The nine directions were first written with gutters of 12, 16, 20, 24 and 32 depending on which file the widget lived in, and the visible result was a toolbar and the strip beneath it starting at different places on the same screen, and a strip sitting eight pixels under the hero and thirty one above the heading.
 
+## Measuring at provider scale
+
+The fixtures are 23 channels and 15 titles, which cannot answer a performance question: a real Xtream playlist is hundreds of `group-title` values and five figures of channels. `lib/app/support/scale_fixture.dart` generates one of any size, deterministically, with the missing-data shares that decide the layout, and `?scale=N` on the route switches to it. Read once when a controller is built, so the sequence is navigate then restart, which is what `tool/dusk/perf.sh` and the walks already do.
+
+Run it against a **profile** build (`fsa start --profile-static`). A debug build's numbers rank causes; they do not describe a device.
+
+Three things about the numbers, all of them learned the expensive way:
+
+- **The build counts are the instrument, the milliseconds are not.** One session measured 50 ms and 132 ms across two runs with byte-identical build counts on both sides. Quote a millisecond for an order of magnitude and never for a delta.
+- **`blockAttribution` micros are nested**, so a parent's span contains its children's: one frame's blocks summed to twenty one times the frame's own build time. Ranking by them ranks by tree depth. `perf.sh` does not print them; its counts are fine.
+- **The wind counter only sees `WDiv` and `WText`.** Every Flutter widget a change removes (`AutomaticKeepAlive`, `KeyedSubtree`, `RepaintBoundary`, a separator's child slot) is invisible to it, so a change can be real and read as "no effect" there. Use `blockAttribution` counts for those.
+
+The generated fixture carries no network URLs. It pointed at `picsum.photos` for one round and every session then raced hundreds of live fetches against the frames it was timing. Image memory is therefore the one thing this harness cannot measure; it needs its own.
+
 ## Testing
 
 The coverage target is **90% on both halves** and both halves are there, over a denominator that excludes Magic's generated scaffold. A floor moves in the same pull request as the tests that earned it, never in a commit of its own.

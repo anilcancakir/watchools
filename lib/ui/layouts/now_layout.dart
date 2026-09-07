@@ -355,6 +355,7 @@ class NowLayout extends StatelessWidget {
           // cell height before the cell is laid out, so a caller doing this
           // arithmetic itself is a caller guessing at a component's internals.
           height: LiveTile.heightFor(width),
+          itemWidth: width,
           itemCount: rail.channels.length,
           itemBuilder: (BuildContext context, int index) {
             final Channel channel = rail.channels[index];

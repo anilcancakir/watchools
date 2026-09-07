@@ -251,6 +251,7 @@ class ShowcaseLayout extends StatelessWidget {
           // 16:9 frame, the `gap-2` under it, and the caption's own fixed
           // height, which is what makes this exact rather than a guess.
           height: width * 9 / 16 + 8 + 44,
+          itemWidth: width,
           itemCount: items.length,
           itemBuilder: (BuildContext context, int index) => _resumeCard(items[index], width),
         ),
@@ -345,6 +346,7 @@ class ShowcaseLayout extends StatelessWidget {
         ),
         Rail(
           height: TitlePoster.heightFor(width),
+          itemWidth: width,
           itemCount: items.length,
           itemBuilder: (BuildContext context, int index) {
             final TitleItem title = items[index];

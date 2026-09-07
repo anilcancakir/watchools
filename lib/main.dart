@@ -1,10 +1,7 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
-import 'package:fluttersdk_dusk/dusk.dart';
-import 'package:fluttersdk_telescope/telescope.dart';
 import 'package:magic/magic.dart';
-import 'package:magic_devtools/dusk.dart';
-import 'package:magic_devtools/telescope.dart';
+import 'package:magic_devtools/magic_devtools.dart';
 
 import 'config/app.dart';
 import 'config/auth.dart';
@@ -20,13 +17,20 @@ import 'config/watchools_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (kDebugMode) {
-    DuskPlugin.install();
-  }
-  if (kDebugMode) {
-    TelescopePlugin.install();
-    TelescopePlugin.registerWatcher(ExceptionWatcher());
-    TelescopePlugin.registerWatcher(DumpWatcher());
+  // `MagicDevtools`'s own two halves rather than the five calls this used to
+  // hand-roll. The hand-rolled version was missing `MagicPerfIntegration`, the
+  // one thing that assigns dusk's `framePerfReader`, so `dusk:perf_end` refused
+  // every session with `liveness advanced 0` and blamed a backgrounded page:
+  // the app rendered, screenshots came back full, and the counter the refusal
+  // is computed from had never been wired.
+  //
+  // The split is not cosmetic. `installPre` has to run BEFORE `Magic.init`,
+  // because the perf integration registers a `NavigatorObserver` and
+  // `MagicRouter.addObserver` throws a `StateError` once the router is built.
+  // `installPost` has to run after, because both integrations resolve through
+  // the container.
+  if (!kReleaseMode) {
+    MagicDevtools.installPre();
   }
   await Magic.init(
     configFactories: [
@@ -41,11 +45,8 @@ void main() async {
       () => broadcastingConfig,
     ],
   );
-  if (kDebugMode) {
-    MagicTelescopeIntegration.install();
-  }
-  if (kDebugMode) {
-    MagicDuskIntegration.install();
+  if (!kReleaseMode) {
+    MagicDevtools.installPost();
   }
 
   // Dark-first, not dark-only: the light palette exists and clears AA, but
