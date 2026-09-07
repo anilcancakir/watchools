@@ -67,8 +67,40 @@ class Episode {
   /// with things nobody wants to resume.
   bool get inProgress => progress > 0.03 && progress < 0.92;
 
-  /// `48 dk`, or the minutes left when the episode is part-watched.
+  /// `48 dk`. The full runtime, always.
+  ///
+  /// The minutes REMAINING are a separate line beside it (`EpisodeRow`'s resume
+  /// note), because an episode row has to answer both "how long is this" and
+  /// "how much is left", and a single figure that silently changes meaning
+  /// depending on whether you started it answers neither.
   String get runtimeLabel => '$minutes dk';
+}
+
+/// Splits a provider's flat fact list into the audio fact and the rest.
+///
+/// A provider sends `facts` as an unordered bag: `['4K','HDR','H.265','5.1']`
+/// for one title and `['1080p','H.264','5.1']` for the next. Reading the audio
+/// fact by position therefore prints the codec on one screen and `Bilinmiyor`
+/// on another, which is worse than saying nothing: a technical stack that is
+/// confidently wrong is the one thing this audience opens the page to check.
+///
+/// Matched on the value's shape instead. The set is closed in practice because
+/// it is what an Xtream `audio_codec` and an XMLTV `<audio>` actually carry.
+abstract final class StreamFacts {
+  static const Set<String> _audio = <String>{'MONO', 'STEREO', '2.0', '5.1', '7.1', 'AAC', 'AC3', 'EAC3', 'DTS'};
+
+  /// The audio fact, or null when the provider sent none.
+  static String? audioIn(List<String> facts) {
+    for (final String fact in facts) {
+      if (_audio.contains(fact.toUpperCase())) return fact;
+    }
+
+    return null;
+  }
+
+  /// Everything that is not the audio fact, which is what the video row shows.
+  static List<String> videoIn(List<String> facts) =>
+      facts.where((String fact) => !_audio.contains(fact.toUpperCase())).toList();
 }
 
 /// One person in a title's cast or crew.

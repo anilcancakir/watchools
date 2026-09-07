@@ -49,7 +49,17 @@ class Programme {
   bool contains(int minute) => minute >= startMinute && minute < endMinute;
 
   /// How far through the programme [minute] is, clamped to 0..1.
-  double progressAt(int minute) => ((minute - startMinute) / durationMinutes).clamp(0.0, 1.0);
+  ///
+  /// Zero duration answers 0 rather than NaN. It is the most common malformed
+  /// XMLTV entry (a `stop` equal to its `start`), and `NaN.clamp(0, 1)` returns
+  /// NaN rather than clamping, which then reaches `FractionallySizedBox` and
+  /// asserts. A guide that throws on bad EPG is worse than one that draws an
+  /// empty bar.
+  double progressAt(int minute) {
+    if (durationMinutes <= 0) return 0;
+
+    return ((minute - startMinute) / durationMinutes).clamp(0.0, 1.0);
+  }
 
   /// `20:00` in tabular-friendly form.
   String get startLabel => _hhmm(startMinute);

@@ -166,15 +166,19 @@ abstract final class TitleSections {
   /// The label-value rows, in the order Plex reads them: what the title IS,
   /// then where it came from, then what the stream actually carries.
   static List<FactEntry> entries(TitleItem title) {
-    final List<String> facts = title.facts;
+    // Matched on the fact's shape, not read by position. A provider's fact list
+    // is an unordered bag, so `facts[3]` printed the audio layout on one title
+    // and `Bilinmiyor` on the next while a `5.1` chip sat on the same screen.
+    final List<String> video = StreamFacts.videoIn(title.facts);
+    final String? audio = StreamFacts.audioIn(title.facts);
 
     return <FactEntry>[
       FactEntry(label: 'Tür', value: title.genres.isEmpty ? 'Belirtilmemiş' : title.genres.join(', ')),
       FactEntry(label: 'Yıl', value: '${title.year}'),
       FactEntry(label: 'Süre', value: title.lengthLabel),
       const FactEntry(label: 'Sağlayıcı', value: 'Ana sağlayıcı'),
-      FactEntry(label: 'Video', value: facts.isEmpty ? 'Bilinmiyor' : facts.take(2).join(' · ')),
-      FactEntry(label: 'Ses', value: facts.length > 3 ? facts[3] : 'Bilinmiyor'),
+      FactEntry(label: 'Video', value: video.isEmpty ? 'Bilinmiyor' : video.join(' · ')),
+      FactEntry(label: 'Ses', value: audio ?? 'Bilinmiyor'),
       FactEntry(label: 'Altyazılar', value: 'Hiçbiri', onTap: () {}),
     ];
   }
@@ -210,7 +214,12 @@ abstract final class TitleSections {
                 child: TitlePoster(
                   title: other,
                   size: 'sm',
-                  onTap: () => controller.select(other),
+                  // `openDetail`, not `select`. `select` changed which title the
+                  // page showed without changing the route, so the browser's
+                  // back button and a remote's back key both landed on the
+                  // catalogue from a title the user had never opened from
+                  // there. A related title is a navigation, not a selection.
+                  onTap: () => controller.openDetail(other),
                   onToggleFavourite: () => controller.toggleFavourite(other),
                 ),
               );
@@ -236,28 +245,25 @@ abstract final class TitleSections {
   }
 
   /// The one filled button.
-  static Widget playVerb(TitleItem title, {bool wide = false}) {
+  ///
+  /// Content-width, with no full-width variant. The first version carried a
+  /// `wide` flag and neither caller passed it, which is the shape a speculative
+  /// option takes: a branch nobody exercises, kept alive by the analyser
+  /// because a default made it legal.
+  static Widget playVerb(TitleItem title) {
     final String label = playLabel(title);
 
     return WAnchor(
       onTap: () {},
       semanticLabel: '${title.name} $label',
       child: WDiv(
-        className: wide
-            ? '''
-              flex flex-row items-center justify-center gap-2 w-full
-              h-12 rounded-full
-              bg-primary text-on-primary
-              hover:bg-primary-hover
-              focus:ring-2 focus:ring-focus-ring
-            '''
-            : '''
-              flex flex-row items-center gap-2
-              h-11 px-6 rounded-full
-              bg-primary text-on-primary
-              hover:bg-primary-hover
-              focus:ring-2 focus:ring-focus-ring
-            ''',
+        className: '''
+          flex flex-row items-center gap-2
+          h-11 px-6 rounded-full
+          bg-primary text-on-primary
+          hover:bg-primary-hover
+          focus:ring-2 focus:ring-focus-ring
+        ''',
         children: <Widget>[
           const WIcon(Icons.play_arrow_rounded, className: 'text-lg'),
           WText(label, className: 'text-sm font-bold'),
@@ -271,7 +277,7 @@ abstract final class TitleSections {
   /// Every reference demotes everything except playback to an icon, and that is
   /// the discipline worth keeping: a second filled button makes the first one
   /// stop meaning "this is what you came for".
-  static Widget ghostActions(LibraryController controller, TitleItem title) {
+  static Widget ghostActions() {
     return WDiv(
       className: 'flex flex-row items-center gap-1',
       children: <Widget>[

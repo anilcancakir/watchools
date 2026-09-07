@@ -5,6 +5,7 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/guide_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../../app/models/title_item.dart';
 import '../components/artwork/index.dart';
 import '../components/channel_mark/index.dart';
 import '../components/channel_row/index.dart';
@@ -308,11 +309,17 @@ class TowerLayout extends StatelessWidget {
   }
 
   List<FactEntry> _facts(Channel channel) {
+    // Matched on the fact's shape, not read by position. A provider's fact list
+    // is an unordered bag, so `facts[2]` printed `H.265` under the label `Ses`
+    // for any channel whose list ran video, video, video.
+    final List<String> video = StreamFacts.videoIn(channel.facts);
+    final String? audio = StreamFacts.audioIn(channel.facts);
+
     return <FactEntry>[
       FactEntry(label: 'Kanal', value: '${channel.name} · ${channel.numberLabel}'),
       FactEntry(label: 'Grup', value: channel.group),
-      FactEntry(label: 'Video', value: channel.facts.isEmpty ? 'Bilinmiyor' : channel.facts.first),
-      FactEntry(label: 'Ses', value: channel.facts.length > 2 ? channel.facts[2] : 'Bilinmiyor'),
+      FactEntry(label: 'Video', value: video.isEmpty ? 'Bilinmiyor' : video.join(' · ')),
+      FactEntry(label: 'Ses', value: audio ?? 'Bilinmiyor'),
       FactEntry(label: 'Altyazılar', value: 'Hiçbiri', onTap: () {}),
     ];
   }
