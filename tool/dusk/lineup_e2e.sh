@@ -185,16 +185,14 @@ walk_direction() {
     # three render unconditionally. It proved the fixture has channels without
     # EPG and nothing about any direction; delete the designed state from all
     # three and it still passed.
-    $FSA dusk:fill --ref "$sref" --text 'Müzik' >/dev/null 2>&1
-    sleep 2
+    fill_search 'Müzik'
     expect_no_exceptions "$label no-guide search"
     $FSA dusk:snap >"$OUT/$slug.noguide.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.noguide.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.noguide.yaml" "$(no_guide_marker "$label")" \
       "$label: names the no-schedule case in its own words"
 
-    $FSA dusk:fill --ref "$sref" --text 'spor' >/dev/null 2>&1
-    sleep 2
+    fill_search 'spor'
     expect_no_exceptions "$label search"
     $FSA dusk:snap >"$OUT/$slug.search.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.search.png" >/dev/null 2>&1
@@ -202,8 +200,7 @@ walk_direction() {
     # times, so asserting on it passed whether the search worked or not.
     expect_in_file "$OUT/$slug.search.yaml" '2 sonuç' "$label: search narrows to two results"
 
-    $FSA dusk:fill --ref "$sref" --text 'zzzzzz' >/dev/null 2>&1
-    sleep 2
+    fill_search 'zzzzzz'
     expect_no_exceptions "$label empty search"
     $FSA dusk:snap >"$OUT/$slug.empty.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.empty.png" >/dev/null 2>&1

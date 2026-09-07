@@ -210,8 +210,7 @@ walk_direction() {
     # paint, so the assertion belongs behind a search rather than against the
     # arrival screen: asserting it there measured which direction happened to
     # put it near the top.
-    $FSA dusk:fill --ref "$sref" --text 'Gece Yarısı' >/dev/null 2>&1
-    sleep 2
+    fill_search 'Gece Yarısı'
     expect_no_exceptions "$label poster-less search"
     $FSA dusk:snap >"$OUT/$slug.noposter.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.noposter.png" >/dev/null 2>&1
@@ -220,15 +219,13 @@ walk_direction() {
 
     # An episode title, not a film title: a catalogue search that only covers
     # the top level cannot find the thing people actually remember.
-    $FSA dusk:fill --ref "$sref" --text 'Sınır' >/dev/null 2>&1
-    sleep 2
+    fill_search 'Sınır'
     expect_no_exceptions "$label episode search"
     $FSA dusk:snap >"$OUT/$slug.search.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.search.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.search.yaml" '1 sonuç' "$label: search reaches episode titles"
 
-    $FSA dusk:fill --ref "$sref" --text 'zzzzzz' >/dev/null 2>&1
-    sleep 2
+    fill_search 'zzzzzz'
     expect_no_exceptions "$label empty search"
     $FSA dusk:snap >"$OUT/$slug.empty.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.empty.png" >/dev/null 2>&1

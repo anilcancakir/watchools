@@ -71,12 +71,21 @@ refute_in_file() {
 # one line of JSON, so an `rg -v` on it deletes the entire list and the count
 # then reads zero: that is how roughly forty checks in an earlier version of
 # this walk came to pass unconditionally.
+#
+# Counted against a WATERMARK rather than against zero, because
+# `dusk:exceptions --clear` does not empty the `FlutterError` half of the store:
+# measured, an entry cleared at 17:04:06.250 was still there, with the same
+# timestamp, on the next read. So a single overflow was re-reported by every
+# check after it and one defect arrived as twenty one. `SEEN` holds the newest
+# timestamp already reported; only entries strictly after it count.
+SEEN=""
+
 expect_no_exceptions() {
   local body report
   body="$($FSA dusk:exceptions 2>/dev/null)"
 
-  report="$(printf '%s' "$body" | python3 -c '
-import json, sys
+  report="$(printf '%s' "$body" | SEEN="$SEEN" python3 -c '
+import json, os, sys
 
 # Magic renders a plain MaterialApp with no route table while it bootstraps, so
 # any restart whose URL is not the root logs this for a path the app does serve.
@@ -95,18 +104,31 @@ if "count" not in body:
     print("response carried no count, so the store could not be read")
     raise SystemExit(0)
 
-real = [e for e in body.get("exceptions", []) if BENIGN not in (e.get("message") or "")]
+seen = os.environ.get("SEEN") or ""
+entries = body.get("exceptions", [])
+newest = max((e.get("time") or "" for e in entries), default="")
+
+real = [
+    e for e in entries
+    if BENIGN not in (e.get("message") or "") and (e.get("time") or "") > seen
+]
+
+# The watermark advances whether or not anything failed, so a benign entry
+# cannot be re-reported either.
+print("MARK %s" % newest)
 if real:
     print("%d: %s" % (len(real), "; ".join((e.get("message") or "").splitlines()[0] for e in real[:3])))
 ')"
+
+  local mark
+  mark="$(printf '%s' "$report" | rg -o '^MARK .*' | head -1 | cut -c6-)"
+  [ -n "$mark" ] && SEEN="$mark"
+  report="$(printf '%s' "$report" | rg -v '^MARK ')"
 
   if [ -z "$report" ]; then
     pass "no exceptions: $1"
   else
     fail "after $1, $report"
-    # Cleared so the next assertion reports its own interaction rather than
-    # inheriting this one.
-    $FSA dusk:exceptions --clear >/dev/null 2>&1
   fi
 }
 
@@ -217,6 +239,22 @@ search_ref() {
   $FSA dusk:snap 2>/dev/null | rg '^\s*-?\s*textbox' | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1
 }
 
+# Types $1 into the search field, resolving the field's ref immediately first.
+#
+# `dusk:snap` re-mints every `eN`, so a ref taken once and reused across a
+# sequence that snapshots in between points at nothing: the fill reported
+# success, the screen did not change, and the two assertions after it failed
+# while naming controls that were fine. Returns non-zero when there is no field.
+fill_search() {
+  local sref
+  sref="$(search_ref)"
+  [ -z "$sref" ] && return 1
+
+  $FSA dusk:fill --ref "$sref" --text "$1" >/dev/null 2>&1
+  sleep 2
+  return 0
+}
+
 # Returns the app to first-run state and empties the exception store.
 #
 # A hot restart rather than a cleared search field, and this is the one place
@@ -271,6 +309,10 @@ reset_app() {
   fi
 
   $FSA dusk:exceptions --clear >/dev/null 2>&1
+  # The watermark goes with the isolate. A hot restart empties the store for
+  # real, which `--clear` does not, so keeping a mark from the previous
+  # iteration would hide this one's first exception.
+  SEEN=""
 }
 
 # Kills any Chrome left behind by an earlier run and removes its profile.

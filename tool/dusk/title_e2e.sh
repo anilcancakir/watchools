@@ -56,7 +56,7 @@ direction_marker() {
 # catalogue last selected, so arriving without selecting first would assert
 # against the fixture's first entry every time.
 open_title() {
-  local name="$1" width="$2" height="$3" item sref shelf
+  local name="$1" width="$2" height="$3" item shelf
   $FSA dusk:navigate --route /kutuphane >/dev/null 2>&1
   sleep 3
 
@@ -78,12 +78,15 @@ open_title() {
     sleep 2
   fi
 
-  sref="$(search_ref)"
-  if [ -z "$sref" ]; then
+  # `fill_search` resolves the field's ref immediately before typing. A ref taken
+  # once and reused across a sequence that snapshots in between points at
+  # nothing, because `dusk:snap` re-mints every `eN`: the fill reports success,
+  # the screen does not change, and the assertions after it fail while naming
+  # controls that are fine.
+  if ! fill_search "$name"; then
     return 1
   fi
-  $FSA dusk:fill --ref "$sref" --text "$name" >/dev/null 2>&1
-  sleep 3
+  sleep 1
 
   # `visible_ref_settled`, not `ref_matching`. The semantics tree carries every
   # node a sliver built, including rails two screens down, and a tap on one of
