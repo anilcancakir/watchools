@@ -4,8 +4,13 @@
 // Source: .artisan/plugins.json
 
 import 'package:fluttersdk_artisan/artisan.dart';
+import 'package:fluttersdk_dusk/cli.dart' show FluttersdkDuskArtisanProvider;
 import 'package:magic/cli.dart' show MagicArtisanProvider;
 
 List<ArtisanServiceProvider> autoDiscoveredProviders() {
-  return <ArtisanServiceProvider>[MagicArtisanProvider()];
+  return <ArtisanServiceProvider>[
+    FluttersdkDuskArtisanProvider(),
+    MagicArtisanProvider(),
+  ];
 }
+
