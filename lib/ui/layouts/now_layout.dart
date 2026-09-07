@@ -149,11 +149,24 @@ class NowLayout extends StatelessWidget {
               ],
             ),
           ),
+          // `Align`, and it is load-bearing rather than decorative. A
+          // `Positioned` carrying both `left` and `right` hands its child a
+          // TIGHT width, and `BoxConstraints.enforce` clamps a `max-w-*` into
+          // the incoming range: `clamp(620, 1352, 1352)` is 1352, so the cap on
+          // the content block was silently discarded and the hero ran the full
+          // width of the window. `Align` loosens the constraint, which is what
+          // lets the cap apply.
+          //
+          // The same mechanism kills a `max-w-*` under any tight parent, not
+          // only under a `flex-1`.
           Positioned(
             left: PageGutter.value,
             right: PageGutter.value,
             bottom: 28,
-            child: _heroContent(channel, live, next, wide: wide),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _heroContent(channel, live, next, wide: wide),
+            ),
           ),
           if (live != null)
             Positioned(
@@ -209,9 +222,11 @@ class NowLayout extends StatelessWidget {
         // Netflix has one white Play, Plex has one amber Devam, and everything
         // beside it is a ghost or an icon.
         //
-        // `wrap` with no `flex` beside it, because Wind's display family
-        // resolves first-wins and would discard the wrap. The row carries a
-        // button, a star and up to four fact chips, which is past 414 pixels.
+        // `wrap` with no `flex` beside it. `flex` and `wrap` are the same
+        // parser family, so the last one written wins and `flex flex-row wrap`
+        // is a wrapping row while `wrap flex` is not: write the one you want
+        // last, or write it alone. The row carries a button, a star and up to
+        // four fact chips, which is past 414 pixels.
         WDiv(
           className: 'wrap items-center gap-2',
           children: <Widget>[

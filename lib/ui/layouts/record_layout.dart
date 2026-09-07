@@ -43,6 +43,10 @@ class RecordLayout extends StatelessWidget {
       child: CustomScrollView(
         slivers: <Widget>[
           SliverToBoxAdapter(child: _header(title)),
+          // The header is a block like any other and gets the page's own
+          // distance below it. Without this the poster's top edge touched the
+          // back button, which reads as the artwork having escaped its frame.
+          const SliverToBoxAdapter(child: PageGutter.gap),
           SliverToBoxAdapter(child: _card(title, wide)),
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           if (title.isSeries) ...<Widget>[
@@ -67,7 +71,11 @@ class RecordLayout extends StatelessWidget {
   /// are the part everyone else leaves out: browsing a library means comparing,
   /// and comparing through a back button is four taps per comparison.
   Widget _header(TitleItem title) {
-    final List<TitleItem> siblings = controller.matches;
+    // `sorted`, not `matches`. The arrows walk the catalogue you came FROM, and
+    // the shelf renders `sorted`: reading `matches` here meant "next" followed
+    // the provider's order while the grid behind it was alphabetical, so the
+    // arrow moved to a title that was nowhere near the one you had just left.
+    final List<TitleItem> siblings = controller.sorted;
     final int index = siblings.indexOf(title);
 
     return WDiv(
@@ -239,10 +247,10 @@ class RecordLayout extends StatelessWidget {
                 onToggle: () => controller.toggleFavourite(title),
               ),
             ),
-            if (wide) WDiv(className: 'shrink-0', child: TitleSections.ghostActions(controller, title)),
+            if (wide) WDiv(className: 'shrink-0', child: TitleSections.ghostActions()),
           ],
         ),
-        if (!wide) TitleSections.ghostActions(controller, title),
+        if (!wide) TitleSections.ghostActions(),
         if (title.synopsis == null)
           const WText('Sağlayıcı bu başlık için özet göndermedi.', className: 'text-sm text-fg-disabled')
         else

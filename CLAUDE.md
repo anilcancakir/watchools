@@ -72,7 +72,7 @@ None of these is a defect. All four look like they should work and quietly do no
 
 **Wind's breakpoints read the viewport, not the parent.** A row inside an 860 pixel column of a 1440 pixel window evaluates `xl:` as true and builds its widest arrangement into a column that cannot hold it. A component whose columns depend on real width takes a `double` and decides in Dart; `ChannelRow.available` is the worked example.
 
-**`flex-1` with a `max-w-*` beside it does not clamp.** `flex-1` composes an `Expanded`, whose tight minimum beats a `ConstrainedBox` maximum, so the child renders at the full row width. Use a fixed `w-[Npx] shrink-0` above the breakpoint and `flex-1 min-w-0` below it. `w-full shrink-0` is the other wrong answer: it claims the whole row and then refuses to give any of it back.
+**A `max-w-*` does nothing under any tight parent.** `BoxConstraints.enforce` clamps the maximum into the incoming range, so `clamp(620, 1352, 1352)` is 1352 and the cap is discarded. `flex-1` is one such parent (it composes an `Expanded`); a `Positioned` carrying both `left` and `right` is another, and that one silently ran three hero content blocks at the full width of the window. Use a fixed `w-[Npx] shrink-0` above the breakpoint and `flex-1 min-w-0` below it in a row, and wrap a positioned block in an `Align` to loosen the constraint. `w-full shrink-0` is the other wrong answer: it claims the whole row and then refuses to give any of it back.
 
 **A `Row` hands its child unbounded width on the main axis**, so a `wrap` nested inside a `flex flex-row` has nothing to wrap against and never wraps. Put the wrapping element in the column directly.
 
@@ -104,9 +104,21 @@ Three of the walks' findings were things no unit test could reach: a direction t
 
 ## Repository state
 
-The design phase has not started. `lib/resources/views/welcome_view.dart` is Magic's generated placeholder and goes with the first real screen. There is no player, no protocol layer and no data layer yet.
+The design phase is mid-flight and waiting on one decision. There are three screens (`/` live television, `/kutuphane` catalogue, `/baslik` one title) and each hosts **three competing directions** behind a floating switcher: nine in all, in `lib/ui/layouts/`. They exist so the choice can be made by looking rather than by describing, and the eight that lose go with the switcher.
 
-**There is no `DESIGN.md`, and writing it is the first step of the design phase.** `./bin/fsa design:sync` reads it and generates `lib/config/wind_theme.g.dart`, the semantic alias table every `className` then spends. Running the command before the file exists fails with `DESIGN.md not found`. The shape to copy is `uptizm`'s: the alias keys, each already carrying its `dark:` half, plus a separate hand-written file for the status colours the generator does not emit, which for this product means live, catch-up, recording and EPG-now.
+The doctrine they are built on is `.ac/research/design-doctrine.md`, read off Netflix, Plex and Apple TV. Read it before changing anything about how a screen composes, especially Part three, which is where those three references stop applying to an IPTV client.
+
+`DESIGN.md` exists and `lib/config/wind_theme.g.dart` is generated from it by `./bin/fsa design:sync`. The status colours the generator does not emit (live, catch-up, recording, EPG-now) are hand-written in `lib/config/watchools_status_tokens.dart`; change a hex in one and change it in the other.
+
+There is still no player, no protocol layer and no data layer. Every screen reads a fixture (`lib/app/support/guide_fixture.dart`, `lib/app/support/vod_fixture.dart`) through two `SimpleMagicController`s.
+
+**Three things the design phase has not settled**, in the order they will bite:
+
+- **There is no time model.** `GuideController.now` is a compile-time constant, and every progress bar, every "N dk kaldı", the grid's now line and the two live rails are computed from it. The doctrine makes the ticking clock the whole argument for the hero direction; nothing ticks. Choosing that direction or the grid commits to a clock source, a rebuild cadence, and a decision about what happens at a programme boundary while the user is mid-scroll.
+- **There is no focus or D-pad model.** Every direction already writes `focus:ring-2 focus:ring-focus-ring`, so the visual half is settled and consistent; activation and traversal are missing, and both are wind gaps rather than app gaps.
+- **The failure states are not designed.** Loading, provider unreachable, expired credentials. They are the same three states under every composition, so they do not discriminate between directions and can wait for the pick.
+
+`/baslik` carries no identifier yet, so the title screen renders whatever the catalogue last selected. It becomes `/baslik/:id` with the Xtream client.
 
 Components get a preview file alongside them and `./bin/fsa previews:refresh` regenerates the index. `magic_devtools` owns the `/preview` route and is already a dependency.
 

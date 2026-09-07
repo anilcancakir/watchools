@@ -119,11 +119,14 @@ class ShowcaseLayout extends StatelessWidget {
           ),
           Scrim.left,
           Scrim.bottom,
+          // `Align` loosens the tight width a `Positioned` with both `left` and
+          // `right` hands down, which is what lets the content block's
+          // `max-w-*` apply at all. See the note in `now_layout.dart`.
           Positioned(
             left: PageGutter.value,
             right: PageGutter.value,
             bottom: 32,
-            child: _heroContent(title, next, wide),
+            child: Align(alignment: Alignment.centerLeft, child: _heroContent(title, next, wide)),
           ),
           if (progress > 0.03 && progress < 0.92)
             Positioned(
@@ -151,11 +154,10 @@ class ShowcaseLayout extends StatelessWidget {
         ),
         if (title.synopsis != null && wide)
           WText(title.synopsis!, className: 'text-sm text-fg-muted line-clamp-2 max-w-prose'),
-        // `wrap` with no `flex` beside it. Wind's display family resolves
-        // first-wins against its own documented last-class-wins rule, so
-        // `flex flex-row ... wrap` takes `flex` and discards the wrap silently.
-        // Defect 3 in `.ac/research/ecosystem-defects.md`, and the reason this
-        // row ran 110 pixels past a 414 pixel screen while looking correct.
+        // `wrap` with no `flex` beside it. They are the same parser family and
+        // the last one written wins, so `wrap` alone is the form that cannot be
+        // got wrong by someone adding a class in front of it. Without the wrap
+        // this row ran 110 pixels past a 414 pixel screen.
         WDiv(
           className: 'wrap items-center gap-2',
           children: <Widget>[

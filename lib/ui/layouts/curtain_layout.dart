@@ -51,10 +51,15 @@ class CurtainLayout extends StatelessWidget {
           // progress bar running along it.
           if (title.isSeries)
             SliverToBoxAdapter(child: _seasonSplit(title, wide))
-          else ...<Widget>[
+          else
             const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
-            SliverToBoxAdapter(child: TitleSections.specs(title)),
-          ],
+          // The technical stack, on a series as well as a film. It used to be
+          // in the film branch only, so this direction was the one that dropped
+          // the doctrine's seventh rule exactly where the pages are longest and
+          // a viewer is most likely to be checking whether a stream is what the
+          // provider called it.
+          const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
+          SliverToBoxAdapter(child: TitleSections.specs(title)),
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
           SliverToBoxAdapter(child: TitleSections.cast(title)),
           const SliverToBoxAdapter(child: SizedBox(height: PageGutter.value)),
@@ -97,7 +102,15 @@ class CurtainLayout extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(left: PageGutter.value, right: PageGutter.value, bottom: 36, child: _content(title, next, wide)),
+          // `Align` loosens the tight width a `Positioned` with both `left` and
+          // `right` hands down, which is what lets the content block's
+          // `max-w-*` apply at all. See the note in `now_layout.dart`.
+          Positioned(
+            left: PageGutter.value,
+            right: PageGutter.value,
+            bottom: 36,
+            child: Align(alignment: Alignment.centerLeft, child: _content(title, next, wide)),
+          ),
           if (progress > 0.03 && progress < 0.92)
             Positioned(
               left: 0,
