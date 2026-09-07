@@ -1,7 +1,7 @@
 import 'package:magic/magic.dart';
 
 import '../models/title_item.dart';
-import '../support/vod_fixture.dart';
+import '../support/fixture_scale.dart';
 
 /// Which half of the catalogue is on show.
 enum LibraryScope {
@@ -30,7 +30,10 @@ class LibraryController extends SimpleMagicController {
   static LibraryController get instance => Magic.findOrPut(LibraryController.new);
 
   /// The catalogue, in provider order. Mutable only through [toggleFavourite].
-  final List<TitleItem> titles = List<TitleItem>.of(vodFixture);
+  ///
+  /// [FixtureScale] hands back the hand-written fixture unless a measurement
+  /// run asked for a generated one through `?scale=N`.
+  final List<TitleItem> titles = FixtureScale.titleList;
 
   LibraryScope _scope = LibraryScope.all;
   String _category = 'Tümü';
@@ -42,6 +45,8 @@ class LibraryController extends SimpleMagicController {
   /// one build asks for [matches] from the toolbar, the hero and every rail.
   List<TitleItem>? _matchCache;
   List<(String, List<TitleItem>)>? _sectionCache;
+  List<TitleItem>? _resumeCache;
+  int? _noArtworkCache;
 
   /// Which half of the catalogue is on show.
   LibraryScope get scope => _scope;
@@ -119,7 +124,12 @@ class LibraryController extends SimpleMagicController {
 
   /// Everything the viewer started and did not finish, movies and episodes
   /// alike. The one shelf a returning viewer actually opens the app for.
-  List<TitleItem> get continueWatching => matches.where((TitleItem t) => t.inProgress).toList();
+  ///
+  /// Cached like [matches], because `Vitrin` asks for it three times in one
+  /// build: once to decide whether the resume rail exists, once for the hero's
+  /// fallback, once for the rail's own contents. Each ask walked the whole
+  /// catalogue and, for a series, walked its episode list too.
+  List<TitleItem> get continueWatching => _resumeCache ??= matches.where((TitleItem t) => t.inProgress).toList();
 
   /// How many titles the current filter left, worded for whether a search is
   /// active. Same discipline as the line-up's: one number, one spelling.
@@ -135,13 +145,16 @@ class LibraryController extends SimpleMagicController {
   /// count: it is a fact about the user's provider rather than a fault in the
   /// app, and a poster wall is the layout it decides.
   String? get noArtworkNote {
-    final int count = matches.where((TitleItem t) => t.posterUrl == null).length;
+    final int? cached = _noArtworkCache;
+    final int count = cached ?? (_noArtworkCache = matches.where((TitleItem t) => t.posterUrl == null).length);
 
     return count == 0 ? null : '$count başlıkta afiş yok';
   }
 
   /// The catalogue category tabs.
-  List<String> get categories => vodCategories;
+  List<String> get categories => _categories;
+
+  late final List<String> _categories = FixtureScale.categoryList;
 
   /// Switches between the whole catalogue, movies only and series only.
   void showScope(LibraryScope scope) {
@@ -223,5 +236,7 @@ class LibraryController extends SimpleMagicController {
   void _invalidate() {
     _matchCache = null;
     _sectionCache = null;
+    _resumeCache = null;
+    _noArtworkCache = null;
   }
 }
