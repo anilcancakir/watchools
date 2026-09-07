@@ -10,11 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The target is 90 on both halves. The backend is there today. The Flutter
-  # floor is lower because the app is a scaffold, and it ratchets up in the
-  # same pull request as each screen's tests, never in one of its own.
+  # The target is 90 on both halves and both halves are there. The Flutter side
+  # ratcheted from 40 in the pull request that added the line-up and catalogue
+  # screens, which is the rule: a floor moves with the tests that earned it,
+  # never in a commit of its own. Measured at 95.4% when this was set.
   BACKEND_COVERAGE_MINIMUM: 90
-  FLUTTER_COVERAGE_MINIMUM: 40
+  FLUTTER_COVERAGE_MINIMUM: 90
 
 jobs:
   flutter:

@@ -66,21 +66,68 @@ Wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no ke
 
 These are package gaps, not app gaps. Fix them in the sibling and follow the contribution flow in `.claude/rules/workflow.md`. Do not work around one locally.
 
+## Four layout traps this app has already paid for
+
+None of these is a defect. All four look like they should work and quietly do not.
+
+**Wind's breakpoints read the viewport, not the parent.** A row inside an 860 pixel column of a 1440 pixel window evaluates `xl:` as true and builds its widest arrangement into a column that cannot hold it. A component whose columns depend on real width takes a `double` and decides in Dart; `ChannelRow.available` is the worked example.
+
+**A `max-w-*` does nothing under any tight parent.** `BoxConstraints.enforce` clamps the maximum into the incoming range, so `clamp(620, 1352, 1352)` is 1352 and the cap is discarded. `flex-1` is one such parent (it composes an `Expanded`); a `Positioned` carrying both `left` and `right` is another, and that one silently ran three hero content blocks at the full width of the window. Use a fixed `w-[Npx] shrink-0` above the breakpoint and `flex-1 min-w-0` below it in a row, and wrap a positioned block in an `Align` to loosen the constraint. `w-full shrink-0` is the other wrong answer: it claims the whole row and then refuses to give any of it back.
+
+**A `Row` hands its child unbounded width on the main axis**, so a `wrap` nested inside a `flex flex-row` has nothing to wrap against and never wraps. Put the wrapping element in the column directly.
+
+**A cell's height has to come from the component, not from the caller.** A `Rail` and a `SliverGridDelegate` both state the cell height before the cell is laid out, and every caller that worked it out itself was short: `LiveTile.heightFor`, `TitlePoster.heightFor` and `PersonCircle.height` exist so the arithmetic lives with the widget that knows it. `SliverGridDelegateWithMaxCrossAxisExtent` makes this worse by treating the extent as a maximum and then dividing the row evenly, so the cell it gives you is wider than the number you passed.
+
+## One page container
+
+Every screen sits inside the same box, and `lib/ui/layouts/support/page_gutter.dart` is the only place its numbers live. `PageGutter.x` horizontally, `PageGutter.top` and `PageGutter.gap` between blocks, `PageGutter.inner` within a block, all 24 except the last. The nine directions were first written with gutters of 12, 16, 20, 24 and 32 depending on which file the widget lived in, and the visible result was a toolbar and the strip beneath it starting at different places on the same screen, and a strip sitting eight pixels under the hero and thirty one above the heading.
+
 ## Testing
 
-The coverage target is **90% on both halves**. The backend is there. The Flutter floor is currently **40%**, over a denominator that excludes Magic's generated scaffold, and it ratchets up in the same pull request as each screen's tests, never in one of its own.
+The coverage target is **90% on both halves** and both halves are there, over a denominator that excludes Magic's generated scaffold. A floor moves in the same pull request as the tests that earned it, never in a commit of its own.
 
 One property of `flutter test --coverage` shapes how to read a red run: lcov only carries files the tests actually import, so the denominator moves when a test imports something new. Read the step's printed `hit/found` before assuming a regression.
 
 Wind's parser cache is static and outlives a single test, so every widget test calls `setUp(WindParser.clearCache)` or it can pass for the wrong reason. Widget tests go through `wrapWithTheme()` in `test/support/wind_test_app.dart`; without a `WindTheme` ancestor every class silently resolves to nothing.
 
+Two things a widget test here cannot tell you, both measured. `flutter_test` substitutes a font whose every glyph is a square of the font size (four characters at `fontSize: 14` measure exactly 56 logical pixels), so text is half again to twice as wide as in Schibsted Grotesk and **overflow assertions are meaningless**: `test/support/screen.dart` ignores overflow deliberately and records why. And a widget test never touches the real engine, so a CanvasKit crash or an absorbed semantics label only shows up in the dusk walks.
+
+`pumpScreen()` collects errors through `FlutterError.onError` rather than reading them back with `takeException`, and that is load-bearing rather than stylistic. **`takeException` does not return one error at a time when several are pending**: it collapses them into a synthetic `Multiple exceptions (N) were detected` carrying none of the individual messages, so a filter keyed to the word `overflowed` cannot see it. Three directions failed that gate for two overflows apiece while the report printed above the failure named both.
+
+A whole screen goes through `pumpScreen()` in `test/support/screen.dart` rather than `wrapWithTheme()`, which leaves the surface at the test default of 800x600: neither width this app is designed against, and on the wrong side of `md` from both.
+
+The walks are `tool/dusk/lineup_e2e.sh`, `tool/dusk/library_e2e.sh` and `tool/dusk/title_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: five of its comments record a way an earlier version of that gate passed unconditionally. Beside them, `tool/dusk/shots.sh` captures one screenshot per surface (what a design decision actually gets made from) and `tool/dusk/switch_probe.sh` reduces one live-screen interaction to the shortest sequence that reproduces it. Neither asserts anything.
+
+Three of the walks' findings were things no unit test could reach: a direction that lost its favourite control at 414 pixels, a direction that stated the channel count and left the missing-EPG note to a rail below the fold, and a route change that threw twenty cascading layout assertions.
+
 `.env` is a real asset during `flutter test`, so a test asserting an `env()` default passes because `.env` supplies the same string, never because the default ran. Assert an overridden value instead.
 
 ## Repository state
 
-The design phase has not started. `lib/resources/views/welcome_view.dart` is Magic's generated placeholder and goes with the first real screen. There is no player, no protocol layer and no data layer yet.
+The design language is chosen. Nine competing layouts were built and compared side by side; four survive, in `lib/ui/layouts/`:
 
-**There is no `DESIGN.md`, and writing it is the first step of the design phase.** `./bin/fsa design:sync` reads it and generates `lib/config/wind_theme.g.dart`, the semantic alias table every `className` then spends. Running the command before the file exists fails with `DESIGN.md not found`. The shape to copy is `uptizm`'s: the alias keys, each already carrying its `dark:` half, plus a separate hand-written file for the status colours the generator does not emit, which for this product means live, catch-up, recording and EPG-now.
+| Route | Layout | File |
+|---|---|---|
+| `/` | `Şimdi`, live hero over editorial rails | `now_layout.dart` |
+| `/` | `Zaman`, broadcast grid on a time axis | `time_layout.dart` |
+| `/kutuphane` | `Vitrin`, hero over poster rails | `showcase_layout.dart` |
+| `/baslik` | `Perde`, cinematic, seasons beside episodes | `curtain_layout.dart` |
+
+The live screen ships **two** views because a line-up is the one surface with two questions ("what is on" and "what is on at nine"); the other two ship one each because a catalogue has no second question. The switch between the live views is a product control on both toolbars (`GuideViewSwitch`), not the floating switcher it replaced, and `GuideMode` on the controller is what it writes. `DESIGN.md`'s Screens section is the argument in full; read it before changing what a screen is for.
+
+The doctrine underneath is `.ac/research/design-doctrine.md`, read off Netflix, Plex and Apple TV. Read it before changing anything about how a screen composes, especially Part three, which is where those three references stop applying to an IPTV client.
+
+`DESIGN.md` exists and `lib/config/wind_theme.g.dart` is generated from it by `./bin/fsa design:sync`. The status colours the generator does not emit (live, catch-up, recording, EPG-now) are hand-written in `lib/config/watchools_status_tokens.dart`; change a hex in one and change it in the other.
+
+There is still no player, no protocol layer and no data layer. Every screen reads a fixture (`lib/app/support/guide_fixture.dart`, `lib/app/support/vod_fixture.dart`) through two `SimpleMagicController`s.
+
+**Three things the design phase left open**, in the order they will bite:
+
+- **There is no time model.** `GuideController.now` is a compile-time constant, and every progress bar, every "N dk kaldı", the grid's now line and the two live rails are computed from it. The doctrine makes the ticking clock the whole argument for `Şimdi`; nothing ticks. Both live views need a clock source, a rebuild cadence, and a decision about what happens at a programme boundary while the user is mid-scroll.
+- **There is no focus or D-pad model.** Every layout already writes `focus:ring-2 focus:ring-focus-ring`, so the visual half is settled and consistent; activation and traversal are missing, and both are wind gaps rather than app gaps.
+- **The failure states are not designed.** Loading, provider unreachable, expired credentials.
+
+`/baslik` carries no identifier yet, so the title screen renders whatever the catalogue last selected. It becomes `/baslik/:id` with the Xtream client.
 
 Components get a preview file alongside them and `./bin/fsa previews:refresh` regenerates the index. `magic_devtools` owns the `/preview` route and is already a dependency.
 
