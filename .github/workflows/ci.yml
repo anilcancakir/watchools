@@ -118,8 +118,13 @@ jobs:
           cp .env.example .env
           php artisan key:generate
 
+      # The paths are explicit because a bare `pint --test` run from this
+      # directory silently skips files: it exits 0 with a known
+      # class_attributes_separation violation in app/Models/User.php that the
+      # same binary reports when the path is named. Passing the paths makes the
+      # local command and this one check the same set.
       - name: Lint
-        run: vendor/bin/pint --test
+        run: vendor/bin/pint --test app config database routes tests
 
       - name: Static analysis
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
