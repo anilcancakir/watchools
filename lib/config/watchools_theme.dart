@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show Brightness;
 import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 
 import 'watchools_status_tokens.dart';
@@ -42,9 +43,15 @@ const Map<String, String> watchoolsFontFamilies = <String, String>{'sans': 'Schi
 /// Keeping the assembly here rather than inline in `main()` gives the theme one
 /// definition that the app and its tests both read, so a test cannot pass
 /// against a theme the app does not ship.
+/// `syncWithSystem` is off and `brightness` is pinned dark. Wind documents this
+/// as divergence F05: a declarative brightness loses to the system value unless
+/// sync is disabled, so `MagicApplication(themeMode: ThemeMode.dark)` alone
+/// renders light on a light-mode machine. Measured, not assumed.
 WindThemeData buildWatchoolsWindTheme() => WindThemeData(
   colors: designColors,
   aliases: <String, String>{...designAliases, ...watchoolsStatusAliases},
   borderRadius: watchoolsBorderRadius,
   fontFamilies: watchoolsFontFamilies,
+  brightness: Brightness.dark,
+  syncWithSystem: false,
 );
