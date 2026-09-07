@@ -294,7 +294,10 @@ class _TimeLayoutState extends State<TimeLayout> {
                           left: nowX,
                           top: 0,
                           bottom: 0,
-                          child: WDiv(className: 'w-[2px] h-full bg-live'),
+                          // No `h-full`: `top` plus `bottom` is already a tight
+                          // height, and the class would only add a
+                          // `LayoutBuilder`. See `_block` for the measurement.
+                          child: WDiv(className: 'w-[2px] bg-live'),
                         ),
                       ],
                     ),
@@ -486,9 +489,22 @@ class _TimeLayoutState extends State<TimeLayout> {
       onTap: () => controller.selectProgramme(channel, programme),
       semanticLabel: '${channel.name}, ${programme.title}, ${programme.startLabel} - ${programme.endLabel}',
       child: WDiv(
+        // No `w-full h-full`, and dropping them is a measured saving rather
+        // than tidying. The `Positioned` above carries `left` + `width` and
+        // `top` + `bottom`, so this box is already TIGHT on both axes and the
+        // two classes changed nothing about the layout. `h-full` is not free
+        // though: wind composes it as a `LayoutBuilder` whose bounded branch
+        // returns `FractionallySizedBox(heightFactor: 1)`
+        // (`w_div.dart:1721`), and a `LayoutBuilder` defers its subtree into a
+        // second layout pass. One per programme block, on a grid that draws
+        // hundreds.
+        //
+        // Same family as the `max-w-*` trap in `CLAUDE.md`, from the other
+        // side: under a tight parent a sizing class does nothing, and here
+        // doing nothing still cost a render object.
         className:
             '''
-              flex flex-col justify-center gap-0.5 w-full h-full px-2 rounded-lg overflow-hidden
+              flex flex-col justify-center gap-0.5 px-2 rounded-lg overflow-hidden
               hover:brightness-110
               focus:ring-2 focus:ring-focus-ring
               selected:ring-2 selected:ring-focus-ring
