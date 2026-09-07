@@ -45,6 +45,11 @@ class CategoryStrip extends StatelessWidget {
   Widget _item(String group) {
     return WAnchor(
       onTap: () => controller.selectGroup(group),
+      // The only WAnchor in the app that relied on a child WText to supply its
+      // label. It worked, and it is what made the end-to-end walk's
+      // `button "Spor"` matcher fragile: the label was a side effect rather
+      // than a contract.
+      semanticLabel: '$group kategorisi',
       child: WDiv(
         className: pills && onScrim
             ? '''
