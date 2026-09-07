@@ -139,12 +139,22 @@ class NowLayout extends StatelessWidget {
                 // failing rather than as their provider not sending it. Stating
                 // the number once turns a recurring glitch into a fact about
                 // their subscription.
+                // On a scrim, like the search field beside it. This is the one
+                // line in the hero that sits over unscrimmed artwork, and the
+                // fixture's first backdrop is a bright sky: muted foreground on
+                // it was well under the contrast floor the rest of this palette
+                // is tested against.
                 WDiv(
-                  className: 'flex-1 min-w-0',
-                  child: WText(
-                    note == null ? controller.countLabel : '${controller.countLabel} · $note',
-                    className: 'text-xs font-semibold text-fg-muted text-right line-clamp-1',
-                  ),
+                  className: 'flex-1 min-w-0 flex flex-row justify-end',
+                  children: <Widget>[
+                    WDiv(
+                      className: 'shrink-0 rounded-full bg-scrim-strong px-3 py-1.5',
+                      child: WText(
+                        note == null ? controller.countLabel : '${controller.countLabel} · $note',
+                        className: 'text-xs font-semibold text-fg line-clamp-1',
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
