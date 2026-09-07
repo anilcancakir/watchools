@@ -36,11 +36,19 @@ class ChannelRow extends StatelessWidget {
   /// Whether this row is the one the user is pointed at.
   final bool selected;
 
-  /// Drops every optional column: the now block, the next block and the fact
-  /// chips. A `hidden` prefix already collapses them, so this is about intent
-  /// rather than layout: below `md` the row is the channel and what is on it,
-  /// and the columns are not built at all.
-  final bool compact;
+  /// How much width the row actually has, in logical pixels.
+  ///
+  /// A number rather than a `md:` / `lg:` / `xl:` prefix, and the difference is
+  /// load-bearing. Wind's breakpoints read the VIEWPORT, not the parent, so a
+  /// row inside an 860 pixel column of a 1440 pixel window evaluates `xl:` as
+  /// true and builds a 220 pixel next-column plus a fact strip it has no room
+  /// for. That is exactly what happened in the panelled direction: five
+  /// simultaneous right-overflows, from half a pixel to twenty seven, on a
+  /// screen where nothing looked wrong.
+  ///
+  /// The thresholds below are the sum of the columns each one admits, so a
+  /// column is only built once the row can actually hold it.
+  final double available;
 
   /// Fired when the row is picked.
   final VoidCallback? onTap;
@@ -53,15 +61,25 @@ class ChannelRow extends StatelessWidget {
     super.key,
     required this.channel,
     required this.nowMinute,
+    required this.available,
     this.selected = false,
-    this.compact = false,
     this.onTap,
     this.onToggleFavourite,
   });
 
+  /// Below this the row is the channel and what is on it, and nothing else.
+  static const double _nowFloor = 640;
+
+  /// Adds the next-programme column.
+  static const double _nextFloor = 900;
+
+  /// Adds the fact chips.
+  static const double _factFloor = 1080;
+
   @override
   Widget build(BuildContext context) {
     final Programme? now = channel.programmeAt(nowMinute);
+    final bool wide = available >= _nowFloor;
 
     // The star sits OUTSIDE the row's anchor, not inside it. Nested inside, the
     // row's own `Semantics` swallowed it: the end-to-end walk found no
@@ -92,11 +110,15 @@ class ChannelRow extends StatelessWidget {
                 _number(),
                 _logo(),
                 // Identity takes the remainder at every width. Everything
-                // after it is fixed-width and drops out at its own breakpoint,
+                // after it is fixed-width and drops out at its own threshold,
                 // so the name always has somewhere to go instead of
                 // overflowing.
-                _identity(now),
-                if (!compact) ...<Widget>[if (now != null) _now(now) else _noSchedule(), _next(), _facts()],
+                _identity(now, wide: wide),
+                if (wide) ...<Widget>[
+                  if (now != null) _now(now) else _noSchedule(),
+                  if (available >= _nextFloor) _next(),
+                  if (available >= _factFloor) _facts(),
+                ],
               ],
             ),
           ),
@@ -136,7 +158,7 @@ class ChannelRow extends StatelessWidget {
 
   Widget _logo() => ChannelMark(channel: channel, size: 'sm');
 
-  Widget _identity(Programme? now) {
+  Widget _identity(Programme? now, {required bool wide}) {
     // The grow claim gets its own element and the column lives inside it, so
     // that `flex-1` and `flex flex-col` never land on one WDiv: they sit in the
     // same parser family and the last class in a family wins.
@@ -152,21 +174,23 @@ class ChannelRow extends StatelessWidget {
                 className: 'flex-1 min-w-0',
                 child: WText(channel.name, className: 'text-sm font-semibold text-fg truncate'),
               ),
-              // Hidden on a phone: the accent bar down the left edge already
-              // says live, catch-up or recording, and at this width the badge
-              // was taking the whole row and squeezing the name to nothing.
-              WDiv(
-                className: 'hidden md:block shrink-0',
-                child: StatusBadge(status: channel.status),
-              ),
+              // Dropped on a narrow row: the accent bar down the left edge
+              // already says live, catch-up or recording, and at this width the
+              // badge took the whole row and squeezed the name to nothing.
+              if (wide)
+                WDiv(
+                  className: 'shrink-0',
+                  child: StatusBadge(status: channel.status),
+                ),
             ],
           ),
-          // On a phone the dedicated now-column is gone, so what is on air moves
-          // under the name. Dropping it entirely would leave the row saying only
-          // which channels exist, which is not what anyone opens a guide for.
-          if (now != null)
+          // On a narrow row the dedicated now-column is gone, so what is on air
+          // moves under the name. Dropping it entirely would leave the row
+          // saying only which channels exist, which is not what anyone opens a
+          // guide for.
+          if (!wide && now != null)
             WDiv(
-              className: 'md:hidden flex flex-row items-center gap-1.5 w-full min-w-0',
+              className: 'flex flex-row items-center gap-1.5 w-full min-w-0',
               children: <Widget>[
                 WText(
                   now.startLabel,
@@ -180,8 +204,7 @@ class ChannelRow extends StatelessWidget {
               ],
             )
           else
-            WText(channel.group, className: 'md:hidden text-xs text-fg-disabled truncate'),
-          WText(channel.group, className: 'hidden md:block text-xs text-fg-disabled truncate'),
+            WText(channel.group, className: 'text-xs text-fg-disabled truncate'),
         ],
       ),
     );
@@ -189,7 +212,7 @@ class ChannelRow extends StatelessWidget {
 
   Widget _now(Programme now) {
     return WDiv(
-      className: 'hidden md:flex w-[300px] shrink-0 flex-col gap-1.5 ml-4',
+      className: 'flex flex-col w-[300px] shrink-0 gap-1.5 ml-4',
       children: <Widget>[
         WDiv(
           className: 'flex flex-row items-baseline gap-2',
@@ -231,7 +254,7 @@ class ChannelRow extends StatelessWidget {
     // Quiet rather than absent. A provider that sends no EPG is normal, and a
     // row that simply stops halfway reads as a rendering bug.
     return const WDiv(
-      className: 'hidden md:block w-[300px] shrink-0 ml-4',
+      className: 'w-[300px] shrink-0 ml-4',
       child: WText('Yayın akışı yok', className: 'text-xs text-fg-disabled'),
     );
   }
@@ -245,7 +268,7 @@ class ChannelRow extends StatelessWidget {
     if (next == null) return const SizedBox.shrink();
 
     return WDiv(
-      className: 'hidden xl:flex flex-row items-baseline gap-2 ml-6 w-[220px] shrink-0',
+      className: 'flex flex-row items-baseline gap-2 ml-6 w-[220px] shrink-0',
       children: <Widget>[
         WText(
           next.startLabel,
@@ -264,7 +287,7 @@ class ChannelRow extends StatelessWidget {
     if (channel.facts.isEmpty) return const SizedBox.shrink();
 
     return WDiv(
-      className: 'hidden lg:flex flex-row gap-1 shrink-0 ml-4',
+      className: 'flex flex-row gap-1 shrink-0 ml-4',
       children: <Widget>[for (final String fact in channel.facts) FactChip(label: fact)],
     );
   }

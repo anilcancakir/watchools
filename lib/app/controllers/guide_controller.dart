@@ -1,38 +1,50 @@
+import 'package:flutter/foundation.dart';
 import 'package:magic/magic.dart';
 
 import '../models/channel.dart';
 import '../models/programme.dart';
 import '../support/guide_fixture.dart';
 
-/// The four browse layouts on offer while the design language is being chosen.
+/// The three directions on offer while the design language is being chosen.
 ///
-/// They are genuinely different answers to the same question rather than four
-/// skins, because the thing being decided is what the screen is FOR: a control
-/// surface, a shop window, a stage, or an index.
-enum BrowseLayout {
-  /// Dense rows plus a time axis. Reads the line-up as data.
-  signal,
+/// Each one is descended from a different reference, and they disagree about
+/// what the screen is for rather than about how it looks. That is the choice
+/// being put to the user; the styling follows from it.
+enum GuideDirection {
+  /// Netflix's television screen, rebuilt around a subject that changes every
+  /// forty minutes. A live hero that ticks, over editorial rails.
+  now,
 
-  /// Full-bleed hero over horizontal rails. Reads the line-up as a catalogue.
-  marquee,
+  /// Plex's web library. A labelled sidebar, a dense virtualised list and one
+  /// sticky panel that is the only thing that moves. Built for the line-up
+  /// sizes a real provider ships.
+  tower,
 
-  /// A quiet list beside one large preview that follows the pointer. Reads the
-  /// line-up as a single object you move through.
-  stage,
-
-  /// A grid of channel marks with a now-playing strip. Reads the line-up as an
-  /// index, and the only one that stays usable with no artwork and no EPG.
-  mosaic,
+  /// A real broadcast grid: channels down, time across, a now line, and past
+  /// blocks that are reachable because catch-up makes them playable. The only
+  /// direction where 20:55 and 21:30 are visible at the same moment.
+  time,
 }
 
-/// Whether a [BrowseLayout.signal] body draws a time axis or a row per channel.
-enum GuideMode {
-  /// Time axis. Only channels that carry a schedule can appear.
-  guide,
+/// One editorial rail on the [GuideDirection.now] screen.
+///
+/// The title is a sentence with a point of view, not a taxonomy label, and the
+/// source line says where the row came from. Both halves are Netflix's and
+/// Plex's respectively, and together they answer the two questions a row raises:
+/// what is this, and why am I being shown it.
+@immutable
+class GuideRail {
+  /// The editorial title.
+  final String title;
 
-  /// One row per channel. Works for the whole line-up and is the only view
-  /// that survives ten thousand of them.
-  list,
+  /// Where the row came from, or null when the answer is uninteresting.
+  final String? source;
+
+  /// The channels in it, already filtered.
+  final List<Channel> channels;
+
+  /// Creates a [GuideRail].
+  const GuideRail({required this.title, required this.channels, this.source});
 }
 
 /// Everything the line-up screen knows: the channels, the filters, the
@@ -53,15 +65,20 @@ class GuideController extends SimpleMagicController {
   /// you want to see what you just missed, not what already ended an hour ago.
   static const int windowStart = 19 * 60 + 30;
 
-  /// Three and a half hours, the widest window that still leaves a programme
-  /// block wide enough to carry a title on a laptop.
-  static const int windowMinutes = 210;
+  /// Five hours, 19:30 to 00:30.
+  ///
+  /// It was three and a half while the axis had to fit a laptop without
+  /// scrolling, which capped the window at whatever left a block wide enough to
+  /// carry a title. The grid scrolls now, so the cap is gone and the window
+  /// becomes a question about the evening rather than about the viewport: five
+  /// hours covers prime time end to end, which is the span someone opens a
+  /// guide to plan.
+  static const int windowMinutes = 300;
 
   /// The line-up, in provider order. Mutable only through [toggleFavourite].
   final List<Channel> channels = List<Channel>.of(guideFixture);
 
-  BrowseLayout _layout = BrowseLayout.signal;
-  GuideMode _mode = GuideMode.guide;
+  GuideDirection _direction = GuideDirection.now;
   String _group = 'Tümü';
   String _query = '';
   late Channel _channel = channels.first;
@@ -74,12 +91,10 @@ class GuideController extends SimpleMagicController {
   List<Channel>? _matchCache;
   List<Channel>? _scheduledCache;
   List<(String, List<Channel>)>? _sectionCache;
+  List<GuideRail>? _railCache;
 
-  /// Which layout is on show.
-  BrowseLayout get layout => _layout;
-
-  /// Whether the signal layout is drawing the time axis or the row list.
-  GuideMode get mode => _mode;
+  /// Which direction is on show.
+  GuideDirection get direction => _direction;
 
   /// The selected category, `Tümü` or `Favoriler` included.
   String get group => _group;
@@ -155,6 +170,72 @@ class GuideController extends SimpleMagicController {
   /// rather than quietly showing a shorter list than the count above it.
   int get withoutSchedule => matches.length - scheduled.length;
 
+  /// How soon a programme has to start to count as "about to".
+  ///
+  /// Forty five minutes rather than thirty. A Turkish evening schedule turns
+  /// over on the hour and the half hour, so a thirty minute horizon at 20:12
+  /// catches the 20:30 slot and nothing else; forty five reaches 21:00 and the
+  /// row stops emptying out for a third of every hour.
+  static const int _soonMinutes = 45;
+
+  /// How far into a programme still counts as worth joining.
+  static const double _freshFraction = 0.25;
+
+  /// The editorial rails, filtered by the current group and query.
+  ///
+  /// The first two rows are the ones no catalogue product can offer, and they
+  /// are the reason this direction exists: "you have not missed much" and
+  /// "starts shortly" are questions only a live schedule can answer, and a
+  /// static channel grid answers neither. Everything below them is the
+  /// provider's own grouping, which is the only structure a real playlist
+  /// actually ships with.
+  ///
+  /// A rail with nothing in it is dropped rather than rendered empty. That is
+  /// the one place this departs from "missing data occupies its slot": an empty
+  /// SLOT inside a row is a hole and has to be designed, but an empty ROW is a
+  /// claim about the schedule that is simply not true right now.
+  List<GuideRail> get rails {
+    final List<GuideRail>? cached = _railCache;
+    if (cached != null) return cached;
+
+    final List<Channel> fresh = <Channel>[];
+    final List<Channel> soon = <Channel>[];
+    final List<Channel> starred = <Channel>[];
+    final List<Channel> blind = <Channel>[];
+
+    for (final Channel channel in matches) {
+      if (!channel.hasSchedule) {
+        blind.add(channel);
+        continue;
+      }
+      if (channel.favourite) starred.add(channel);
+
+      final Programme? live = channel.programmeAt(now);
+      if (live != null && live.progressAt(now) <= _freshFraction) fresh.add(channel);
+
+      final Programme? next = channel.nextAfter(now);
+      if (next != null && next.startMinute - now <= _soonMinutes) soon.add(channel);
+    }
+
+    final List<GuideRail> result = <GuideRail>[
+      if (fresh.isNotEmpty) GuideRail(title: 'Daha yeni başladı', source: 'Şu an yayında', channels: fresh),
+      if (soon.isNotEmpty) GuideRail(title: 'Yarım saat içinde', source: 'Yayın akışından', channels: soon),
+      if (starred.isNotEmpty) GuideRail(title: 'Favorilerin', channels: starred),
+      for (final (String group, List<Channel> members) in sections)
+        if (group != 'Favoriler') GuideRail(title: group, source: 'Sağlayıcı grubu', channels: members),
+      if (blind.isNotEmpty)
+        GuideRail(
+          title: 'Akış bilgisi olmayan kanallar',
+          source: 'Sağlayıcı bu kanallar için EPG göndermedi',
+          channels: blind,
+        ),
+    ];
+
+    _railCache = result;
+
+    return result;
+  }
+
   /// How many channels the current filter left, worded for whether a search is
   /// active.
   ///
@@ -186,16 +267,10 @@ class GuideController extends SimpleMagicController {
   /// come from the provider's `group-title` values.
   List<String> get groups => guideGroups;
 
-  /// Switches layout. Filters and favourites survive the switch on purpose:
-  /// comparing two layouts on different data compares the data.
-  void showLayout(BrowseLayout layout) {
-    _layout = layout;
-    refreshUI();
-  }
-
-  /// Switches the signal layout between the time axis and the row list.
-  void showMode(GuideMode mode) {
-    _mode = mode;
+  /// Switches direction. Filters and favourites survive the switch on purpose:
+  /// comparing two directions on different data compares the data.
+  void showDirection(GuideDirection direction) {
+    _direction = direction;
     refreshUI();
   }
 
@@ -244,5 +319,6 @@ class GuideController extends SimpleMagicController {
     _matchCache = null;
     _scheduledCache = null;
     _sectionCache = null;
+    _railCache = null;
   }
 }

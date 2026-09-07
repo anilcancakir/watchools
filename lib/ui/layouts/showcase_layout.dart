@@ -5,34 +5,30 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/library_controller.dart';
 import '../../app/models/title_item.dart';
 import '../components/artwork/index.dart';
+import '../components/fact_chip/index.dart';
 import '../components/favourite_button/index.dart';
+import '../components/play_progress/index.dart';
+import '../components/rail/index.dart';
+import '../components/scrim/index.dart';
+import '../components/section_header/index.dart';
 import '../components/title_poster/index.dart';
 import 'support/library_categories.dart';
 import 'support/library_empty.dart';
 import 'support/library_toolbar.dart';
 import 'support/nav_rail.dart';
-import 'support/title_detail.dart';
+import 'support/page_gutter.dart';
 
-/// Catalogue direction three: the showcase.
+/// Direction one: the catalogue as a shop window.
 ///
-/// Netflix. One title fills the top of the screen, then horizontal shelves of
-/// posters underneath, `İzlemeye devam et` first and the provider's categories
-/// after it.
+/// Netflix's browse screen. One title is promoted at hero scale and everything
+/// else is a rail, because the screen's job here is to end the decision rather
+/// than to help you search: a viewer who opens a catalogue without a title in
+/// mind wants to be told, and a grid tells them nothing.
 ///
-/// This is the one direction where the archetype fits the content: a VOD
-/// catalogue does have artwork, titles do have synopses and ratings, and a
-/// shelf of 2:3 posters is what those were made for. The argument against it
-/// for a channel line-up does not carry over, which is why it is here for the
-/// catalogue and was rejected for the guide.
-///
-/// What it optimises: being sold something. A viewer with no destination gets
-/// one title argued for properly rather than four hundred listed.
-///
-/// What it sacrifices: reaching a known title. Everything is two shelves and a
-/// horizontal scroll away, and the count of what you cannot see is invisible.
-/// The measured Netflix comparison is the cost: roughly seven posters per row
-/// down to three or four, and a year of beta that could not prove engagement
-/// improved.
+/// The hero is a resume rather than a recommendation. Netflix promotes what it
+/// wants you to start; with no recommendation engine and a catalogue the user
+/// already owns, the honest equivalent is what they left unfinished, which is
+/// also the thing a returning viewer opened the app for.
 @immutable
 class ShowcaseLayout extends StatelessWidget {
   /// The shared catalogue state.
@@ -43,128 +39,277 @@ class ShowcaseLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool wide = wScreenIs(context, 'md');
-
-    // Always a screen here, at every width. The hero sells one title and the
-    // shelves sell the rest; neither can hold an episode list, so without this
-    // the shelf layout was the one direction with no way to see a season at
-    // all, which the end-to-end walk caught rather than a screenshot.
-    if (controller.detailOpen) {
-      return TitleDetail(controller: controller, wide: wide, dismissible: true);
-    }
-
-    final List<(String, List<TitleItem>)> shelves = _shelves();
+    final bool wide = MediaQuery.sizeOf(context).width >= 640;
 
     return WDiv(
-      className: 'flex flex-row h-full bg-surface',
+      className: 'flex flex-row w-full h-full bg-surface',
       children: <Widget>[
         if (wide) const NavRail(),
         WDiv(
-          className: 'flex-1 min-w-0',
-          child: CustomScrollView(
-            primary: true,
-            slivers: <Widget>[
-              SliverToBoxAdapter(child: _hero(context, wide)),
-              SliverToBoxAdapter(
-                child: LibraryToolbar(controller: controller, wide: wide),
-              ),
-              SliverToBoxAdapter(child: LibraryCategories(controller: controller)),
-              if (shelves.isEmpty)
-                // The default `hasScrollBody: true` matters: false measures the
-                // child's intrinsic height, and Wind's `h-full` column path
-                // carries a `LayoutBuilder`, which cannot answer that.
-                SliverFillRemaining(child: LibraryEmpty(controller: controller))
-              else
-                for (final (String, List<TitleItem>) shelf in shelves)
-                  SliverToBoxAdapter(child: _shelf(shelf.$1, shelf.$2)),
-              const SliverToBoxAdapter(child: SizedBox(height: 96)),
-            ],
-          ),
+          className: 'flex-1 min-w-0 h-full',
+          child: controller.matches.isEmpty
+              ? _emptyBody(wide)
+              : CustomScrollView(
+                  slivers: <Widget>[
+                    SliverToBoxAdapter(child: _hero(wide)),
+                    SliverToBoxAdapter(
+                      child: LibraryToolbar(controller: controller, wide: wide),
+                    ),
+                    const SliverToBoxAdapter(child: PageGutter.gap),
+                    SliverToBoxAdapter(child: LibraryCategories(controller: controller)),
+                    if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
+                    SliverList.builder(
+                      itemCount: controller.sections.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final (String name, List<TitleItem> items) = controller.sections[index];
+
+                        return _posterRail(name, items, wide);
+                      },
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                  ],
+                ),
         ),
       ],
     );
   }
 
-  /// The shelves, in the order a returning viewer wants them.
-  ///
-  /// `İzlemeye devam et` leads when there is anything in it, because that is
-  /// what a returning viewer opened the app for and Apple's Up Next row is the
-  /// same decision. `Favorileriniz` next, then the provider's categories.
-  List<(String, List<TitleItem>)> _shelves() {
-    // Not while a synthetic category is the filter: a "continue watching" shelf
-    // inside the continue-watching view is the same list twice.
-    final bool synthetic = controller.category == 'İzlemeye devam et' || controller.category == 'Favoriler';
-
-    final List<TitleItem> resume = synthetic ? const <TitleItem>[] : controller.continueWatching;
-    final List<TitleItem> starred = synthetic
-        ? const <TitleItem>[]
-        : controller.matches.where((TitleItem t) => t.favourite).toList();
-
-    return <(String, List<TitleItem>)>[
-      if (resume.isNotEmpty) ('İzlemeye devam et', resume),
-      if (starred.isNotEmpty) ('Favorileriniz', starred),
-      ...controller.sections,
-    ];
+  Widget _emptyBody(bool wide) {
+    return WDiv(
+      className: 'flex flex-col w-full h-full',
+      children: <Widget>[
+        LibraryToolbar(controller: controller, wide: wide),
+        PageGutter.gap,
+        LibraryCategories(controller: controller),
+        PageGutter.gap,
+        WDiv(
+          className: 'flex-1 w-full',
+          child: LibraryEmpty(controller: controller),
+        ),
+      ],
+    );
   }
 
-  Widget _hero(BuildContext context, bool wide) {
-    final TitleItem title = controller.selected;
-    final String? backdrop = title.backdropUrl;
-    final double height = (MediaQuery.sizeOf(context).height * 0.58).clamp(260.0, 560.0);
+  /// The promoted title: what the viewer left unfinished, or the first entry.
+  TitleItem get _featured =>
+      controller.continueWatching.isEmpty ? controller.matches.first : controller.continueWatching.first;
 
-    return SizedBox(
-      height: height,
+  Widget _hero(bool wide) {
+    final TitleItem title = _featured;
+    final Episode? next = title.upNext;
+    final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
+
+    return WDiv(
+      className: 'w-full h-[420px] sm:h-[540px]',
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
           Artwork(
-            src: backdrop,
-            fallback: const WDiv(className: 'bg-surface-container'),
+            src: title.backdropUrl ?? title.posterUrl,
+            fallback: const WDiv(className: 'w-full h-full bg-surface-container'),
           ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: <Color>[Color(0xE60E0F11), Color(0xB30E0F11), Color(0x000E0F11)],
-                stops: <double>[0.0, 0.5, 0.85],
+          Scrim.left,
+          Scrim.bottom,
+          Positioned(
+            left: PageGutter.value,
+            right: PageGutter.value,
+            bottom: 32,
+            child: _heroContent(title, next, wide),
+          ),
+          if (progress > 0.03 && progress < 0.92)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: PlayProgress(value: progress, size: 'lg'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroContent(TitleItem title, Episode? next, bool wide) {
+    final String? rating = title.ratingLabel;
+
+    return WDiv(
+      className: 'flex flex-col gap-3 w-full max-w-[620px]',
+      children: <Widget>[
+        WText(title.isSeries ? 'DİZİ' : 'FİLM', className: 'text-xs font-bold tracking-widest text-primary'),
+        WText(title.name, className: 'text-3xl sm:text-5xl font-bold text-fg line-clamp-2'),
+        WText(
+          rating == null ? '${title.year} · ${title.lengthLabel}' : '${title.year} · ${title.lengthLabel} · ★ $rating',
+          className: 'text-sm font-medium text-fg-muted',
+        ),
+        if (title.synopsis != null && wide)
+          WText(title.synopsis!, className: 'text-sm text-fg-muted line-clamp-2 max-w-prose'),
+        // `wrap` with no `flex` beside it. Wind's display family resolves
+        // first-wins against its own documented last-class-wins rule, so
+        // `flex flex-row ... wrap` takes `flex` and discards the wrap silently.
+        // Defect 3 in `.ac/research/ecosystem-defects.md`, and the reason this
+        // row ran 110 pixels past a 414 pixel screen while looking correct.
+        WDiv(
+          className: 'wrap items-center gap-2',
+          children: <Widget>[
+            WDiv(className: 'shrink-0', child: _play(title, next)),
+            WDiv(
+              className: 'shrink-0',
+              child: WAnchor(
+                onTap: () => controller.openDetail(title),
+                semanticLabel: '${title.name} detayı',
+                child: const WDiv(
+                  className: '''
+                    flex flex-row items-center gap-2
+                    h-11 px-5 rounded-full
+                    bg-scrim-strong text-fg
+                    hover:bg-scrim
+                    focus:ring-2 focus:ring-focus-ring
+                  ''',
+                  children: <Widget>[
+                    WIcon(Icons.info_outline, className: 'text-base'),
+                    WText('Detay', className: 'text-sm font-semibold'),
+                  ],
+                ),
               ),
             ),
-            child: SizedBox.expand(),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[Color(0x000E0F11), Color(0x000E0F11), Color(0xFF0E0F11)],
-                stops: <double>[0.0, 0.55, 1.0],
+            WDiv(
+              className: 'shrink-0',
+              child: FavouriteButton(
+                starred: title.favourite,
+                subject: title.name,
+                shape: 'circle',
+                onToggle: () => controller.toggleFavourite(title),
               ),
             ),
-            child: SizedBox.expand(),
+            for (final String fact in title.facts)
+              WDiv(
+                className: 'shrink-0',
+                child: FactChip(label: fact),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// The one filled button on the screen.
+  Widget _play(TitleItem title, Episode? next) {
+    final bool resuming = title.isSeries ? (next?.progress ?? 0) > 0.03 : title.progress > 0.03;
+    final String label = title.isSeries && next != null
+        ? '${resuming ? 'Devam et' : 'Başla'} · ${next.code}'
+        : resuming
+        ? 'Devam et'
+        : 'Oynat';
+
+    return WAnchor(
+      onTap: () {},
+      semanticLabel: '${title.name} $label',
+      child: WDiv(
+        className: '''
+          flex flex-row items-center gap-2
+          h-11 px-6 rounded-full
+          bg-primary text-on-primary
+          hover:bg-primary-hover
+          focus:ring-2 focus:ring-focus-ring
+        ''',
+        children: <Widget>[
+          const WIcon(Icons.play_arrow_rounded, className: 'text-lg'),
+          WText(label, className: 'text-sm font-bold'),
+        ],
+      ),
+    );
+  }
+
+  /// Continue-watching, as 16:9 stills rather than posters.
+  ///
+  /// The aspect ratio is doing the work: 2:3 means a title and 16:9 means a
+  /// moment inside one, so a rail of stills says "you are partway through
+  /// these" before a single word is read. Plex and Netflix both make the same
+  /// switch for the same row.
+  Widget _resumeRail(bool wide) {
+    final List<TitleItem> items = controller.continueWatching;
+    final double width = wide ? 280 : 220;
+
+    return WDiv(
+      className: 'flex flex-col gap-3 w-full ${PageGutter.top}',
+      children: <Widget>[
+        const WDiv(
+          className: '${PageGutter.x} w-full',
+          child: SectionHeader(title: 'İzlemeye devam et', source: 'Bu cihazda kaldığın yer'),
+        ),
+        Rail(
+          // 16:9 frame, the `gap-2` under it, and the caption's own fixed
+          // height, which is what makes this exact rather than a guess.
+          height: width * 9 / 16 + 8 + 44,
+          itemCount: items.length,
+          itemBuilder: (BuildContext context, int index) => _resumeCard(items[index], width),
+        ),
+      ],
+    );
+  }
+
+  Widget _resumeCard(TitleItem title, double width) {
+    final Episode? next = title.upNext;
+    final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
+    final String caption = title.isSeries && next != null ? '${next.code} · ${next.title}' : title.lengthLabel;
+
+    return SizedBox(
+      width: width,
+      child: WDiv(
+        className: 'flex flex-col gap-2',
+        children: <Widget>[
+          WAnchor(
+            onTap: () => controller.openDetail(title),
+            semanticLabel: '${title.name}, $caption',
+            child: WDiv(
+              className: 'rounded-lg overflow-hidden focus:ring-2 focus:ring-focus-ring',
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    Artwork(
+                      src: next?.imageUrl ?? title.backdropUrl ?? title.posterUrl,
+                      slotWidth: width,
+                      fallback: WDiv(
+                        className: 'w-full h-full p-3 items-center justify-center bg-surface-container-high',
+                        child: WText(title.name, className: 'text-sm font-bold text-fg-muted text-center line-clamp-3'),
+                      ),
+                    ),
+                    Scrim.flat,
+                    Positioned(left: 0, right: 0, bottom: 0, child: PlayProgress(value: progress)),
+                  ],
+                ),
+              ),
+            ),
           ),
+          // The star is a sibling of the anchor, not a child of it. A WAnchor's
+          // `semanticLabel` replaces its descendants' text, so a star nested
+          // inside would be unreachable to a screen reader and invisible to the
+          // walk that drives this app through the same tree, which is how this
+          // rail came to be the one surface in the app showing a title with no
+          // way to star it.
+          // 44 rather than 40, which is the star's own `size-11`. At 40 the
+          // clip took four pixels off the bottom of the control and enough of
+          // its hit area with them that the end-to-end walk could tap it
+          // without toggling anything.
           WDiv(
-            className: 'flex flex-col justify-end gap-3 h-full px-6 md:px-12 pb-8 max-w-[720px]',
+            className: 'flex flex-row items-start gap-2 w-full h-[44px] overflow-hidden',
             children: <Widget>[
               WDiv(
-                className: 'flex flex-row items-center gap-2',
+                className: 'flex flex-col flex-1 min-w-0',
                 children: <Widget>[
-                  WText(
-                    title.isSeries ? 'DİZİ' : 'FİLM',
-                    className: 'text-[11px] font-bold text-fg-muted tracking-wide',
-                  ),
-                  WText(_meta(title), className: 'text-xs text-fg-muted'),
+                  WText(title.name, className: 'text-sm font-semibold text-fg line-clamp-1'),
+                  WText(caption, className: 'text-xs text-fg-muted line-clamp-1'),
                 ],
               ),
-              WAnchor(
-                onTap: () => controller.openDetail(title),
-                semanticLabel: '${title.name} ayrıntıları',
-                child: WText(title.name, className: 'text-3xl md:text-5xl font-bold text-fg line-clamp-2'),
-              ),
-              if (title.synopsis != null && wide)
-                WDiv(
-                  className: 'max-w-[640px]',
-                  child: WText(title.synopsis!, className: 'text-sm md:text-base text-fg-muted line-clamp-3'),
+              WDiv(
+                className: 'shrink-0',
+                child: FavouriteButton(
+                  starred: title.favourite,
+                  subject: title.name,
+                  onToggle: () => controller.toggleFavourite(title),
                 ),
-              _actions(title),
+              ),
             ],
           ),
         ],
@@ -172,92 +317,37 @@ class ShowcaseLayout extends StatelessWidget {
     );
   }
 
-  String _meta(TitleItem title) {
-    final String? rating = title.ratingLabel;
-    final String head = '${title.year} · ${title.lengthLabel}';
-
-    return rating == null ? head : '$head · ★ $rating';
-  }
-
-  Widget _actions(TitleItem title) {
-    final Episode? next = title.upNext;
-    final String label = switch ((title.isSeries, next, title.inProgress)) {
-      (true, final Episode e, _) => '${e.code} oynat',
-      (false, _, true) => 'Devam et',
-      _ => 'İzle',
-    };
+  Widget _posterRail(String name, List<TitleItem> items, bool wide) {
+    final String size = wide ? 'md' : 'sm';
+    final double width = wide ? 168 : 124;
 
     return WDiv(
-      className: 'flex flex-row items-center gap-3',
+      className: 'flex flex-col gap-3 w-full ${PageGutter.top}',
       children: <Widget>[
-        WAnchor(
-          onTap: () {},
-          semanticLabel: '${title.name} $label',
-          child: WDiv(
-            className: '''
-              flex flex-row items-center gap-2
-              h-12 px-7 rounded
-              bg-inverse
-              text-on-inverse
-              focus:ring-2 focus:ring-focus-ring
-            ''',
-            children: <Widget>[
-              const WIcon(Icons.play_arrow_rounded, className: 'text-xl'),
-              WText(label, className: 'text-base font-bold'),
-            ],
+        WDiv(
+          className: '${PageGutter.x} w-full',
+          child: SectionHeader(
+            title: name,
+            source: 'Sağlayıcı kategorisi',
+            trailing: WText('${items.length}', className: 'text-sm font-semibold text-fg-muted'),
           ),
         ),
-        FavouriteButton(
-          starred: title.favourite,
-          subject: title.name,
-          shape: 'pill',
-          onToggle: () => controller.toggleFavourite(title),
-        ),
-      ],
-    );
-  }
+        Rail(
+          height: TitlePoster.heightFor(width),
+          itemCount: items.length,
+          itemBuilder: (BuildContext context, int index) {
+            final TitleItem title = items[index];
 
-  Widget _shelf(String heading, List<TitleItem> titles) {
-    return WDiv(
-      className: 'flex flex-col gap-3 pt-6',
-      children: <Widget>[
-        MergeSemantics(
-          child: WDiv(
-            className: 'flex flex-row items-baseline gap-2 px-6 md:px-12',
-            children: <Widget>[
-              WText(heading, className: 'text-base font-bold text-fg'),
-              WText('${titles.length}', className: 'text-xs font-semibold text-fg-disabled'),
-            ],
-          ),
-        ),
-        SizedBox(
-          // 168 of poster at 2:3 is 252, plus two label lines. A shelf that
-          // clips its own captions is the failure mode of every one of these.
-          height: 320,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: titles.length,
-            itemBuilder: (BuildContext context, int index) {
-              final TitleItem title = titles[index];
-
-              return WDiv(
-                className: 'mx-1.5',
-                child: TitlePoster(
-                  title: title,
-                  selected: identical(title, controller.selected),
-                  // A poster tap opens the detail. It was a two-step before
-                  // (tap to repoint the hero, then tap the hero's title), which
-                  // is not what any catalogue does and which nothing on screen
-                  // announced: the walk found the episode list unreachable.
-                  // The hero still follows along, one step behind, because it
-                  // shows whatever was last opened.
-                  onTap: () => controller.openDetail(title),
-                  onToggleFavourite: () => controller.toggleFavourite(title),
-                ),
-              );
-            },
-          ),
+            return SizedBox(
+              width: width,
+              child: TitlePoster(
+                title: title,
+                size: size,
+                onTap: () => controller.openDetail(title),
+                onToggleFavourite: () => controller.toggleFavourite(title),
+              ),
+            );
+          },
         ),
       ],
     );

@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 
 import '../../../app/models/title_item.dart';
 import '../artwork/index.dart';
+import '../play_progress/index.dart';
 import 'episode_row.recipe.dart';
 
 /// One episode of a series.
@@ -88,19 +89,7 @@ class EpisodeRow extends StatelessWidget {
               ),
             ),
             if (episode.inProgress)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: WDiv(
-                  className: 'h-1 bg-scrim-strong',
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: episode.progress,
-                    child: const WDiv(className: 'h-1 bg-primary'),
-                  ),
-                ),
-              ),
+              Positioned(left: 0, right: 0, bottom: 0, child: PlayProgress(value: episode.progress)),
           ],
         ),
       ),

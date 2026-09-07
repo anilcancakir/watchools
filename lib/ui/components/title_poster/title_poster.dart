@@ -4,7 +4,9 @@ import 'package:magic/magic.dart';
 
 import '../../../app/models/title_item.dart';
 import '../artwork/index.dart';
+import '../count_badge/index.dart';
 import '../favourite_button/index.dart';
+import '../play_progress/index.dart';
 import 'title_poster.recipe.dart';
 
 /// One catalogue entry as a 2:3 poster with its name and metadata under it.
@@ -40,6 +42,13 @@ class TitlePoster extends StatelessWidget {
   /// Fired when the star is picked.
   final VoidCallback? onToggleFavourite;
 
+  /// Appended to the box slot, for a caller that owns the width.
+  ///
+  /// A grid cell decides its own width, so the recipe's `w-[168px]` has to be
+  /// overridable. The recipe only appends, and Wind's per-family last-class
+  /// wins, so `w-full` here beats the recipe's fixed width at parse time.
+  final String? className;
+
   /// Creates a [TitlePoster].
   const TitlePoster({
     super.key,
@@ -48,15 +57,17 @@ class TitlePoster extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.onToggleFavourite,
+    this.className,
   });
 
   @override
   Widget build(BuildContext context) {
     final Map<String, String> slots = titlePosterRecipe()(variants: <String, String?>{'size': size});
     final Set<String> states = selected ? const <String>{'selected'} : const <String>{};
+    final String box = slots['box'] ?? '';
 
     return WDiv(
-      className: slots['box'] ?? '',
+      className: className == null ? box : '$box $className',
       states: states,
       children: <Widget>[
         WDiv(
@@ -75,19 +86,7 @@ class TitlePoster extends StatelessWidget {
                   child: Artwork(src: title.posterUrl, fallback: _blank(), slotWidth: _edges[size]),
                 ),
                 if (title.progress > 0.03 && title.progress < 0.92)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: WDiv(
-                      className: 'h-1 bg-scrim-strong',
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: title.progress,
-                        child: const WDiv(className: 'h-1 bg-primary'),
-                      ),
-                    ),
-                  ),
+                  Positioned(left: 0, right: 0, bottom: 0, child: PlayProgress(value: title.progress)),
                 Positioned(
                   right: 6,
                   top: 6,
@@ -98,24 +97,35 @@ class TitlePoster extends StatelessWidget {
                     onToggle: onToggleFavourite,
                   ),
                 ),
-                if (title.isSeries)
-                  Positioned(
-                    left: 6,
-                    top: 6,
-                    child: WDiv(
-                      className: 'px-2 h-6 rounded-full bg-scrim flex items-center',
-                      child: WText(title.lengthLabel, className: 'text-[10px] font-bold text-fg'),
-                    ),
-                  ),
+                // The unwatched count, not the season count. A square badge
+                // holding a bare number is the one shape in this system that is
+                // not rounded, so it reads as a different class of object
+                // without needing a word beside it, and the number it holds is
+                // the one that decides whether the card is worth opening.
+                if (title.unwatchedCount != null)
+                  Positioned(left: 0, top: 0, child: CountBadge(label: '${title.unwatchedCount}')),
               ],
             ),
           ),
         ),
-        WText(title.name, className: slots['name'] ?? ''),
-        WText(_meta(), className: slots['meta'] ?? ''),
+        WDiv(
+          className: slots['caption'] ?? '',
+          children: <Widget>[
+            WText(title.name, className: slots['name'] ?? ''),
+            WText(_meta(), className: slots['meta'] ?? ''),
+          ],
+        ),
       ],
     );
   }
+
+  /// The rendered height of a card [width] pixels wide.
+  ///
+  /// A 2:3 frame, the `gap-2` between the frame and the caption, and the
+  /// caption's own fixed height. Exposed because a `Rail` and a
+  /// `SliverGridDelegate` both have to state the cell height up front, and the
+  /// only place that can know it is here.
+  static double heightFor(double width) => width * 3 / 2 + 8 + 40;
 
   /// The name set in the frame, for a title the provider sent no poster for.
   ///

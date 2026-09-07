@@ -3,24 +3,20 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
-import '../../ui/layouts/ledger_layout.dart';
-import '../../ui/layouts/library_switcher.dart';
+import '../../ui/layouts/collection_layout.dart';
+import '../../ui/layouts/direction_switcher.dart';
+import '../../ui/layouts/shelf_layout.dart';
 import '../../ui/layouts/showcase_layout.dart';
-import '../../ui/layouts/wall_layout.dart';
 
-/// The catalogue screen: films and series.
+/// The catalogue screen.
 ///
-/// One screen for both, with a scope switch, rather than a Films page and a
-/// Series page. A provider sends them through separate endpoints, but the
-/// viewer does not think in endpoints, and a search that covers only half the
-/// library is a search nobody trusts. Where the two genuinely differ is below
-/// the fold on the detail surface, which is where a series grows its seasons.
+/// Three competing directions, for the same reason the live screen has three:
+/// the decision underneath is what a catalogue is for. A shop window ends the
+/// decision, a shelf helps the owner arrange what they have, and a collection
+/// screen argues about which titles matter. They cannot all be right and only
+/// one of them ships.
 ///
-/// It hosts three competing layouts for the same reason the line-up hosts four:
-/// the decision underneath is what a catalogue entry is, and that is settled by
-/// looking rather than by describing.
-///
-/// The data is a fixture. There is no protocol layer yet.
+/// The switcher is scaffolding. It goes with the directions that lose.
 class LibraryView extends MagicStatefulView<LibraryController> {
   /// Creates the [LibraryView].
   const LibraryView({super.key});
@@ -30,21 +26,31 @@ class LibraryView extends MagicStatefulView<LibraryController> {
 }
 
 class _LibraryViewState extends MagicStatefulViewState<LibraryController, LibraryView> {
+  static const List<DirectionOption> _options = <DirectionOption>[
+    DirectionOption(name: 'Vitrin', summary: 'Tam ekran afiş ve editoryal raylar'),
+    DirectionOption(name: 'Raf', summary: 'Kenar çubuğu, kart boyutu ve sıralama kontrolü'),
+    DirectionOption(name: 'Koleksiyon', summary: 'Karışık boyutlu karolar ve kaynak rayı'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: <Widget>[
-          Positioned.fill(child: _layout()),
-          LibrarySwitcher(controller: controller),
+          Positioned.fill(child: _body()),
+          DirectionSwitcher(
+            options: _options,
+            selected: controller.direction.index,
+            onSelect: (int index) => controller.showDirection(LibraryDirection.values[index]),
+          ),
         ],
       ),
     );
   }
 
-  Widget _layout() => switch (controller.layout) {
-    LibraryLayout.wall => WallLayout(controller: controller),
-    LibraryLayout.ledger => LedgerLayout(controller: controller),
-    LibraryLayout.showcase => ShowcaseLayout(controller: controller),
+  Widget _body() => switch (controller.direction) {
+    LibraryDirection.showcase => ShowcaseLayout(controller: controller),
+    LibraryDirection.shelf => ShelfLayout(controller: controller),
+    LibraryDirection.collection => CollectionLayout(controller: controller),
   };
 }

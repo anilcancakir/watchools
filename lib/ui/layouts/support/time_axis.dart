@@ -3,11 +3,16 @@ import 'package:magic/magic.dart';
 
 import '../../../app/controllers/guide_controller.dart';
 
-/// The half-hour ruler above a time-axis guide.
+/// The half-hour ruler above the broadcast grid.
 ///
 /// The slot containing the current minute is labelled `ŞİMDİ` rather than with
 /// its own time. A guide's first question is "what is on now", and answering it
 /// with `20:00` makes the reader do the arithmetic the screen already did.
+///
+/// It carries no identity column of its own. The grid pins one to the left and
+/// scrolls this horizontally beneath it, so a ruler that reserved space for the
+/// identity would put the reserved space in the scrolling half and slide it
+/// away from the column it was meant to sit above.
 @immutable
 class TimeAxis extends StatelessWidget {
   /// How many pixels one minute of the window occupies.
@@ -37,7 +42,9 @@ class TimeAxis extends StatelessWidget {
           top: 0,
           bottom: 0,
           child: WDiv(
-            className: isNowSlot ? 'flex items-center px-3 rounded bg-epg-now-soft' : 'flex items-center px-3',
+            className: isNowSlot
+                ? 'flex flex-row items-center px-3 rounded bg-epg-now-soft'
+                : 'flex flex-row items-center px-3',
             child: WText(
               isNowSlot ? 'ŞİMDİ' : hhmm(m),
               className: isNowSlot
@@ -50,15 +57,10 @@ class TimeAxis extends StatelessWidget {
       );
     }
 
-    return WDiv(
-      className: 'flex flex-row gap-1 h-7',
-      children: <Widget>[
-        const WDiv(
-          className: 'w-[112px] shrink-0 flex items-center',
-          child: WText('BUGÜN', className: 'text-[11px] font-bold text-fg-disabled'),
-        ),
-        Expanded(child: Stack(children: ticks)),
-      ],
+    return SizedBox(
+      height: 28,
+      width: GuideController.windowMinutes * pixelsPerMinute,
+      child: Stack(children: ticks),
     );
   }
 }

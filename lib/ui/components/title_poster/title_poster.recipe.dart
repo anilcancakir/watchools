@@ -21,6 +21,12 @@ WindSlotRecipe titlePosterRecipe() {
         bg-surface-container
         selected:bg-surface-container-high
       ''',
+      // The caption is a fixed block, and that is what makes
+      // `TitlePoster.heightFor` exact. A rail and a grid both have to state a
+      // cell height before the cell is laid out, so a caption that sizes to its
+      // own content means the caller is guessing: the first version of this
+      // guessed eight pixels short and every card in every rail overflowed.
+      'caption': 'flex flex-col w-full h-[40px] overflow-hidden',
       'name': 'text-sm font-semibold text-fg truncate',
       'meta': 'text-xs text-fg-disabled truncate',
     },

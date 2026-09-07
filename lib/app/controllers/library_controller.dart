@@ -3,21 +3,77 @@ import 'package:magic/magic.dart';
 import '../models/title_item.dart';
 import '../support/vod_fixture.dart';
 
-/// The three catalogue layouts on offer while the design language is chosen.
+/// The three catalogue directions on offer while the design language is chosen.
 ///
-/// They differ on what a catalogue entry IS: a poster to recognise, a row of
-/// facts to compare, or a shelf item to be sold. Same three questions as the
-/// line-up, different answers, because a VOD library has artwork where a
-/// channel line-up has none.
-enum LibraryLayout {
-  /// A uniform 2:3 poster grid with a detail sheet. Plex and the tvOS TV app.
-  wall,
-
-  /// A dense sortable table. What a library nobody curated actually needs.
-  ledger,
-
-  /// A hero over horizontal shelves, split by kind. Netflix.
+/// Each descends from a different reference, and they disagree about who the
+/// screen belongs to: the editor who arranged it, the owner who wants to sort
+/// their own shelf, or the browser who has not decided what they want yet.
+enum LibraryDirection {
+  /// A hero over editorial rails. Netflix, and the arrival screen: it decides
+  /// what you watch rather than helping you find it.
   showcase,
+
+  /// A sidebar over a poster grid with the user's own controls: card size,
+  /// sort order, grid or table. Plex, and the direction that survives the five
+  /// thousand title dump a provider actually sends.
+  shelf,
+
+  /// Editorially grouped tiles at mixed sizes, plus a rail of provider tiles.
+  /// Apple TV's composition, and the only one where the layout itself says
+  /// which titles matter.
+  collection,
+}
+
+/// The three detail directions.
+///
+/// Kept on this controller rather than on one of their own, because the detail
+/// screen has no state that is not already here: it shows [selected] and
+/// [season], and a second source of truth for those is a second thing to keep
+/// in step.
+enum DetailDirection {
+  /// Plex's record card: poster left, stacked facts right, one amber verb and
+  /// a row of ghost icons, seasons and cast below.
+  record,
+
+  /// Netflix's television detail: full-bleed artwork, display type, and the
+  /// season list as a sibling column of the episode list rather than a
+  /// dropdown.
+  curtain,
+
+  /// Plex on Android, scaled up: overlapping poster, a circular play button on
+  /// the seam, and the technical spec table as a first-class section.
+  sheet,
+}
+
+/// How large the cards are on [LibraryDirection.shelf].
+///
+/// Plex gives the user a zoom slider and it is not a gimmick: a library of
+/// forty wants big artwork and a library of five thousand wants small, and only
+/// the user knows which one they have.
+enum ShelfDensity {
+  /// Small cards, most titles per screen.
+  compact,
+
+  /// The default.
+  regular,
+
+  /// Large artwork, fewest per screen.
+  roomy,
+}
+
+/// What [LibraryDirection.shelf] orders by.
+enum ShelfSort {
+  /// The provider's own order, which is the order it sent them in.
+  provider,
+
+  /// Alphabetical.
+  name,
+
+  /// Newest first.
+  year,
+
+  /// Highest rated first, unrated last.
+  rating,
 }
 
 /// Which half of the catalogue is on show.
@@ -44,21 +100,36 @@ class LibraryController extends SimpleMagicController {
   /// The catalogue, in provider order. Mutable only through [toggleFavourite].
   final List<TitleItem> titles = List<TitleItem>.of(vodFixture);
 
-  LibraryLayout _layout = LibraryLayout.wall;
+  LibraryDirection _direction = LibraryDirection.showcase;
+  DetailDirection _detail = DetailDirection.record;
+  ShelfDensity _density = ShelfDensity.regular;
+  ShelfSort _sort = ShelfSort.provider;
+  bool _asTable = false;
   LibraryScope _scope = LibraryScope.all;
   String _category = 'Tümü';
   String _query = '';
   late TitleItem _selected = titles.first;
   int _season = 1;
-  bool _detailOpen = false;
 
   /// Cached for the frame, for the same reason the line-up caches: one build
   /// asks for [matches] from the toolbar, the body and the shelves.
   List<TitleItem>? _matchCache;
   List<(String, List<TitleItem>)>? _sectionCache;
 
-  /// Which layout is on show.
-  LibraryLayout get layout => _layout;
+  /// Which catalogue direction is on show.
+  LibraryDirection get direction => _direction;
+
+  /// Which detail direction the title screen is drawing.
+  DetailDirection get detail => _detail;
+
+  /// How large the shelf's cards are.
+  ShelfDensity get density => _density;
+
+  /// What the shelf orders by.
+  ShelfSort get sort => _sort;
+
+  /// Whether the shelf is drawing a table instead of a grid.
+  bool get asTable => _asTable;
 
   /// Which half of the catalogue is on show.
   LibraryScope get scope => _scope;
@@ -74,14 +145,6 @@ class LibraryController extends SimpleMagicController {
 
   /// Which season of [selected] is expanded. Meaningless for a movie.
   int get season => _season;
-
-  /// Whether the detail surface is showing as a screen of its own.
-  ///
-  /// Only two of the three layouts can host the detail beside their body, and
-  /// only above `xl`. Everywhere else it has to be a screen you go into and
-  /// come back from, which is also the right answer for the shelf layout at any
-  /// width: a hero is a promotion, and a promotion cannot hold nine seasons.
-  bool get detailOpen => _detailOpen;
 
   /// Everything matching the current scope, category and query, in order.
   List<TitleItem> get matches {
@@ -142,9 +205,103 @@ class LibraryController extends SimpleMagicController {
     return _sectionCache!;
   }
 
+  /// [matches] in the order the shelf's sort control asks for.
+  ///
+  /// `provider` is the default and is not a lazy one. A playlist arrives in an
+  /// order the provider chose, which groups related titles together, and
+  /// alphabetising by default throws away the only structure the feed shipped
+  /// with. The other three orders exist because the user asked for them.
+  List<TitleItem> get sorted {
+    final List<TitleItem> result = List<TitleItem>.of(matches);
+
+    switch (_sort) {
+      case ShelfSort.provider:
+        return result;
+      case ShelfSort.name:
+        // Turkish collation, not `compareTo`. Dart compares UTF-16 code units,
+        // which puts every dotted and accented letter after `z`: `Çınar` sorts
+        // below `Zeynep` and the user reads it as a bug in the sort.
+        result.sort((TitleItem a, TitleItem b) => _fold(a.name).compareTo(_fold(b.name)));
+      case ShelfSort.year:
+        result.sort((TitleItem a, TitleItem b) => b.year.compareTo(a.year));
+      case ShelfSort.rating:
+        // Unrated last rather than first. A provider omits a rating far more
+        // often than it sends a zero, so treating null as zero would bury the
+        // rated titles under everything it said nothing about.
+        result.sort((TitleItem a, TitleItem b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
+    }
+
+    return result;
+  }
+
+  /// The Turkish alphabet in order, for collation.
+  static const String _alphabet = 'aâbcçdefgğhıiîjklmnoöprsştuüûvyz';
+
+  /// Maps a name onto a sortable key in Turkish alphabetical order.
+  static String _fold(String value) {
+    final StringBuffer out = StringBuffer();
+
+    for (final int rune in value.toLowerCase().runes) {
+      final int index = _alphabet.indexOf(String.fromCharCode(rune));
+      // Anything outside the alphabet (a digit, a space, punctuation) keeps its
+      // own code point offset past the letters, so it sorts consistently
+      // without colliding with a letter's index.
+      out.writeCharCode(index == -1 ? 100 + rune : 32 + index);
+    }
+
+    return out.toString();
+  }
+
   /// Everything the viewer started and did not finish, movies and episodes
   /// alike. The one shelf a returning viewer actually opens the app for.
   List<TitleItem> get continueWatching => matches.where((TitleItem t) => t.inProgress).toList();
+
+  /// The editorial groups the collection direction composes its tiles from.
+  ///
+  /// Four rows with a point of view rather than the provider's categories,
+  /// which the shelf already exposes. Netflix titles its rows with sentences
+  /// and this is the direction that leans on that hardest, because its tile
+  /// sizes are the argument: the first title in a collection gets the large
+  /// tile, so the layout itself says which one matters.
+  ///
+  /// A group with fewer than two entries is dropped. A bento composition needs
+  /// a feature and at least one supporting tile, and one tile alone reads as a
+  /// broken grid rather than as a short row.
+  ///
+  /// No title features twice. The groups overlap by design (a favourite is
+  /// often also half-watched), so without this the same artwork appears at
+  /// hero scale two or three times down one screen and the composition's whole
+  /// claim, that size means importance, stops being true.
+  List<(String, List<TitleItem>)> get collections {
+    final List<TitleItem> pool = matches;
+
+    final List<(String, List<TitleItem>)> groups = <(String, List<TitleItem>)>[
+      ('Yarım kalanlar', pool.where((TitleItem t) => t.inProgress).toList()),
+      ('Yıldızladıkların', pool.where((TitleItem t) => t.favourite).toList()),
+      ('Bu yılın dizileri', pool.where((TitleItem t) => t.isSeries && t.year >= 2022).toList()),
+      ('Yüksek puanlı filmler', pool.where((TitleItem t) => !t.isSeries && (t.rating ?? 0) >= 7.5).toList()),
+      ('Afişi gelmeyenler', pool.where((TitleItem t) => t.posterUrl == null).toList()),
+    ];
+
+    final List<TitleItem> featured = <TitleItem>[];
+    final List<(String, List<TitleItem>)> result = <(String, List<TitleItem>)>[];
+
+    for (final (String name, List<TitleItem> members) in groups) {
+      if (members.length < 2) continue;
+
+      // Rotate the first unfeatured entry to the front rather than dropping the
+      // group. Everything in it still belongs there; only the choice of which
+      // one gets the large tile moves.
+      final int index = members.indexWhere((TitleItem t) => !featured.contains(t));
+      if (index == -1) continue;
+
+      final TitleItem lead = members.removeAt(index);
+      featured.add(lead);
+      result.add((name, <TitleItem>[lead, ...members]));
+    }
+
+    return result;
+  }
 
   /// How many titles the current filter left, worded for whether a search is
   /// active. Same discipline as the line-up's: one number, one spelling.
@@ -168,17 +325,34 @@ class LibraryController extends SimpleMagicController {
   /// The catalogue category tabs.
   List<String> get categories => vodCategories;
 
-  /// Switches layout, keeping every filter.
-  ///
-  /// The detail is closed on the way, which the filters deliberately are not.
-  /// The layouts disagree about when the detail is a screen (the shelf layout
-  /// always, the other two only below `xl`), so a detail opened in one followed
-  /// you into another and left you unable to see its browse surface without
-  /// pressing back first. Filters surviving makes two layouts comparable; a
-  /// modal surviving makes one of them unreachable.
-  void showLayout(LibraryLayout layout) {
-    _layout = layout;
-    _detailOpen = false;
+  /// Switches direction, keeping every filter.
+  void showDirection(LibraryDirection direction) {
+    _direction = direction;
+    refreshUI();
+  }
+
+  /// Switches which detail direction the title screen draws.
+  void showDetail(DetailDirection detail) {
+    _detail = detail;
+    refreshUI();
+  }
+
+  /// Sets the shelf's card size.
+  void showDensity(ShelfDensity density) {
+    _density = density;
+    refreshUI();
+  }
+
+  /// Sets the shelf's order.
+  void showSort(ShelfSort sort) {
+    _sort = sort;
+    _invalidate();
+    refreshUI();
+  }
+
+  /// Swaps the shelf between a poster grid and a table.
+  void showTable({required bool asTable}) {
+    _asTable = asTable;
     refreshUI();
   }
 
@@ -215,18 +389,15 @@ class LibraryController extends SimpleMagicController {
     refreshUI();
   }
 
-  /// Selects [title] and shows the detail as a screen.
+  /// Selects [title] and navigates to the detail screen.
+  ///
+  /// A route rather than an overlay, which the previous pass got wrong. All
+  /// three references treat a title's page as a page: the browser back button
+  /// and a remote's back key both have to land somewhere, and an overlay held
+  /// in controller state gives them nowhere to land.
   void openDetail(TitleItem title) {
-    _selected = title;
-    _season = title.upNext?.season ?? 1;
-    _detailOpen = true;
-    refreshUI();
-  }
-
-  /// Returns from the detail screen to the body behind it.
-  void closeDetail() {
-    _detailOpen = false;
-    refreshUI();
+    select(title);
+    MagicRoute.to('/baslik');
   }
 
   /// Expands one season of the selected series.
