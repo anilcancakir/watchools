@@ -84,7 +84,7 @@ class GuideController extends SimpleMagicController {
   late Channel _channel = channels.first;
   late Programme? _programme = channels.first.programmeAt(now);
 
-  /// Cached for the frame. [matches] walks the whole line-up and one build asks
+  /// Cached until a mutation drops it. `matches` walks the whole line-up and one build asks
   /// for it several times: in the toolbar, through [scheduled], and in the body.
   /// At twenty three channels that is invisible; at ten thousand it is several
   /// full scans per frame.
@@ -136,10 +136,21 @@ class GuideController extends SimpleMagicController {
     return result;
   }
 
-  /// The subset of [matches] the time axis can draw.
+  /// The subset of [matches] that carries a schedule.
+  ///
+  /// Not "what the time axis can draw" any more: the grid direction draws every
+  /// match, and gives a channel with no EPG a full-window block saying so. This
+  /// exists for [withoutSchedule], which is the count the toolbars state.
   List<Channel> get scheduled => _scheduledCache ??= matches.where((Channel c) => c.hasSchedule).toList();
 
-  /// [matches] cut into the provider's own sections, in first-appearance order.
+  /// [matches] cut into runs of the same `group-title`, in line-up order.
+  ///
+  /// Runs, not first-appearance groups: a new section starts wherever the group
+  /// changes, so a provider that interleaves its groups yields two sections
+  /// with the same name. That is deliberate here and it is the opposite of
+  /// `LibraryController.sections`, which coalesces. A channel line-up arrives
+  /// in an order that means something (related channels adjacent, numbered in
+  /// blocks) and coalescing would reorder it; a VOD catalogue does not.
   ///
   /// The sections are `group-title` values rather than initial letters. Apple's
   /// vocabulary for a long list is an index, and for a music library the index
@@ -166,8 +177,9 @@ class GuideController extends SimpleMagicController {
     return result;
   }
 
-  /// How many of [matches] the time axis has to leave out. The guide says so
-  /// rather than quietly showing a shorter list than the count above it.
+  /// How many of [matches] carry no schedule. Every toolbar states it so
+  /// a viewer meets the gap as a fact about their subscription rather than one
+  /// blank card at a time.
   int get withoutSchedule => matches.length - scheduled.length;
 
   /// How soon a programme has to start to count as "about to".
@@ -204,11 +216,17 @@ class GuideController extends SimpleMagicController {
     final List<Channel> blind = <Channel>[];
 
     for (final Channel channel in matches) {
+      // Starred first, and above the no-schedule branch rather than below it.
+      // Under it, a channel the user had starred and the provider sent no EPG
+      // for reached the blind rail and nothing else, so the one list a viewer
+      // curates by hand silently dropped exactly the channels they are most
+      // likely to have curated: a music or a regional channel with no guide.
+      if (channel.favourite) starred.add(channel);
+
       if (!channel.hasSchedule) {
         blind.add(channel);
         continue;
       }
-      if (channel.favourite) starred.add(channel);
 
       final Programme? live = channel.programmeAt(now);
       if (live != null && live.progressAt(now) <= _freshFraction) fresh.add(channel);
@@ -219,10 +237,19 @@ class GuideController extends SimpleMagicController {
 
     final List<GuideRail> result = <GuideRail>[
       if (fresh.isNotEmpty) GuideRail(title: 'Daha yeni başladı', source: 'Şu an yayında', channels: fresh),
-      if (soon.isNotEmpty) GuideRail(title: 'Yarım saat içinde', source: 'Yayın akışından', channels: soon),
+      // Named for the horizon it actually uses. `_soonMinutes` is 45, so at
+      // 20:12 this row holds a 20:55 programme and a title saying half an hour
+      // was a title the row could contradict on its own first card.
+      if (soon.isNotEmpty) GuideRail(title: 'Birazdan başlıyor', source: 'Yayın akışından', channels: soon),
       if (starred.isNotEmpty) GuideRail(title: 'Favorilerin', channels: starred),
+      // Scheduled members only. `sections` is built over `matches`, so without
+      // this filter every no-EPG channel appeared twice on the screen: once in
+      // its provider group and once in the rail that exists to name it.
       for (final (String group, List<Channel> members) in sections)
-        if (group != 'Favoriler') GuideRail(title: group, source: 'Sağlayıcı grubu', channels: members),
+        if (group != 'Favoriler')
+          if (members.where((Channel c) => c.hasSchedule).toList() case final List<Channel> scheduled
+              when scheduled.isNotEmpty)
+            GuideRail(title: group, source: 'Sağlayıcı grubu', channels: scheduled),
       if (blind.isNotEmpty)
         GuideRail(
           title: 'Akış bilgisi olmayan kanallar',

@@ -102,7 +102,7 @@ class ChannelRow extends StatelessWidget {
           className: 'flex-1 min-w-0',
           child: WAnchor(
             onTap: onTap,
-            semanticLabel: '${channel.numberLabel} ${channel.name}',
+            semanticLabel: _label(now),
             child: WDiv(
               className: 'flex flex-row items-center h-[60px] focus:ring-2 focus:ring-focus-ring',
               children: <Widget>[
@@ -126,6 +126,32 @@ class ChannelRow extends StatelessWidget {
         _star(),
       ],
     );
+  }
+
+  /// Everything the row says, in one sentence.
+  ///
+  /// A `WAnchor`'s `semanticLabel` REPLACES the text of everything under it, so
+  /// a label of just the number and the name meant a screen reader was told
+  /// `014 Haber Global` and never that the channel has no schedule, while the
+  /// row on screen said so plainly. The end-to-end walk hit the same wall from
+  /// the other side: it could not find the designed no-EPG state in the
+  /// semantics tree, because the tree did not have it.
+  ///
+  /// Built from the row's own content rather than from a fixed template, so the
+  /// two cannot drift.
+  String _label(Programme? now) {
+    final StringBuffer out = StringBuffer()
+      ..write(channel.numberLabel)
+      ..write(' ')
+      ..write(channel.name);
+
+    if (now == null) {
+      out.write(', Yayın akışı yok');
+    } else {
+      out.write(', ${now.title}, ${now.startLabel} - ${now.endLabel}');
+    }
+
+    return out.toString();
   }
 
   /// A four pixel column of the status colour, full height, flush left.
@@ -203,8 +229,15 @@ class ChannelRow extends StatelessWidget {
                 ),
               ],
             )
+          // A narrow row with no programme says so, rather than falling back to
+          // the group and saying nothing. The wide row has a dedicated column
+          // for this (`_noSchedule`), and a phone dropping the sentence while
+          // the desktop keeps it means the doctrine's third rule holds on one
+          // screen size and not the other: a provider's EPG gap is the common
+          // case, and a row that quietly shows less is how a user comes to read
+          // it as the app failing.
           else
-            WText(channel.group, className: 'text-xs text-fg-disabled truncate'),
+            WText(wide ? channel.group : 'Yayın akışı yok', className: 'text-xs text-fg-disabled truncate'),
         ],
       ),
     );

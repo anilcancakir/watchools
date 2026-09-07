@@ -209,20 +209,36 @@ void main() {
       final List<String> titles = controller.rails.map((GuideRail r) => r.title).toList();
 
       expect(titles, contains('Daha yeni başladı'));
-      expect(titles, contains('Yarım saat içinde'));
+      expect(titles, contains('Birazdan başlıyor'));
     });
 
-    test('a channel with no guide lands in its own rail, not in a group rail', () {
-      final GuideRail blind = controller.rails.firstWhere((GuideRail r) => r.title == 'Akış bilgisi olmayan kanallar');
+    test('the soon rail is named for the horizon it actually uses', () {
+      // The rail was called `Yarım saat içinde` while the horizon was 45
+      // minutes, so at 20:12 its first card was a 20:55 programme and the title
+      // contradicted its own contents.
+      final GuideRail soon = controller.rails.firstWhere((GuideRail r) => r.title == 'Birazdan başlıyor');
 
-      expect(blind.channels, isNotEmpty);
-      expect(blind.channels.every((Channel c) => !c.hasSchedule), isTrue);
+      final int furthest = soon.channels
+          .map((Channel c) => c.nextAfter(GuideController.now)!.startMinute - GuideController.now)
+          .reduce((int a, int b) => a > b ? a : b);
 
-      // And nowhere else: a channel with no EPG in a `Daha yeni başladı` rail
-      // would be a card claiming a programme it does not have.
+      expect(furthest, greaterThan(30), reason: 'otherwise the old half-hour name was accurate');
+    });
+
+    test('a channel with no guide appears in exactly one rail', () {
+      final Channel blindChannel = controller.channels.firstWhere((Channel c) => !c.hasSchedule);
+      final List<GuideRail> carrying = controller.rails
+          .where((GuideRail r) => r.channels.contains(blindChannel))
+          .toList();
+
+      expect(carrying.map((GuideRail r) => r.title), <String>['Akış bilgisi olmayan kanallar']);
+
+      // No exemption for the provider-group rails. They used to be built over
+      // every match, so each no-EPG channel appeared twice on one screen: once
+      // in its group and once in the rail that exists to name it. The old
+      // version of this test exempted exactly the rails that were wrong.
       for (final GuideRail rail in controller.rails) {
         if (rail.title == 'Akış bilgisi olmayan kanallar') continue;
-        if (rail.source == 'Sağlayıcı grubu') continue;
 
         expect(rail.channels.every((Channel c) => c.hasSchedule), isTrue, reason: rail.title);
       }
@@ -238,6 +254,20 @@ void main() {
       controller.toggleFavourite(controller.channels.first);
 
       expect(controller.rails.any((GuideRail r) => r.title == 'Favorilerin'), isTrue);
+    });
+
+    test('a starred channel with no guide still reaches the favourites rail', () {
+      // The one list a viewer curates by hand, and it used to drop exactly the
+      // channels they are most likely to have curated: the star was collected
+      // BELOW the no-schedule branch, so a music or a regional channel with no
+      // EPG could be starred and never appear. Starring a channel that HAS a
+      // schedule could not catch it, which is what the previous test did.
+      final Channel blindChannel = controller.channels.firstWhere((Channel c) => !c.hasSchedule);
+      controller.toggleFavourite(blindChannel);
+
+      final GuideRail starred = controller.rails.firstWhere((GuideRail r) => r.title == 'Favorilerin');
+
+      expect(starred.channels.map((Channel c) => c.name), contains(blindChannel.name));
     });
 
     test('the rails follow the filter', () {
