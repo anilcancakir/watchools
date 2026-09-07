@@ -79,9 +79,13 @@ class SignalLayout extends StatelessWidget {
             ''',
           ),
         ),
-        WText(controller.countLabel, className: 'shrink-0 text-xs text-fg-muted'),
-        if (note != null) WText('· $note', className: 'text-xs text-fg-disabled'),
-        const WDiv(className: 'flex-1'),
+        WDiv(
+          className: 'flex-1 min-w-0',
+          child: WText(
+            note == null ? controller.countLabel : '${controller.countLabel} · $note',
+            className: 'text-xs text-fg-muted truncate',
+          ),
+        ),
         if (showToggle) _modeToggle(),
       ],
     );

@@ -65,7 +65,7 @@ class MarqueeLayout extends StatelessWidget {
                 child: Stack(
                   children: <Widget>[
                     _billboard(context),
-                    Positioned(left: 0, right: 0, top: 0, child: _chrome()),
+                    Positioned(left: 0, right: 0, top: 0, child: _chrome(wide)),
                   ],
                 ),
               ),
@@ -91,43 +91,59 @@ class MarqueeLayout extends StatelessWidget {
   }
 
   /// Search and categories, over the billboard.
-  Widget _chrome() {
+  ///
+  /// Two lines on a phone rather than one. A search field and a sentence on one
+  /// axis at 414 pixels cannot both have their content width, and two grow
+  /// claims in the same row split it in half rather than fitting: the row
+  /// overflowed by 215 pixels. Above `md` there is room for both.
+  Widget _chrome(bool wide) {
+    // The count sits on a scrim pill, like the category tabs beside it, because
+    // it is over the brightest part of the billboard and white text on a pale
+    // sky clears nothing. One string rather than two children, because as two
+    // they overlapped at the right edge.
+    // The grow claim gets its own element. `flex-1` and `flex items-center` on
+    // one WDiv sit in the same parser family and the last class wins, so the
+    // pill silently lost its claim and the row overflowed instead of shrinking.
+    // Same trap as the channel row's identity column.
+    final Widget pill = WDiv(
+      className: 'px-3 h-7 rounded-full bg-scrim flex items-center',
+      child: WText(_count(), className: 'text-xs font-semibold text-fg truncate'),
+    );
+    final Widget count = WDiv(className: wide ? 'shrink-0' : 'flex-1 min-w-0', child: pill);
+
+    final Widget search = WDiv(
+      className: wide ? 'flex-1 max-w-[360px] min-w-0' : 'w-full min-w-0',
+      child: WInput(
+        value: controller.query,
+        onChanged: controller.search,
+        placeholder: 'Kanal veya program ara',
+        semanticLabel: 'Kanal veya program ara',
+        className: '''
+          border-0
+          rounded-full px-4 py-2.5
+          bg-scrim-strong
+          text-sm text-fg
+          focus:ring-2 focus:ring-focus-ring
+        ''',
+      ),
+    );
+
     return WDiv(
       className: 'flex flex-col gap-1 pt-5',
       children: <Widget>[
-        WDiv(
-          className: 'flex flex-row items-center gap-3 px-6 md:px-12',
-          children: <Widget>[
-            WDiv(
-              className: 'flex-1 max-w-[360px] min-w-0',
-              child: WInput(
-                value: controller.query,
-                onChanged: controller.search,
-                placeholder: 'Kanal veya program ara',
-                semanticLabel: 'Kanal veya program ara',
-                className: '''
-                  border-0
-                  rounded-full px-4 py-2.5
-                  bg-scrim-strong
-                  text-sm text-fg
-                  focus:ring-2 focus:ring-focus-ring
-                ''',
-              ),
-            ),
-            // One string, not two. As separate children the count and the note
-            // overlapped at the right edge of the row: `shrink-0` keeps a child
-            // from being squeezed but does nothing about a row that has run out
-            // of width, and Wind clips that silently.
-            //
-            // On a scrim pill, like the category tabs beside it, because this
-            // sits over the brightest part of the billboard and white text on a
-            // pale sky clears nothing.
-            WDiv(
-              className: 'shrink-0 px-3 h-7 rounded-full bg-scrim flex items-center',
-              child: WText(_count(), className: 'text-xs font-semibold text-fg'),
-            ),
-          ],
-        ),
+        if (wide)
+          WDiv(
+            className: 'flex flex-row items-center gap-3 px-6 md:px-12',
+            children: <Widget>[
+              search,
+              const WDiv(className: 'flex-1'),
+              count,
+            ],
+          )
+        else ...<Widget>[
+          WDiv(className: 'px-6', child: search),
+          WDiv(className: 'flex flex-row items-center px-6', children: <Widget>[count]),
+        ],
         CategoryStrip(controller: controller, pills: true, onScrim: true),
       ],
     );
