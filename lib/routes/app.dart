@@ -1,6 +1,6 @@
 import 'package:magic/magic.dart';
 
-import '../resources/views/welcome_view.dart';
+import '../resources/views/guide_view.dart';
 
 /// Application Route Definitions.
 ///
@@ -9,5 +9,5 @@ import '../resources/views/welcome_view.dart';
 ///
 /// See also: `lib/app/kernel.dart` for middleware registration.
 void registerAppRoutes() {
-  MagicRoute.page('/', () => const WelcomeView()).title('Welcome');
+  MagicRoute.page('/', () => const GuideView()).title('Rehber');
 }
