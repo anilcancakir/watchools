@@ -1,0 +1,11 @@
+import 'package:magic/magic.dart';
+
+/// Builds the [WindRecipe] for the HeroBillboard component.
+///
+/// Each variant axis maps a value to a className built from semantic tokens
+/// (`bg-surface`, `text-fg`, `border-color-border`, ...). Fill in the per-value
+/// classNames; the emission order is `base ++ variant ++ compound ++ caller`
+/// (never sorted or deduped) so state-prefixed tokens survive to parse time.
+WindRecipe heroBillboardRecipe() {
+  return const WindRecipe(base: 'flex flex-col');
+}
