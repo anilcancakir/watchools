@@ -23,11 +23,20 @@ import 'vod_fixture.dart';
 /// survives a hot restart, and cannot leak into another gate.
 ///
 /// Read off [Uri.base] rather than through `MagicRouter.queryParameter`, and
-/// that is measured rather than stylistic. Under the hash strategy the browser
-/// sat on `http://localhost:3210/#/?scale=5000` while the router reported its
-/// location as `/`, so the query never reached a caller asking the router for
-/// it. [Uri.base] carries the whole URL, fragment included, needs no router to
-/// be built yet, and works on the first frame as well as after a restart.
+/// the reason is timing rather than any fault in the router. This value is read
+/// from a controller's field initialiser, which can run before any route has
+/// resolved, and `MagicRouter` only records a location inside `pageBuilder`
+/// (`magic_router.dart:320`): before that it has nothing to answer with.
+/// [Uri.base] carries the whole URL, fragment included, needs no router to be
+/// built yet, and works on the first frame as well as after a restart.
+///
+/// Worth stating because the first version of this comment blamed the router,
+/// on the evidence that `dusk:get_routes` reported `location: /` while the
+/// browser sat on `#/?scale=5000`. That field is `route.settings.name` off the
+/// Navigator, which under `MaterialApp.router` is the declared path pattern and
+/// was always going to read `/`. Six tests in `magic` now pin
+/// `queryParameter`, inline-query form included, and all six passed on the
+/// first run: `fluttersdk/magic#147`.
 ///
 /// Gated on [kReleaseMode] rather than on `kDebugMode`, and the difference is
 /// the whole point of the harness. A debug build carries assertions, no
