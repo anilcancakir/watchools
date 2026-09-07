@@ -18,6 +18,25 @@ class Rail extends StatelessWidget {
   /// How tall the row is. The cards size themselves to it.
   final double height;
 
+  /// How wide one card is, so the list can compute its scroll extent without
+  /// laying a card out.
+  ///
+  /// Every caller already knows this number: it is the same `width` it hands
+  /// the tile it builds. Passing it here turns the list from a `SliverList`,
+  /// which must lay out each child to learn its extent, into a
+  /// `SliverFixedExtentList`, which does not. `prototypeItem` would also work
+  /// and is strictly worse here: it mounts and lays out one hidden extra card
+  /// to learn a number the caller already has.
+  ///
+  /// It has to be the CELL's width rather than any inner dimension, and the
+  /// caller has to mean it. `sliver_fixed_extent_list.dart:270` hands the child
+  /// `constraints.asBoxConstraints(minExtent: extent, maxExtent: extent)`, a
+  /// TIGHT main-axis constraint: a cell handed less than it renders is squeezed
+  /// silently, and `shrink-0` cannot argue with a tight constraint. The cast
+  /// rail shipped exactly that bug for one review cycle, passing a circle's 88
+  /// pixel diameter for a cell that renders at 104.
+  final double itemWidth;
+
   /// How many cards.
   final int itemCount;
 
@@ -42,6 +61,7 @@ class Rail extends StatelessWidget {
   const Rail({
     super.key,
     required this.height,
+    required this.itemWidth,
     required this.itemCount,
     required this.itemBuilder,
     this.gap = 12,
@@ -52,12 +72,30 @@ class Rail extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: height,
-      child: ListView.separated(
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.only(left: gutter),
         itemCount: itemCount,
-        separatorBuilder: (_, _) => SizedBox(width: gap),
-        itemBuilder: itemBuilder,
+        // The gap rides on the item rather than on a separator widget.
+        //
+        // A `ListView.separated` gives every separator its own delegate child
+        // slot, so the sliver mounts, keeps alive and repaint-bounds each one as
+        // if it were a card. Measured on the catalogue's vertical session at
+        // scale 5000: `KeyedSubtree` 234 to 150 and `RepaintBoundary` 234 to
+        // 150, over a run that drew MORE frames than the one before it.
+        itemExtent: itemWidth + gap,
+        // No card in this app keeps itself alive, so the `AutomaticKeepAlive`
+        // the delegate adds by default (`scroll_delegate.dart:368`) is a widget
+        // per card that can never do anything. Measured on the same session:
+        // `AutomaticKeepAlive` and `_SelectionKeepAlive` both 234 to zero.
+        //
+        // It is also the one mechanism that could pin a whole rail, and its
+        // scroll position, alive after it scrolled out of the vertical list.
+        addAutomaticKeepAlives: false,
+        itemBuilder: (BuildContext context, int index) => Padding(
+          padding: EdgeInsets.only(right: gap),
+          child: itemBuilder(context, index),
+        ),
       ),
     );
   }

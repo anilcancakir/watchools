@@ -43,6 +43,7 @@ abstract final class TitleSections {
         ),
         Rail(
           height: 92,
+          itemWidth: 168,
           itemCount: numbers.length,
           itemBuilder: (BuildContext context, int index) => _seasonChip(controller, title, numbers[index]),
         ),
@@ -141,12 +142,25 @@ abstract final class TitleSections {
         else
           Rail(
             height: PersonCircle.height,
+            // 104, and the number is written here in a `SizedBox` exactly as
+            // the other five rails write theirs. Reaching for a `PersonCircle`
+            // constant instead looked tidier and shipped a bug: the only
+            // constant that existed was the CIRCLE's 88 pixel diameter, while
+            // the cell renders `w-[104px]`. A `SliverFixedExtentList` hands its
+            // child a TIGHT main-axis constraint
+            // (`sliver_fixed_extent_list.dart:270` passes the extent as both
+            // min and max), so the cell would have been squeezed to 88 and
+            // `shrink-0` cannot argue with a tight constraint.
+            itemWidth: 104,
             gap: 8,
             itemCount: title.cast.length,
             itemBuilder: (BuildContext context, int index) {
               final CastMember member = title.cast[index];
 
-              return PersonCircle(name: member.name, role: member.role, imageUrl: member.imageUrl);
+              return SizedBox(
+                width: 104,
+                child: PersonCircle(name: member.name, role: member.role, imageUrl: member.imageUrl),
+              );
             },
           ),
       ],
@@ -206,6 +220,7 @@ abstract final class TitleSections {
         else
           Rail(
             height: TitlePoster.heightFor(124),
+            itemWidth: 124,
             itemCount: others.length,
             itemBuilder: (BuildContext context, int index) {
               final TitleItem other = others[index];
