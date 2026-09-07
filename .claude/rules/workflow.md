@@ -9,7 +9,7 @@ Applies to this repository and to every in-house sibling under `/Users/anilcan/C
 
 1. `EnterWorktree` with a name describing the task. The worktree lands under `.claude/worktrees/`.
 2. Copy the gitignored files the build needs: `.worktreeinclude` lists them (`pubspec_overrides.yaml`, `.env.local`). Without `pubspec_overrides.yaml` the worktree resolves the ecosystem from pub.dev and every test then certifies the published packages while you edit the working trees. Nothing errors, which is what makes it worth doing first.
-3. Work, with the gates green locally: `flutter analyze --fatal-infos --fatal-warnings`, `flutter test --coverage`, and in `backend/` `vendor/bin/pint --test`, `vendor/bin/phpstan analyse`, `php artisan test --coverage --min=90`.
+3. Work, with the gates in CLAUDE.md green locally.
 4. Commit through `ac:git-master`, push the branch, open the pull request with `gh`.
 5. Wait for CI. A pull request does not merge on red.
 
@@ -32,8 +32,6 @@ Pull requests in the sibling repositories get automated review comments from kod
 
 Cap the cycle at **three rounds**. After the third, stop revising and report what is still open and why, rather than continuing to chase comments. A fourth round means the reviewer and the change disagree about something a human should settle.
 
-## The version seam
+## After a sibling change
 
-CI resolves the ecosystem from pub.dev while local work resolves from the sibling checkouts. A green local run against a red CI run means the sibling change has not been published yet.
-
-Publish the sibling and bump the caret here. Do not reshape this app around an unreleased API, and do not paper over the seam by committing `pubspec_overrides.yaml`.
+Publish the sibling and bump the constraint here. Do not reshape this app around an unreleased API, and do not paper over the seam by committing `pubspec_overrides.yaml`.

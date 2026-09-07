@@ -1,7 +1,13 @@
 # Gitignored files a fresh worktree needs copied in, one path per line.
 #
-# pubspec_overrides.yaml is the load-bearing one: without it the worktree
-# resolves the ecosystem packages from pub.dev and every test certifies the
-# published versions instead of the working trees, silently.
+# Without the overrides the worktree resolves the ecosystem from pub.dev and
+# every test then certifies the published packages while you edit the working
+# trees. Nothing errors, which is what makes it worth copying first.
 pubspec_overrides.yaml
+
+# Declared as a Flutter asset in pubspec.yaml, so a checkout without it fails
+# the build outright: "No file or variants found for asset: .env".
+.env
+
+# Real provider credentials for playback testing.
 .env.local

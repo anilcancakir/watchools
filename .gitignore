@@ -64,6 +64,18 @@ CLAUDE.local.md
 # artefacts and stay tracked; `.ac/state/` is per-run bookkeeping.
 .ac/state/
 
+# pubspec.lock IS committed: this is an application and a deploy without a lock
+# is not reproducible. The catch is that a lock generated while
+# pubspec_overrides.yaml is active encodes sibling paths that exist on no CI
+# runner, including a relative one that resolves to nothing from a worktree. So
+# the committed lock is the hosted-only one:
+#
+#   mv pubspec_overrides.yaml /tmp/ && flutter pub get && git add pubspec.lock
+#   mv /tmp/pubspec_overrides.yaml . && flutter pub get
+#
+# Day-to-day local `pub get` runs dirty the lock with paths. Leave those
+# unstaged rather than committing them.
+
 # Local dependency overrides pointing at the sibling fluttersdk checkouts.
 # Committing this would force every contributor onto absolute paths from one
 # machine. Listed in .worktreeinclude so a worktree still gets a copy.

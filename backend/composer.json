@@ -7,7 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
-        "fluttersdk/magic-starter-laravel": "@dev",
+        "fluttersdk/magic-starter-laravel": "^0.0.6",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"
     },
@@ -87,7 +87,7 @@
     "prefer-stable": true,
     "repositories": [{
         "name": "magic-starter-laravel",
-        "type": "path",
-        "url": "/Users/anilcan/Code/fluttersdk/magic-starter-laravel"
+        "type": "vcs",
+        "url": "https://github.com/fluttersdk/magic-starter-laravel"
     }]
 }
