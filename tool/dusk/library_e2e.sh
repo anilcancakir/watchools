@@ -49,17 +49,33 @@ direction_marker() {
   esac
 }
 
-# Prints the ref of an unstarred favourite control on a title that starts
-# unstarred.
+# The title whose star this walk toggles, and the direction it toggles it in.
 #
 # Named rather than "the first one", because the catalogue fixture ships two
 # pre-starred titles and every snapshot therefore already contains
 # "favorilerden çıkar". Asserting the flip on a document-wide match passed
 # whether the tap did anything or not; naming the subject makes it exact.
-STAR_SUBJECT='Kuzey Rüzgârı'
+#
+# STARRED rather than unstarred, and that is the interesting part. The obvious
+# subject is the fixture's first unstarred part-watched title, and its star
+# lands at (638, 839) on a 1440 by 900 window while the floating direction
+# switcher's container spans (595..845, 839..883). They overlap by half a pixel,
+# the switcher is on top, and every tap went to it: the walk reported a star
+# that would not flip and the app was fine. Measured with `dusk:observe`, not
+# guessed.
+#
+# A floating overlay above scrollable content always covers something, and the
+# switcher is scaffolding that goes when a direction is chosen, so the answer is
+# to aim somewhere else rather than to move it. The first resume card sits well
+# clear of it, and toggling a STARRED title is the same assertion inverted: the
+# snapshot cannot already contain `Sessiz Şehir favorilere ekle`, because the
+# fixture ships that title starred.
+STAR_SUBJECT='Sessiz Şehir'
+STAR_BEFORE='favorilerden çıkar'
+STAR_AFTER='favorilere ekle'
 
 star_ref() {
-  ref_matching "\"$STAR_SUBJECT favorilere ekle\""
+  visible_ref "^$STAR_SUBJECT $STAR_BEFORE\$" "$1" "$2"
 }
 
 walk_direction() {
@@ -84,25 +100,37 @@ walk_direction() {
   $FSA dusk:snap >"$snap" 2>/dev/null
   $FSA dusk:screenshot --output="$OUT/$slug.png" >/dev/null 2>&1
 
+  # Before anything else. `refute_*` passes on a zero-byte file, so a dead
+  # renderer reported eight separate defects in one direction from one empty
+  # snapshot and every one of them named a control that was fine.
+  expect_rendered "$snap" "$label" || return
+
   expect_in_file "$snap" "$(direction_marker "$label")" "$label: is the direction on screen"
   expect_in_file "$snap" 'textbox' "$label: has a search field"
   expect_in_file "$snap" 'favorilere ekle|favorilerden çıkar' "$label: has a favourite control"
-  # A title the provider sent no artwork for is stated rather than left blank.
-  expect_in_file "$snap" 'afiş yok' "$label: names the missing-artwork case"
+  # The count of poster-less titles is above the fold in every direction, which
+  # is what `LibraryToolbar._count` carries. That is all this proves, and its
+  # old name ("names the missing-artwork case") claimed more: the string is
+  # rendered unconditionally by all three, so deleting every direction's actual
+  # handling of a poster-less title would not have failed it.
+  #
+  # What each direction DOES with such a title is asserted further down, after a
+  # search that puts one on screen.
+  expect_in_file "$snap" 'afiş yok' "$label: states how many titles have no artwork"
   refute_overflow "$snap" "$label"
 
   # Favourite, before search, because search cannot be undone from here.
   local starref
-  starref="$(star_ref)"
+  starref="$(star_ref "$width" "$height")"
   if [ -z "$starref" ]; then
-    fail "$label: $STAR_SUBJECT has no unstarred favourite control"
+    fail "$label: $STAR_SUBJECT has no favourite control in its starting state"
   else
     $FSA dusk:tap --ref "$starref" >/dev/null 2>&1
     sleep 2
     expect_no_exceptions "$label favourite toggle"
     $FSA dusk:snap >"$OUT/$slug.starred.yaml" 2>/dev/null
-    expect_in_file "$OUT/$slug.starred.yaml" "$STAR_SUBJECT favorilerden çıkar" \
-      "$label: starring flips the control"
+    expect_in_file "$OUT/$slug.starred.yaml" "$STAR_SUBJECT $STAR_AFTER" \
+      "$label: the favourite control flips its own label"
   fi
 
   # The scope switch is the thing a catalogue has and a channel list does not.
@@ -122,12 +150,17 @@ walk_direction() {
     # Opening a title leaves for the title route. That is the seam this walk
     # owns; what the title screen then renders is the title walk's business.
     #
-    # Matched on the name and filtered past the favourite button rather than on
-    # the label's shape: a `WAnchor` label replaces the text of everything under
-    # it, so the label is a full sentence and its wording differs by direction.
+    # `visible_ref_settled` rather than `ref_matching`, because the semantics
+    # tree carries every node a sliver built and the first match here was two
+    # screens down: the tap succeeded, landed on whatever was at those
+    # coordinates, and the walk reported a card that would not navigate.
+    #
+    # `card_pattern` rather than a hand-written one. The first version required a
+    # comma after the name, which is the resume rail's label shape and not the
+    # grid's: the grid direction reported the same title as unreachable at both
+    # widths while the other two found it.
     local item
-    item="$($FSA dusk:snap 2>/dev/null | rg 'Bozkır Hattı' | rg -v 'favori' \
-      | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1)"
+    item="$(visible_ref_settled "$(card_pattern 'Bozkır Hattı')" "$width" "$height")"
     if [ -z "$item" ]; then
       fail "$label: the fixture series is not reachable in series scope"
     else
@@ -170,6 +203,21 @@ walk_direction() {
   if [ -z "$sref" ]; then
     fail "$label: search field has no usable ref"
   else
+    # A title the provider sent no poster for, first. The doctrine's second rule
+    # is that artwork earns its place or typography takes it, so such a title
+    # has to be a reachable card carrying its own name rather than a hole in the
+    # grid. In two of the three directions that card is below the fold on first
+    # paint, so the assertion belongs behind a search rather than against the
+    # arrival screen: asserting it there measured which direction happened to
+    # put it near the top.
+    $FSA dusk:fill --ref "$sref" --text 'Gece Yarısı' >/dev/null 2>&1
+    sleep 2
+    expect_no_exceptions "$label poster-less search"
+    $FSA dusk:snap >"$OUT/$slug.noposter.yaml" 2>/dev/null
+    $FSA dusk:screenshot --output="$OUT/$slug.noposter.png" >/dev/null 2>&1
+    expect_in_file "$OUT/$slug.noposter.yaml" 'Gece Yarısı Ekspresi' \
+      "$label: a poster-less title is still a card carrying its name"
+
     # An episode title, not a film title: a catalogue search that only covers
     # the top level cannot find the thing people actually remember.
     $FSA dusk:fill --ref "$sref" --text 'Sınır' >/dev/null 2>&1
@@ -189,6 +237,7 @@ walk_direction() {
 }
 
 log "Dusk catalogue walk, artefacts in $OUT"
+reap_browsers
 $FSA dusk:reset_overlays >/dev/null 2>&1
 
 for profile in "desktop 1440 900" "mobile 414 896"; do

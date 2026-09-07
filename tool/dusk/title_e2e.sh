@@ -56,12 +56,39 @@ direction_marker() {
 # catalogue last selected, so arriving without selecting first would assert
 # against the fixture's first entry every time.
 open_title() {
-  local name="$1" item
+  local name="$1" width="$2" height="$3" item sref shelf
   $FSA dusk:navigate --route /kutuphane >/dev/null 2>&1
   sleep 3
 
-  item="$($FSA dusk:snap 2>/dev/null | rg -- "$name" | rg -v 'favori' \
-    | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1)"
+  # The grid direction, then a search. Both halves are needed and both were
+  # learned the hard way.
+  #
+  # Searching puts one card on the page instead of fifteen. Switching to the
+  # grid decides WHERE that card is: the catalogue's default direction leads
+  # with a hero, so a single result sits below the fold at one width and above
+  # it at the other, and the walk reported the same title as unreachable in
+  # three directions at one width and found it in all three at the other. A grid
+  # puts its first cell in the same place at every width.
+  #
+  # Which catalogue direction the title screen was opened FROM does not change
+  # what the title screen renders, so this costs the walk nothing.
+  shelf="$(ref_matching '"Raf: ')"
+  if [ -n "$shelf" ]; then
+    $FSA dusk:tap --ref "$shelf" >/dev/null 2>&1
+    sleep 2
+  fi
+
+  sref="$(search_ref)"
+  if [ -z "$sref" ]; then
+    return 1
+  fi
+  $FSA dusk:fill --ref "$sref" --text "$name" >/dev/null 2>&1
+  sleep 3
+
+  # `visible_ref_settled`, not `ref_matching`. The semantics tree carries every
+  # node a sliver built, including rails two screens down, and a tap on one of
+  # those succeeds and lands on whatever is at those coordinates instead.
+  item="$(visible_ref_settled "$(card_pattern "$name")" "$width" "$height")"
   if [ -z "$item" ]; then
     return 1
   fi
@@ -82,7 +109,7 @@ walk_direction() {
 
   # A series first: it is the case with seasons, episodes and a resume point,
   # and it is the one the three directions compose most differently.
-  if ! open_title 'Bozkır Hattı'; then
+  if ! open_title 'Bozkır Hattı' "$width" "$height"; then
     fail "$label: the fixture series is not reachable from the catalogue"
     return
   fi
@@ -101,6 +128,8 @@ walk_direction() {
   $FSA dusk:snap >"$snap" 2>/dev/null
   $FSA dusk:screenshot --output="$OUT/$slug.series.png" >/dev/null 2>&1
 
+  expect_rendered "$snap" "$label" || return
+
   # 0. This direction, and not whichever one was on screen before.
   expect_in_file "$snap" "$(direction_marker "$label")" "$label: is the direction on screen"
 
@@ -113,49 +142,54 @@ walk_direction() {
   #    widths; asserting on the last row would test the fold instead.
   expect_in_file "$snap" 'S02B01' "$label: opens the season the resume point is in"
 
-  # 3. The technical stack is on the page. It is the single most transplantable
-  #    thing in the references and the reason this audience opens the page.
-  expect_in_file "$snap" 'ALTYAZILAR|Altyazılar' "$label: carries the technical stack"
-
-  # 4. Back reaches the catalogue. A detail page that traps you is the failure
+  # 3. Back reaches the catalogue. A detail page that traps you is the failure
   #    a route was introduced to prevent.
   expect_in_file "$snap" '"Geri"' "$label: has a back control"
 
   refute_overflow "$snap" "$label series"
 
-  # 5. A film. No seasons, no episodes, and a different shape of page in all
+  # 4. A film. No seasons, no episodes, and a different shape of page in all
   #    three directions.
-  if ! open_title 'Sessiz Şehir'; then
+  #
+  #    The technical stack is asserted HERE and not on the series page, and that
+  #    is not laziness. A snapshot carries what the slivers built, and on a
+  #    series page the seasons and the episode list push the stack well past the
+  #    cache extent: the assertion failed on two directions and passed on the
+  #    third only because that one is a phone layout with a shorter page. A film
+  #    page is short enough for the stack to be real at both widths.
+  if ! open_title 'Sessiz Şehir' "$width" "$height"; then
     fail "$label: the fixture film is not reachable from the catalogue"
   else
     expect_no_exceptions "$label open film"
     $FSA dusk:snap >"$OUT/$slug.film.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.film.png" >/dev/null 2>&1
-    expect_in_file "$OUT/$slug.film.yaml" 'Devam et' "$label: a part-watched film offers to resume"
-    expect_in_file "$OUT/$slug.film.yaml" 'ALTYAZILAR|Altyazılar' "$label: a film carries the stack too"
-    refute_in_file "$OUT/$slug.film.yaml" 'Sezonlar' "$label: a film has no seasons section"
-    refute_overflow "$OUT/$slug.film.yaml" "$label film"
+    expect_rendered "$OUT/$slug.film.yaml" "$label film" &&
+      expect_in_file "$OUT/$slug.film.yaml" 'Devam et' "$label: a part-watched film offers to resume" &&
+      expect_in_file "$OUT/$slug.film.yaml" 'ALTYAZILAR|Altyazılar' "$label: a film carries the technical stack" &&
+      refute_in_file "$OUT/$slug.film.yaml" 'Sezonlar' "$label: a film has no seasons section" &&
+      refute_overflow "$OUT/$slug.film.yaml" "$label film"
   fi
 
-  # 6. A title the provider sent nothing for. No poster, no rating, no synopsis
+  # 5. A title the provider sent nothing for. No poster, no rating, no synopsis
   #    and no cast, which is a large share of a real catalogue and the case the
   #    poster-led half of every direction cannot render.
-  if ! open_title 'Gece Yarısı Ekspresi'; then
+  if ! open_title 'Gece Yarısı Ekspresi' "$width" "$height"; then
     fail "$label: the bare fixture entry is not reachable from the catalogue"
   else
     expect_no_exceptions "$label open bare title"
     $FSA dusk:snap >"$OUT/$slug.bare.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.bare.png" >/dev/null 2>&1
-    expect_in_file "$OUT/$slug.bare.yaml" 'özet göndermedi' "$label: a missing synopsis says so"
-    expect_in_file "$OUT/$slug.bare.yaml" 'oyuncu bilgisi göndermedi' "$label: an empty cast is a designed state"
-    # The page still exists. A direction that collapses to its chrome when the
-    # provider sent nothing is the one this case is here to catch.
-    expect_in_file "$OUT/$slug.bare.yaml" 'Gece Yarısı Ekspresi' "$label: the bare title still names itself"
-    refute_overflow "$OUT/$slug.bare.yaml" "$label bare"
+    expect_rendered "$OUT/$slug.bare.yaml" "$label bare" &&
+      expect_in_file "$OUT/$slug.bare.yaml" 'özet göndermedi' "$label: a missing synopsis says so" &&
+      # The page still exists. A direction that collapses to its chrome when the
+      # provider sent nothing is the one this case is here to catch.
+      expect_in_file "$OUT/$slug.bare.yaml" 'Gece Yarısı Ekspresi' "$label: the bare title still names itself" &&
+      refute_overflow "$OUT/$slug.bare.yaml" "$label bare"
   fi
 }
 
 log "Dusk title walk, artefacts in $OUT"
+reap_browsers
 $FSA dusk:reset_overlays >/dev/null 2>&1
 
 for profile in "desktop 1440 900" "mobile 414 896"; do

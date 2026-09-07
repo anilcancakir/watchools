@@ -18,10 +18,23 @@ fail() { CHECKS=$((CHECKS + 1)); FAILURES=$((FAILURES + 1)); printf '  \033[31mâ
 note() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 
 # expect_in_file <file> [rg-flag...] <pattern> <description>
+#
+# An empty pattern fails rather than passing. `rg -q ''` matches every line of
+# every file, and every per-direction pattern in these walks comes from a `case`
+# that returns nothing for an unmatched label: renaming one direction would
+# quietly turn six checks into checks that cannot fail, which is the exact shape
+# of the four failures recorded elsewhere in this file.
 expect_in_file() {
   local file="$1"; shift
   local desc="${@: -1}"
   set -- "${@:1:$(($# - 1))}"
+
+  local pattern="${@: -1}"
+  if [ -z "$pattern" ]; then
+    fail "$desc: the pattern was empty, so this check could not fail"
+    return
+  fi
+
   if rg -q "$@" -- "$file"; then pass "$desc"; else fail "$desc"; fi
 }
 
@@ -41,27 +54,104 @@ refute_in_file() {
 # that condition held on every single iteration, so roughly forty checks were
 # passing unconditionally.
 #
-# Counted on `"fatal":`, which every exception entry carries and the response
-# envelope does not.
+# Read from the response ENVELOPE, not by counting a key inside the entries.
 #
-# One more thing worth knowing about the store: `dusk:exceptions --clear` empties
-# the render-error half and leaves the `FlutterError` half behind. A cleared
-# store therefore still reports the previous run's overflows, with their original
-# timestamps, until the app is restarted. `reset_app` restarts, so the walks are
-# unaffected; a hand-run `--clear` is not enough to trust a zero.
+# The previous version counted `"fatal":`, which only dusk's own ring buffer
+# emits (`dusk/lib/src/dusk_error_capture.dart`). `dusk:exceptions` merges that
+# buffer with telescope's store, and `telescope`'s `ExceptionRecord.toJson()`
+# emits `exceptionType / message / time / stackTrace / isolate` and no `fatal`
+# at all. Telescope is the half that hooks `PlatformDispatcher.instance.onError`
+# (`exception_watcher.dart`, installed from `lib/main.dart`), so EVERY
+# asynchronous, isolate and plugin exception was being counted as zero. So was
+# an empty body from an app that had died, which is the case a gate most needs
+# to catch.
+#
+# One message is filtered, and it is filtered from the PARSED entries rather
+# than from the response text. `dusk:exceptions` prints the whole response as
+# one line of JSON, so an `rg -v` on it deletes the entire list and the count
+# then reads zero: that is how roughly forty checks in an earlier version of
+# this walk came to pass unconditionally.
 expect_no_exceptions() {
-  local body count
+  local body report
   body="$($FSA dusk:exceptions 2>/dev/null)"
-  count="$(printf '%s' "$body" | rg -o '"fatal":' | wc -l | tr -d ' ')"
 
-  if [ "${count:-0}" -eq 0 ]; then
+  report="$(printf '%s' "$body" | python3 -c '
+import json, sys
+
+# Magic renders a plain MaterialApp with no route table while it bootstraps, so
+# any restart whose URL is not the root logs this for a path the app does serve.
+# `MaterialApp.router` then routes correctly. Recorded as defect 8 in
+# `.ac/research/ecosystem-defects.md`; it is noise, not a failure.
+BENIGN = "Could not navigate to initial route"
+
+raw = sys.stdin.read()
+try:
+    body = json.loads(raw)
+except ValueError:
+    print("no readable response from dusk:exceptions, so the app is gone")
+    raise SystemExit(0)
+
+if "count" not in body:
+    print("response carried no count, so the store could not be read")
+    raise SystemExit(0)
+
+real = [e for e in body.get("exceptions", []) if BENIGN not in (e.get("message") or "")]
+if real:
+    print("%d: %s" % (len(real), "; ".join((e.get("message") or "").splitlines()[0] for e in real[:3])))
+')"
+
+  if [ -z "$report" ]; then
     pass "no exceptions: $1"
   else
-    fail "$count exception(s) after $1: $body"
+    fail "after $1, $report"
     # Cleared so the next assertion reports its own interaction rather than
     # inheriting this one.
     $FSA dusk:exceptions --clear >/dev/null 2>&1
   fi
+}
+
+# `visible_ref`, with one retry.
+#
+# The retry is not superstition. Its failure landed on a walk's FIRST iteration
+# and on no other: a hot restart plus a route change plus a direction switch
+# plus a search is four settle windows in a row, and a fixed sleep is always a
+# guess that is wrong somewhere.
+visible_ref_settled() {
+  local ref
+  ref="$(visible_ref "$1" "$2" "$3")"
+  if [ -z "$ref" ]; then
+    sleep 4
+    ref="$(visible_ref "$1" "$2" "$3")"
+  fi
+  printf '%s' "$ref"
+}
+
+# The regex that matches a catalogue card's anchor and NOT its favourite button.
+#
+# A card's label is `<name>, <caption>` in a resume rail and `<name> <year>` in
+# a grid or a poster rail, so both shapes have to be admitted. The digit is what
+# keeps it off the star, whose label is `<name> favorilere ekle`: a plain
+# `[ ,]` matched that too, and matched it FIRST, so the tap starred the title
+# instead of opening it and the walk went on asserting against a page it had
+# never reached.
+card_pattern() {
+  printf '^%s(,| [0-9])' "$1"
+}
+
+# Fails once, loudly, when a snapshot came back with no nodes at all.
+#
+# CanvasKit does occasionally die outright under this much driving, and when it
+# does the semantics tree comes back empty and every assertion under it fails
+# for a reason that has nothing to do with it: one run reported five separate
+# defects in one direction from a single zero-byte snapshot. Returns non-zero so
+# the caller can stop rather than carry on against nothing.
+expect_rendered() {
+  if rg -q 'ref=e[0-9]+' -- "$1"; then
+    return 0
+  fi
+
+  fail "$2: the snapshot came back empty, so the renderer is gone rather than the screen wrong"
+  return 1
 }
 
 # Fails when any node in the snapshot sits inside an overflowing flex.
@@ -76,6 +166,46 @@ refute_overflow() {
 # Prints the ref of the first node whose snapshot line matches $1.
 ref_matching() {
   $FSA dusk:snap 2>/dev/null | rg -- "$1" | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1
+}
+
+# Prints the ref of the first node matching $1 that is actually inside the
+# viewport, or nothing.
+#
+# `ref_matching` walks the semantics tree, which carries every node a sliver
+# BUILT, not every node a viewer can see. A rail two screens down is in that
+# tree with a usable ref, and `dusk:tap` on it reports success and lands on
+# whatever is at those coordinates: the walk spent two rounds reporting a star
+# that would not flip and a card that would not navigate, and in both cases the
+# app was fine and the tap was somewhere else.
+#
+# `dusk:observe` carries `bounds`, so this filters on them. `$2` and `$3` are
+# the viewport, and the check is against the whole node rather than its centre
+# because `dusk:tap` aims at the centre and a half-visible node has one outside.
+#
+# It does NOT filter on the floating switcher, which overlaps content by design
+# and is scaffolding; where that matters the walk aims somewhere else and says
+# so at the call site.
+visible_ref() {
+  $FSA dusk:observe 2>/dev/null | python3 -c '
+import json, re, sys
+
+pattern, width, height = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+try:
+    body = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+
+for node in body.get("candidates", []):
+    label = node.get("label") or ""
+    if not re.search(pattern, label):
+        continue
+    box = node.get("bounds") or {}
+    x, y = box.get("x", -1), box.get("y", -1)
+    w, h = box.get("w", 0), box.get("h", 0)
+    if x >= 0 and y >= 0 and x + w <= width and y + h <= height:
+        print(node["ref"])
+        break
+' "$1" "$2" "$3"
 }
 
 # Prints the ref of the first text field on screen.
@@ -141,6 +271,22 @@ reset_app() {
   fi
 
   $FSA dusk:exceptions --clear >/dev/null 2>&1
+}
+
+# Kills any Chrome left behind by an earlier run and removes its profile.
+#
+# `fsa stop` does not always reach the browser: it reports
+# `Chrome SIGTERM not delivered` when the pid has already been reparented, and
+# the process keeps its profile directory and its memory. Seven of them
+# accumulated across one afternoon's runs and the last walk was killed by the
+# system for memory pressure before it wrote a line of output, which reads
+# exactly like a hang.
+#
+# Matched on the profile path so this cannot touch the user's own browser.
+reap_browsers() {
+  pkill -f 'user-data-dir=/tmp/dusk-chrome-' 2>/dev/null
+  sleep 2
+  rm -rf /tmp/dusk-chrome-*
 }
 
 # Prints the totals and exits non-zero on any failure.

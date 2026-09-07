@@ -55,6 +55,20 @@ direction_marker() {
   esac
 }
 
+# The string THIS direction uses for a channel the provider sent no EPG for.
+#
+# One per direction, and none of them is the shared count line. Şimdi builds a
+# rail for them and names it; Zaman draws a full-window block inside the grid;
+# Kule's list row says it in the now column, and below `md` that column is gone,
+# so on a phone the direction's own words are in its docked bar instead.
+no_guide_marker() {
+  case "$1" in
+    Şimdi) printf 'Akış bilgisi olmayan kanallar' ;;
+    Zaman) printf 'Bu kanal için yayın akışı gelmedi' ;;
+    Kule)  printf 'Yayın akışı yok' ;;
+  esac
+}
+
 # Prints the ref of the first "favorilere ekle" button on screen.
 #
 # Unstarred specifically. Asserting that the post-tap tree contains
@@ -63,7 +77,7 @@ direction_marker() {
 # line-up fixture has none, and adding one `favourite: true` to it would
 # silently disarm this check.
 star_ref() {
-  ref_matching 'favorilere ekle'
+  visible_ref ' favorilere ekle$' "$1" "$2"
 }
 
 walk_direction() {
@@ -88,6 +102,11 @@ walk_direction() {
   $FSA dusk:snap >"$snap" 2>/dev/null
   $FSA dusk:screenshot --output="$OUT/$slug.png" >/dev/null 2>&1
 
+  # Before anything else. `refute_*` passes on a zero-byte file, so a dead
+  # renderer used to report five separate defects in one direction from one
+  # empty snapshot.
+  expect_rendered "$snap" "$label" || return
+
   # 0. This direction, and not whichever one was on screen before.
   expect_in_file "$snap" "$(direction_marker "$label" "$profile")" "$label: is the direction on screen"
 
@@ -97,9 +116,11 @@ walk_direction() {
   # 2. Favourites are actionable here, not only from another direction.
   expect_in_file "$snap" 'favorilere ekle|favorilerden çıkar' "$label: has a favourite control"
 
-  # 3. The provider sending no EPG is a designed state, not a hole. Each
-  #    direction words it differently on purpose, so the pattern is loose.
-  expect_in_file "$snap" -i 'akış (bilgisi )?(yok|gelmedi)' "$label: names the no-schedule case"
+  # 3. The count of channels with no EPG is above the fold, in every direction.
+  #    That much is the doctrine's third rule and the shared toolbar carries it.
+  #    What each direction does with those channels is asserted further down,
+  #    after a search that puts them on screen.
+  expect_in_file "$snap" 'kanalda akış yok' "$label: states the missing-guide count without scrolling"
 
   # 4. Nothing overflowed. Flutter reports this to the console rather than
   #    throwing, so it is invisible to `dusk:exceptions`.
@@ -109,7 +130,7 @@ walk_direction() {
   #    because a query cannot be undone from here (see reset_app) and this
   #    needs an unfiltered line-up.
   local starref
-  starref="$(star_ref)"
+  starref="$(star_ref "$width" "$height")"
   if [ -z "$starref" ]; then
     fail "$label: no unstarred favourite control to toggle"
   else
@@ -153,6 +174,25 @@ walk_direction() {
   if [ -z "$sref" ]; then
     fail "$label: search field has no usable ref"
   else
+    # A channel the provider sent no EPG for, first. Every direction has a
+    # designed state for it and in two of the three that state is below the fold
+    # on first paint: the hero direction puts its no-guide rail last, which is
+    # editorially right and structurally invisible to a snapshot. Narrowing to
+    # one such channel brings each direction's own words to the top.
+    #
+    # This assertion used to sit above, against a loose alternation, and matched
+    # exactly one string in the whole app: the shared count line, which all
+    # three render unconditionally. It proved the fixture has channels without
+    # EPG and nothing about any direction; delete the designed state from all
+    # three and it still passed.
+    $FSA dusk:fill --ref "$sref" --text 'Müzik' >/dev/null 2>&1
+    sleep 2
+    expect_no_exceptions "$label no-guide search"
+    $FSA dusk:snap >"$OUT/$slug.noguide.yaml" 2>/dev/null
+    $FSA dusk:screenshot --output="$OUT/$slug.noguide.png" >/dev/null 2>&1
+    expect_in_file "$OUT/$slug.noguide.yaml" "$(no_guide_marker "$label")" \
+      "$label: names the no-schedule case in its own words"
+
     $FSA dusk:fill --ref "$sref" --text 'spor' >/dev/null 2>&1
     sleep 2
     expect_no_exceptions "$label search"
@@ -172,6 +212,7 @@ walk_direction() {
 }
 
 log "Dusk live-television walk, artefacts in $OUT"
+reap_browsers
 $FSA dusk:reset_overlays >/dev/null 2>&1
 
 for profile in "desktop 1440 900" "mobile 414 896"; do
