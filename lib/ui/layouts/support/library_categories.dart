@@ -28,12 +28,19 @@ class LibraryCategories extends StatelessWidget {
   Widget build(BuildContext context) {
     // Exactly the chip's own height, so the page above and below owns all the
     // spacing. See `PageGutter.stripHeight`.
+    final List<String> categories = controller.categories;
+
+    // `ListView.builder` for the reason `CategoryStrip` records in full: the
+    // list form allocates a widget per category on every controller notify,
+    // even though only the mounted ones are built.
     return SizedBox(
       height: PageGutter.stripHeight,
-      child: ListView(
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: PageGutter.horizontal,
-        children: <Widget>[for (final String category in controller.categories) _item(category)],
+        itemCount: categories.length,
+        addAutomaticKeepAlives: false,
+        itemBuilder: (BuildContext context, int index) => _item(categories[index]),
       ),
     );
   }
