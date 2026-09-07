@@ -36,14 +36,12 @@ class WallLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Below `xl` the detail pane would leave the grid two columns wide, which
-    // is a list with pictures rather than a wall. One column then, and the
-    // detail arrives as its own screen.
+    // Below `xl` the detail is a screen rather than a pane: a pane plus a grid
+    // leaves the grid two columns wide, which is a list with pictures rather
+    // than a wall.
     final bool split = wScreenIs(context, 'xl');
     final bool wide = wScreenIs(context, 'md');
 
-    // Below `xl` the detail is a screen rather than a pane, because a pane plus
-    // a grid leaves the grid two columns wide, which is a list with pictures.
     if (!split && controller.detailOpen) {
       return TitleDetail(controller: controller, wide: wide, dismissible: true);
     }

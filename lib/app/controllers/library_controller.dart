@@ -146,6 +146,14 @@ class LibraryController extends SimpleMagicController {
   /// alike. The one shelf a returning viewer actually opens the app for.
   List<TitleItem> get continueWatching => matches.where((TitleItem t) => t.inProgress).toList();
 
+  /// How many titles the current filter left, worded for whether a search is
+  /// active. Same discipline as the line-up's: one number, one spelling.
+  String get countLabel {
+    final int total = matches.length;
+
+    return query.trim().isEmpty ? '$total başlık' : '$total sonuç';
+  }
+
   /// How many of [matches] arrived with no poster.
   ///
   /// Stated on screen for the same reason the line-up states its missing-EPG
@@ -161,8 +169,16 @@ class LibraryController extends SimpleMagicController {
   List<String> get categories => vodCategories;
 
   /// Switches layout, keeping every filter.
+  ///
+  /// The detail is closed on the way, which the filters deliberately are not.
+  /// The layouts disagree about when the detail is a screen (the shelf layout
+  /// always, the other two only below `xl`), so a detail opened in one followed
+  /// you into another and left you unable to see its browse surface without
+  /// pressing back first. Filters surviving makes two layouts comparable; a
+  /// modal surviving makes one of them unreachable.
   void showLayout(LibraryLayout layout) {
     _layout = layout;
+    _detailOpen = false;
     refreshUI();
   }
 
