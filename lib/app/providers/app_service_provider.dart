@@ -1,6 +1,7 @@
 import 'package:magic/magic.dart';
 
 import '../controllers/guide_controller.dart';
+import '../controllers/library_controller.dart';
 
 /// Application Service Provider.
 ///
@@ -23,6 +24,7 @@ class AppServiceProvider extends ServiceProvider {
     // `MagicStatefulViewState` resolves through `Magic.find<T>()`, which reads
     // the registry.
     Magic.put(GuideController());
+    Magic.put(LibraryController());
   }
 
   @override

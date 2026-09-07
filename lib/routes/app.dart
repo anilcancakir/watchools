@@ -1,6 +1,7 @@
 import 'package:magic/magic.dart';
 
 import '../resources/views/guide_view.dart';
+import '../resources/views/library_view.dart';
 
 /// Application Route Definitions.
 ///
@@ -10,4 +11,5 @@ import '../resources/views/guide_view.dart';
 /// See also: `lib/app/kernel.dart` for middleware registration.
 void registerAppRoutes() {
   MagicRoute.page('/', () => const GuideView()).title('Rehber');
+  MagicRoute.page('/kutuphane', () => const LibraryView()).title('Kütüphane');
 }

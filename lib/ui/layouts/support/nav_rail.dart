@@ -36,9 +36,9 @@ class NavRail extends StatelessWidget {
       children: <Widget>[
         _wordmark(),
         _item(Icons.search_outlined, 'Ara'),
-        _item(Icons.live_tv_outlined, 'Canlı', selected: true),
+        _item(Icons.live_tv_outlined, 'Canlı', route: '/'),
+        _item(Icons.video_library_outlined, 'Kütüphane', route: '/kutuphane'),
         _item(Icons.grid_view_outlined, 'Kategoriler'),
-        _item(Icons.movie_outlined, 'Filmler'),
         _item(Icons.star_outline_rounded, 'Favoriler'),
         const WDiv(className: 'flex-1'),
         _item(Icons.settings_outlined, 'Ayarlar'),
@@ -64,9 +64,18 @@ class NavRail extends StatelessWidget {
     );
   }
 
-  Widget _item(IconData icon, String label, {bool selected = false}) {
+  /// One rail item.
+  ///
+  /// [route] is what makes the rail navigation rather than decoration. An item
+  /// without one is a destination that does not exist yet and says so by doing
+  /// nothing, which is honest; an item that routes is `selected` when the
+  /// current location is its own, read from the router rather than passed in,
+  /// so the rail cannot disagree with the screen behind it.
+  Widget _item(IconData icon, String label, {String? route}) {
+    final bool selected = route != null && route == MagicRouter.instance.currentLocation;
+
     return WAnchor(
-      onTap: () {},
+      onTap: route == null ? null : () => MagicRoute.to(route),
       semanticLabel: label,
       child: WDiv(
         className: expanded
