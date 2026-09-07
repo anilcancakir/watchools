@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../../app/models/title_item.dart';
+import '../artwork/index.dart';
 import '../favourite_button/index.dart';
 import 'title_poster.recipe.dart';
 
@@ -25,6 +26,10 @@ class TitlePoster extends StatelessWidget {
 
   /// Recipe size axis: `sm`, `md` or `lg`.
   final String size;
+
+  /// The rendered width of each size, so the decode can be sized to the slot.
+  /// Mirrors the recipe; the two have to move together.
+  static const Map<String, double> _edges = <String, double>{'sm': 124, 'md': 168, 'lg': 220};
 
   /// Whether this is the entry the detail surface is showing.
   final bool selected;
@@ -67,13 +72,7 @@ class TitlePoster extends StatelessWidget {
                 WAnchor(
                   onTap: onTap,
                   semanticLabel: '${title.name} ${title.year}',
-                  child: title.posterUrl == null
-                      ? _blank()
-                      : Image.network(
-                          title.posterUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _blank(),
-                        ),
+                  child: Artwork(src: title.posterUrl, fallback: _blank(), slotWidth: _edges[size]),
                 ),
                 if (title.progress > 0.03 && title.progress < 0.92)
                   Positioned(
@@ -131,7 +130,7 @@ class TitlePoster extends StatelessWidget {
         bg-surface-container-high
       ''',
       children: <Widget>[
-        WText(title.name, className: 'text-sm font-bold text-fg-muted text-center n-4'),
+        WText(title.name, className: 'text-sm font-bold text-fg-muted text-center line-clamp-4'),
         WIcon(
           title.isSeries ? Icons.subscriptions_outlined : Icons.movie_outlined,
           className: 'text-sm text-fg-disabled mt-2',

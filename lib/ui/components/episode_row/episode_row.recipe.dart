@@ -18,7 +18,7 @@ WindSlotRecipe episodeRowRecipe() {
       'still': 'shrink-0 rounded-md overflow-hidden bg-surface-container-high',
       'code': 'shrink-0 text-xs font-semibold text-fg-disabled',
       'title': 'text-sm font-semibold text-fg truncate',
-      'synopsis': 'text-xs text-fg-muted n-2',
+      'synopsis': 'text-xs text-fg-muted line-clamp-2',
       'runtime': 'shrink-0 text-xs text-fg-disabled',
     },
     variants: <String, Map<String, Map<String, String>>>{

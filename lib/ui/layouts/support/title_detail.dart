@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 
 import '../../../app/controllers/library_controller.dart';
 import '../../../app/models/title_item.dart';
+import '../../components/artwork/index.dart';
 import '../../components/episode_row/index.dart';
 import '../../components/fact_chip/index.dart';
 import '../../components/favourite_button/index.dart';
@@ -113,14 +114,11 @@ class TitleDetail extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              if (backdrop == null)
-                // No backdrop is the common case for a provider feed. A flat
-                // tonal panel rather than a stretched poster: upscaling a 2:3
-                // poster to 16:9 is the artefact that makes a catalogue look
-                // broken rather than sparse.
-                const WDiv(className: 'bg-surface-container')
-              else
-                Image.network(backdrop, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+              // No backdrop is the common case for a provider feed. A flat
+              // tonal panel rather than a stretched poster: upscaling a 2:3
+              // poster to 16:9 is the artefact that makes a catalogue look
+              // broken rather than sparse.
+              Artwork(src: backdrop, fallback: const WDiv(className: 'bg-surface-container')),
               const DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -138,7 +136,7 @@ class TitleDetail extends StatelessWidget {
         WDiv(
           className: 'flex flex-col gap-3 px-4 md:px-8 -mt-16',
           children: <Widget>[
-            WText(title.name, className: 'text-2xl md:text-3xl font-bold text-fg n-2'),
+            WText(title.name, className: 'text-2xl md:text-3xl font-bold text-fg line-clamp-2'),
             WDiv(
               className: 'flex flex-row items-center gap-2 wrap',
               children: <Widget>[
@@ -146,7 +144,7 @@ class TitleDetail extends StatelessWidget {
                 for (final String genre in title.genres) FactChip(label: genre),
               ],
             ),
-            if (title.synopsis != null) WText(title.synopsis!, className: 'text-sm text-fg-muted n-4 max-w-[680px]'),
+            if (title.synopsis != null) WText(title.synopsis!, className: 'text-sm text-fg-muted line-clamp-4 max-w-[680px]'),
             _actions(title),
             if (title.facts.isNotEmpty)
               WDiv(
