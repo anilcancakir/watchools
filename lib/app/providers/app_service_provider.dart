@@ -1,5 +1,7 @@
 import 'package:magic/magic.dart';
 
+import '../controllers/guide_controller.dart';
+
 /// Application Service Provider.
 ///
 /// Use this provider to bind your own services to the IoC container and
@@ -10,9 +12,17 @@ class AppServiceProvider extends ServiceProvider {
 
   @override
   void register() {
-    // Bind your services here (sync only — do not resolve other services).
-    // Example:
-    //   app.singleton('my_service', () => MyService());
+    // The line-up controller is a singleton so the four competing layouts share
+    // one set of filters and favourites: comparing two layouts on different
+    // data compares the data. Registered here rather than in `boot()` because
+    // the router pre-builds during `Magic.init()`, and a view that resolves its
+    // controller in `initState` needs the binding to exist by then.
+    //
+    // `Magic.put` rather than `app.singleton`: the container's string-keyed
+    // bindings and the controller registry are separate maps, and
+    // `MagicStatefulViewState` resolves through `Magic.find<T>()`, which reads
+    // the registry.
+    Magic.put(GuideController());
   }
 
   @override
