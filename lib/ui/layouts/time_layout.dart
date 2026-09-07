@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
@@ -82,8 +83,27 @@ class _TimeLayoutState extends State<TimeLayout> {
   }
 
   void _mirror(ScrollController from, ScrollController to) {
-    if (_syncing || !to.hasClients || !from.hasClients) return;
+    // Both guards fix the same reported failure and neither is defensive.
+    //
+    // `mounted`: a scroll listener can fire while the tree is being torn down,
+    // and a `jumpTo` then schedules a frame nobody will see.
+    //
+    // The scheduler phase is the load-bearing one. `jumpTo` from inside the
+    // persistent-callbacks phase asks for a render mid-frame, and on Flutter
+    // web a hot restart has already disposed the old `EngineFlutterView` by the
+    // time that render lands: every interaction with this direction produced
+    // `Trying to render a disposed EngineFlutterView`
+    // (`engine/window.dart:99`). It was invisible until the walk's exception
+    // gate was re-armed, because the framework reports it through
+    // `PlatformDispatcher.onError` rather than through the buffer the gate used
+    // to count.
+    if (!mounted || _syncing || !to.hasClients || !from.hasClients) return;
     if (to.offset == from.offset) return;
+
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _mirror(from, to));
+      return;
+    }
 
     _syncing = true;
     to.jumpTo(from.offset.clamp(to.position.minScrollExtent, to.position.maxScrollExtent));

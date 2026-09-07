@@ -54,10 +54,11 @@ class LibraryToolbar extends StatelessWidget {
       className: 'flex flex-col gap-2 ${PageGutter.x} ${PageGutter.top}',
       children: <Widget>[
         if (wide)
-          // `wrap` with no `flex` beside it, because Wind's display family
-          // resolves first-wins and would discard the wrap. The direction that
-          // adds a sort group, a density group and a view toggle to this line
-          // needs it: at 1100 pixels they and the field do not share one row.
+          // `wrap` with no `flex` beside it. They are the same parser family and
+          // the last one written wins, so `wrap` alone cannot be broken by
+          // someone adding a class in front of it. The direction that puts a
+          // sort group, a density group and a view toggle on this line needs
+          // the wrap: at 1100 pixels they and the field do not share one row.
           WDiv(
             className: 'wrap items-center gap-3',
             children: <Widget>[

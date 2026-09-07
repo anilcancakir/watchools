@@ -77,8 +77,9 @@ class ShelfLayout extends StatelessWidget {
   }
 
   /// `wrap`, not `flex flex-row`. On a phone the three groups get the toolbar's
-  /// own line and still do not fit it on one axis, and Wind's display family
-  /// resolves first-wins, so a `flex` written before `wrap` discards the wrap.
+  /// own line and still do not fit it on one axis. `flex` and `wrap` are the
+  /// same parser family and the last one written wins, so writing `wrap` alone
+  /// is the form that cannot be got wrong by adding a class in front of it.
   Widget _controls() {
     return WDiv(className: 'wrap items-center gap-2', children: <Widget>[_sort(), _density(), _viewToggle()]);
   }

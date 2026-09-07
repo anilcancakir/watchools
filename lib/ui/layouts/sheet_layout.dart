@@ -234,7 +234,7 @@ class SheetLayout extends StatelessWidget {
             onToggle: () => controller.toggleFavourite(title),
           ),
         ),
-        WDiv(className: 'shrink-0', child: TitleSections.ghostActions(controller, title)),
+        WDiv(className: 'shrink-0', child: TitleSections.ghostActions()),
       ],
     );
   }

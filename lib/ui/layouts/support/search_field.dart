@@ -79,7 +79,7 @@ class SearchField extends StatelessWidget {
           // defaulting to 500, `transparent` in the palette is a plain Color
           // rather than a shade map, `isValidColor` fails, and the fallback is
           // used. Only a zero WIDTH reaches the `b.top.width == 0` branch that
-          // drops the border. Both halves are defect 4 in
+          // drops the border. Both halves are defect 3 in
           // `.ac/research/ecosystem-defects.md`.
           child: WInput(
             value: value,
