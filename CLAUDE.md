@@ -35,10 +35,12 @@ dart format lib test
 ./bin/fsa make:component <Name>                  # atomic component folder
 
 # Laravel, from backend/
-vendor/bin/pint --test
+vendor/bin/pint --test app config database routes tests
 vendor/bin/phpstan analyse --memory-limit=1G     # level 9
 XDEBUG_MODE=coverage php artisan test --coverage --min=90
 ```
+
+Pass those paths to Pint. A bare `vendor/bin/pint --test` from `backend/` exits 0 while silently skipping files, including a real violation in `app/Models/User.php` that the same binary reports the moment the path is named.
 
 `flutter test --coverage` writes `coverage/lcov.info` and enforces nothing on its own. The Flutter coverage floor lives in the CI step, which excludes the generated scaffold from the denominator; a local green run has not cleared it.
 
