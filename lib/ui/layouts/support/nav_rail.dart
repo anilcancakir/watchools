@@ -58,11 +58,21 @@ class NavRail extends StatelessWidget {
 
     if (!expanded) return const WDiv(className: 'mb-4', child: glyph);
 
+    // The label takes the remainder and truncates rather than pushing the row
+    // past the rail. Defensive rather than a fix: the four overflows that
+    // prompted it turned out to be `flutter_test`'s square-glyph font inflating
+    // every string by half again (see `test/support/screen.dart`), and in
+    // Schibsted Grotesk none of them happens. Kept because a rail label is one
+    // string away from being long enough for real, and truncating costs
+    // nothing.
     return const WDiv(
       className: 'flex flex-row items-center gap-2 mb-6 px-1',
       children: <Widget>[
         glyph,
-        WText('Watchools', className: 'text-sm font-bold text-fg'),
+        WDiv(
+          className: 'flex-1 min-w-0',
+          child: WText('Watchools', className: 'text-sm font-bold text-fg truncate'),
+        ),
       ],
     );
   }
@@ -101,7 +111,11 @@ class NavRail extends StatelessWidget {
         states: selected ? const <String>{'selected'} : const <String>{},
         children: <Widget>[
           WIcon(icon, className: 'text-lg'),
-          if (expanded) WText(label, className: 'text-sm font-semibold'),
+          if (expanded)
+            WDiv(
+              className: 'flex-1 min-w-0',
+              child: WText(label, className: 'text-sm font-semibold truncate'),
+            ),
         ],
       ),
     );
