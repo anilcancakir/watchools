@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Reproduces one interaction on the live screen and reports the store.
+# Switches the live screen to `Zaman` and reports the exception store.
 #
 # Kept because two separate overflows were blamed on three different things
 # before each was reduced to a sequence this short. Pass a search term to
@@ -19,9 +19,9 @@ $FSA dusk:navigate --route / >/dev/null 2>&1
 sleep 3
 $FSA dusk:exceptions --clear >/dev/null 2>&1
 
-ref="$($FSA dusk:snap 2>/dev/null | rg '"Şimdi: ' | rg -o 'e[0-9]+' | head -1)"
+ref="$($FSA dusk:snap 2>/dev/null | rg '"Zaman görünümü"' | rg -o 'e[0-9]+' | head -1)"
 if [ -z "$ref" ]; then
-  printf 'no switcher on screen\n'
+  printf 'no view switch on screen\n'
   exit 1
 fi
 $FSA dusk:tap --ref "$ref" >/dev/null 2>&1

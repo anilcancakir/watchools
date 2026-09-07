@@ -2,11 +2,15 @@
 #
 # Dusk end-to-end walk of the live television screen.
 #
-# Every direction has to carry the same four capabilities, on a phone and on a
-# desktop: search the whole line-up, star a channel, narrow by category and get
-# back out again, and say something useful about a channel the provider sent no
-# EPG for. This asserts all four on all three at both widths, and fails on any
-# app exception.
+# The screen ships two views of one line-up, `Şimdi` and `Zaman`, and both have
+# to carry the same four capabilities on a phone and on a desktop: search the
+# whole line-up, star a channel, narrow by category and get back out again, and
+# say something useful about a channel the provider sent no EPG for. This
+# asserts all four on both, at both widths, and fails on any app exception.
+#
+# The switch between them is a product control now rather than scaffolding, so
+# it gets an assertion of its own: reaching a view has to work through the
+# control a viewer would use, and its labels are what a screen reader reads.
 #
 # It drives the app through dusk rather than a browser automation library, so
 # what it exercises is the running Flutter tree and the same semantics labels a
@@ -31,42 +35,51 @@ mkdir -p "$OUT"
 # shellcheck source=tool/dusk/_lib.sh
 source "$(dirname "$0")/_lib.sh"
 
-# Something only this direction renders, at this width.
+# Something only this view renders, at both widths.
 #
-# Without it the walk asserts nothing but direction-agnostic facts, so a missed
-# switcher tap or a regressed `showDirection` would let every check pass against
-# the default direction three times over.
-#
-# Two markers for Kule rather than one, and that is not a compromise: its
-# detail panel becomes a docked bar below 1100 pixels, so the two widths really
-# do render different things and one marker for both would have to be something
-# neither of them is about. Şimdi and Zaman each have one that holds at both.
+# Without it the walk asserts nothing but view-agnostic facts, so a missed
+# switch tap or a regressed `showMode` would let every check pass against
+# whichever view happened to be on screen.
 direction_marker() {
-  case "$1-$2" in
-    # An editorial rail title. Only this direction builds rails.
-    Şimdi-*) printf 'Daha yeni başladı' ;;
-    # The panel's technical stack heading, desktop only.
-    Kule-desktop) printf 'text "Künye' ;;
-    # The dock's caption, which ends on the programme's end time. The tile
-    # caption in Şimdi ends on the minutes remaining instead.
-    Kule-mobile) printf 'TRT 1 · 20:55' ;;
+  case "$1" in
+    # An editorial rail title. Only this view builds rails.
+    Şimdi) printf 'Daha yeni başladı' ;;
     # The ruler's day label. Nothing else in the app draws a time axis.
-    Zaman-*) printf 'BUGÜN' ;;
+    Zaman) printf 'BUGÜN' ;;
   esac
 }
 
-# The string THIS direction uses for a channel the provider sent no EPG for.
+# The string THIS view uses for a channel the provider sent no EPG for.
 #
-# One per direction, and none of them is the shared count line. Şimdi builds a
-# rail for them and names it; Zaman draws a full-window block inside the grid;
-# Kule's list row says it in the now column, and below `md` that column is gone,
-# so on a phone the direction's own words are in its docked bar instead.
+# Neither is the shared count line. `Şimdi` builds a rail for them and names it;
+# `Zaman` draws a full-window block inside the grid.
 no_guide_marker() {
   case "$1" in
     Şimdi) printf 'Akış bilgisi olmayan kanallar' ;;
     Zaman) printf 'Bu kanal için yayın akışı gelmedi' ;;
-    Kule)  printf 'Yayın akışı yok' ;;
   esac
+}
+
+# The other view's label, for the round trip below.
+other_view() {
+  case "$1" in
+    Şimdi) printf 'Zaman' ;;
+    Zaman) printf 'Şimdi' ;;
+  esac
+}
+
+# Taps the switch segment named $1 and waits for the swap.
+#
+# `visible_ref` rather than `ref_matching`: both segments exist in every
+# snapshot by design, and the tree carries nodes a viewer cannot reach.
+tap_view() {
+  local name="$1" width="$2" height="$3" ref
+  ref="$(visible_ref_settled "^$name görünümü\$" "$width" "$height")"
+  [ -z "$ref" ] && return 1
+
+  $FSA dusk:tap --ref "$ref" >/dev/null 2>&1
+  sleep 2
+  return 0
 }
 
 # Prints the ref of the first "favorilere ekle" button on screen.
@@ -80,53 +93,68 @@ star_ref() {
   visible_ref ' favorilere ekle$' "$1" "$2"
 }
 
-walk_direction() {
+walk_view() {
   local label="$1" profile="$2" width="$3" height="$4"
-  local slug snap ref
+  local slug snap
   slug="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')-$profile"
 
   log "$label @ $profile ${width}x${height}"
 
   reset_app "$width" "$height"
 
-  ref="$(ref_matching "\"$label: ")"
-  if [ -z "$ref" ]; then
-    fail "$label: switcher button not found in the semantics tree"
+  # A round trip rather than one tap, and the extra press is the point. A
+  # restart arrives on `Şimdi`, so tapping straight to it is a no-op that proves
+  # nothing: the walk would report the arrival screen as a successful switch.
+  # Going to the other view first makes both presses real in both iterations,
+  # and it is also the only thing that would catch a switch that works one way
+  # and strands you the other.
+  if ! tap_view "$(other_view "$label")" "$width" "$height"; then
+    fail "$label: the view switch is not reachable on the toolbar"
     return
   fi
-  $FSA dusk:tap --ref "$ref" >/dev/null 2>&1
-  sleep 2
-  expect_no_exceptions "$label switch"
+  expect_no_exceptions "$label switch out"
+
+  if ! tap_view "$label" "$width" "$height"; then
+    fail "$label: the switch does not offer a way back from the other view"
+    return
+  fi
+  expect_no_exceptions "$label switch back"
 
   snap="$OUT/$slug.snap.yaml"
   $FSA dusk:snap >"$snap" 2>/dev/null
   $FSA dusk:screenshot --output="$OUT/$slug.png" >/dev/null 2>&1
 
   # Before anything else. `refute_*` passes on a zero-byte file, so a dead
-  # renderer used to report five separate defects in one direction from one
-  # empty snapshot.
+  # renderer used to report five separate defects on one screen from one empty
+  # snapshot.
   expect_rendered "$snap" "$label" || return
 
-  # 0. This direction, and not whichever one was on screen before.
-  expect_in_file "$snap" "$(direction_marker "$label" "$profile")" "$label: is the direction on screen"
+  # 0. This view, and not whichever one was on screen before.
+  expect_in_file "$snap" "$(direction_marker "$label")" "$label: is the view on screen"
 
-  # 1. Search reaches the whole line-up from here.
+  # 1. Both segments of the switch survive the switch. A control that renders
+  #    only its unselected half, or loses the way back, strands the viewer in
+  #    whichever view they last pressed.
+  expect_in_file "$snap" 'Şimdi görünümü' "$label: the switch still offers Şimdi"
+  expect_in_file "$snap" 'Zaman görünümü' "$label: the switch still offers Zaman"
+
+  # 2. Search reaches the whole line-up from here.
   expect_in_file "$snap" 'textbox' "$label: has a search field"
 
-  # 2. Favourites are actionable here, not only from another direction.
+  # 3. Favourites are actionable here, not only in the other view.
   expect_in_file "$snap" 'favorilere ekle|favorilerden çıkar' "$label: has a favourite control"
 
-  # 3. The count of channels with no EPG is above the fold, in every direction.
-  #    That much is the doctrine's third rule and the shared toolbar carries it.
-  #    What each direction does with those channels is asserted further down,
-  #    after a search that puts them on screen.
+  # 4. The count of channels with no EPG is above the fold, in both views.
+  #    That much is the doctrine's third rule and both toolbars carry it. What
+  #    each view does with those channels is asserted further down, after a
+  #    search that puts them on screen.
   expect_in_file "$snap" 'kanalda akış yok' "$label: states the missing-guide count without scrolling"
 
-  # 4. Nothing overflowed. Flutter reports this to the console rather than
+  # 5. Nothing overflowed. Flutter reports this to the console rather than
   #    throwing, so it is invisible to `dusk:exceptions`.
   refute_overflow "$snap" "$label"
 
-  # 5. Starring works and the control flips its own label. Before search,
+  # 6. Starring works and the control flips its own label. Before search,
   #    because a query cannot be undone from here (see reset_app) and this
   #    needs an unfiltered line-up.
   local starref
@@ -141,7 +169,7 @@ walk_direction() {
     expect_in_file "$OUT/$slug.starred.yaml" 'favorilerden çıkar' "$label: starring flips the control"
   fi
 
-  # 6. The category strip can narrow AND widen again. `Tümü` has to be on it:
+  # 7. The category strip can narrow AND widen again. `Tümü` has to be on it:
   #    a filter you cannot leave is a trap, and this assertion is what found
   #    that it was missing.
   local groupref allref
@@ -167,24 +195,24 @@ walk_direction() {
     fi
   fi
 
-  # 7. Search narrows, and an empty result set says so rather than rendering a
+  # 8. Search narrows, and an empty result set says so rather than rendering a
   #    blank body. Last, because it is one-way.
   local sref
   sref="$(search_ref)"
   if [ -z "$sref" ]; then
     fail "$label: search field has no usable ref"
   else
-    # A channel the provider sent no EPG for, first. Every direction has a
-    # designed state for it and in two of the three that state is below the fold
-    # on first paint: the hero direction puts its no-guide rail last, which is
-    # editorially right and structurally invisible to a snapshot. Narrowing to
-    # one such channel brings each direction's own words to the top.
+    # A channel the provider sent no EPG for, first. Both views have a designed
+    # state for it and in `Şimdi` that state is below the fold on first paint:
+    # it puts its no-guide rail last, which is editorially right and
+    # structurally invisible to a snapshot. Narrowing to one such channel brings
+    # each view's own words to the top.
     #
     # This assertion used to sit above, against a loose alternation, and matched
-    # exactly one string in the whole app: the shared count line, which all
-    # three render unconditionally. It proved the fixture has channels without
-    # EPG and nothing about any direction; delete the designed state from all
-    # three and it still passed.
+    # exactly one string in the whole app: the shared count line, which both
+    # render unconditionally. It proved the fixture has channels without EPG and
+    # nothing about either view; delete the designed state from both and it
+    # still passed.
     fill_search 'Müzik'
     expect_no_exceptions "$label no-guide search"
     $FSA dusk:snap >"$OUT/$slug.noguide.yaml" 2>/dev/null
@@ -205,6 +233,10 @@ walk_direction() {
     $FSA dusk:snap >"$OUT/$slug.empty.yaml" 2>/dev/null
     $FSA dusk:screenshot --output="$OUT/$slug.empty.png" >/dev/null 2>&1
     expect_in_file "$OUT/$slug.empty.yaml" 'Sonuç yok' "$label: empty search has an empty state"
+    # The way out of an empty result set. The empty body is its own layout and
+    # it dropped the switch once, which left a viewer whose search matched
+    # nothing with no route to the other view.
+    expect_in_file "$OUT/$slug.empty.yaml" 'görünümü' "$label: the empty state keeps the view switch"
   fi
 }
 
@@ -215,8 +247,8 @@ $FSA dusk:reset_overlays >/dev/null 2>&1
 for profile in "desktop 1440 900" "mobile 414 896"; do
   # shellcheck disable=SC2086
   set -- $profile
-  for label in Şimdi Kule Zaman; do
-    walk_direction "$label" "$1" "$2" "$3"
+  for label in Şimdi Zaman; do
+    walk_view "$label" "$1" "$2" "$3"
   done
 done
 

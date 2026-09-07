@@ -1,8 +1,8 @@
 # Shared helpers for the dusk end-to-end walks.
 #
-# Sourced by lineup_e2e.sh and library_e2e.sh. They started as two copies and
-# every fix had to land twice, which is how three of the assertions below came
-# to be silently vacuous in one script and not the other.
+# Sourced by lineup_e2e.sh, library_e2e.sh and title_e2e.sh. They started as two
+# copies and every fix had to land twice, which is how three of the assertions
+# below came to be silently vacuous in one script and not the other.
 #
 # Not executable and not standalone: it defines functions and expects the caller
 # to have set FSA, OUT and ROUTE.
@@ -20,10 +20,10 @@ note() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 # expect_in_file <file> [rg-flag...] <pattern> <description>
 #
 # An empty pattern fails rather than passing. `rg -q ''` matches every line of
-# every file, and every per-direction pattern in these walks comes from a `case`
-# that returns nothing for an unmatched label: renaming one direction would
-# quietly turn six checks into checks that cannot fail, which is the exact shape
-# of the four failures recorded elsewhere in this file.
+# every file, and the per-view patterns in the line-up walk come from a `case`
+# that returns nothing for an unmatched label: renaming one view would quietly
+# turn several checks into checks that cannot fail, which is the exact shape of
+# the four failures recorded elsewhere in this file.
 expect_in_file() {
   local file="$1"; shift
   local desc="${@: -1}"
@@ -135,9 +135,9 @@ if real:
 # `visible_ref`, with one retry.
 #
 # The retry is not superstition. Its failure landed on a walk's FIRST iteration
-# and on no other: a hot restart plus a route change plus a direction switch
-# plus a search is four settle windows in a row, and a fixed sleep is always a
-# guess that is wrong somewhere.
+# and on no other: a hot restart plus a route change plus a view switch plus a
+# search is four settle windows in a row, and a fixed sleep is always a guess
+# that is wrong somewhere.
 visible_ref_settled() {
   local ref
   ref="$(visible_ref "$1" "$2" "$3")"
@@ -165,7 +165,7 @@ card_pattern() {
 # CanvasKit does occasionally die outright under this much driving, and when it
 # does the semantics tree comes back empty and every assertion under it fails
 # for a reason that has nothing to do with it: one run reported five separate
-# defects in one direction from a single zero-byte snapshot. Returns non-zero so
+# defects on one screen from a single zero-byte snapshot. Returns non-zero so
 # the caller can stop rather than carry on against nothing.
 expect_rendered() {
   if rg -q 'ref=e[0-9]+' -- "$1"; then
@@ -204,9 +204,12 @@ ref_matching() {
 # the viewport, and the check is against the whole node rather than its centre
 # because `dusk:tap` aims at the centre and a half-visible node has one outside.
 #
-# It does NOT filter on the floating switcher, which overlaps content by design
-# and is scaffolding; where that matters the walk aims somewhere else and says
-# so at the call site.
+# Being inside the viewport is not the same as being on top. Nothing in the app
+# floats over scrollable content any more, so this is currently sufficient; the
+# floating switcher it could not account for was removed with the layouts it
+# switched between. Anything added over the page later needs handling here or at
+# the call site, and the symptom is a tap that reports success and lands
+# elsewhere.
 visible_ref() {
   $FSA dusk:observe 2>/dev/null | python3 -c '
 import json, re, sys
@@ -232,9 +235,10 @@ for node in body.get("candidates", []):
 
 # Prints the ref of the first text field on screen.
 #
-# Matches any textbox rather than one placeholder: the layouts word their search
-# field differently on purpose, and an assertion that knows only one wording
-# reports a missing field where the field is simply named something else.
+# Matches any textbox rather than one placeholder: the line-up and the catalogue
+# word their search field differently on purpose, and an assertion that knows
+# only one wording reports a missing field where the field is simply named
+# something else.
 search_ref() {
   $FSA dusk:snap 2>/dev/null | rg '^\s*-?\s*textbox' | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1
 }

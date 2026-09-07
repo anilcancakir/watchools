@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #
-# Captures one screenshot per direction, at whichever width is passed.
+# Captures one screenshot per surface, at whichever width is passed.
 #
-# For looking at the work, not for gating it. The walks beside this assert; this
-# only produces the images a design decision actually gets made from, because
-# every gate in this repository can pass on a screen nobody would ship.
+# For looking at the work, not for gating it. The three walks beside this
+# assert; this only produces the images a design decision actually gets made
+# from, because every gate in this repository can pass on a screen nobody would
+# ship.
+#
+# Four images: the two live views, the catalogue, and one title.
+#
+# Usage: tool/dusk/shots.sh [width] [output-dir]
 
 set -u
 
@@ -43,24 +48,16 @@ sleep 2
 
 go /
 shot 1-canli-simdi
-tap 'button "Kule'
-shot 2-canli-kule
-tap 'button "Zaman'
-shot 3-canli-zaman
-tap 'button "Şimdi'
+tap '"Zaman görünümü"'
+shot 2-canli-zaman
+tap '"Şimdi görünümü"'
 
 go /kutuphane
-shot 4-kutuphane-vitrin
-tap 'button "Raf'
-shot 5-kutuphane-raf
-tap 'button "Koleksiyon'
-shot 6-kutuphane-koleksiyon
-tap 'button "Vitrin'
+shot 3-kutuphane-vitrin
 
-go /baslik
-shot 7-detay-kunye
-tap 'button "Perde'
-shot 8-detay-perde
-tap 'button "Sayfa'
-shot 9-detay-sayfa
-tap 'button "Künye'
+# Through the catalogue, because `/baslik` renders whatever was last selected
+# and arriving cold shows the fixture's first entry rather than a series.
+tap '"Diziler göster"'
+sleep 2
+tap 'detayı"'
+shot 4-baslik-perde
