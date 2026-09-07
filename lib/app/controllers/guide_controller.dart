@@ -3,7 +3,7 @@ import 'package:magic/magic.dart';
 
 import '../models/channel.dart';
 import '../models/programme.dart';
-import '../support/guide_fixture.dart';
+import '../support/fixture_scale.dart';
 
 /// The two ways to look at the same line-up.
 ///
@@ -73,7 +73,10 @@ class GuideController extends SimpleMagicController {
   static const int windowMinutes = 300;
 
   /// The line-up, in provider order. Mutable only through [toggleFavourite].
-  final List<Channel> channels = List<Channel>.of(guideFixture);
+  ///
+  /// [FixtureScale] hands back the hand-written fixture unless a measurement
+  /// run asked for a generated one through `?scale=N`.
+  final List<Channel> channels = FixtureScale.channelList;
 
   GuideMode _mode = GuideMode.now;
   String _group = 'Tümü';
@@ -289,7 +292,9 @@ class GuideController extends SimpleMagicController {
 
   /// The categories on the strip. `Tümü` and `Favoriler` are ours; the rest
   /// come from the provider's `group-title` values.
-  List<String> get groups => guideGroups;
+  List<String> get groups => _groups;
+
+  late final List<String> _groups = FixtureScale.groupList;
 
   /// Switches view. The query, the category and the selection all survive it,
   /// which is the whole reason both views read one controller: a viewer who has
