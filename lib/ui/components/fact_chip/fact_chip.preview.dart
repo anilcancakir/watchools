@@ -11,7 +11,7 @@ class FactChipPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const WDiv(
-      className: 'flex flex-row wrap gap-1 p-6',
+      className: 'wrap gap-1 p-6',
       children: <Widget>[
         FactChip(label: '1080p'),
         FactChip(label: 'H.265'),

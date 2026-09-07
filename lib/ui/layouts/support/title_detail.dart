@@ -136,7 +136,7 @@ class TitleDetail extends StatelessWidget {
           children: <Widget>[
             WText(title.name, className: 'text-2xl md:text-3xl font-bold text-fg line-clamp-2'),
             WDiv(
-              className: 'flex flex-row items-center gap-2 wrap',
+              className: 'wrap items-center gap-2',
               children: <Widget>[
                 WText(_meta(title), className: 'text-xs text-fg-muted'),
                 for (final String genre in title.genres) FactChip(label: genre),
@@ -147,7 +147,7 @@ class TitleDetail extends StatelessWidget {
             _actions(title),
             if (title.facts.isNotEmpty)
               WDiv(
-                className: 'flex flex-row gap-1 wrap',
+                className: 'wrap gap-1',
                 children: <Widget>[for (final String fact in title.facts) FactChip(label: fact)],
               ),
           ],
@@ -173,7 +173,7 @@ class TitleDetail extends StatelessWidget {
     };
 
     return WDiv(
-      className: 'flex flex-row items-center gap-2 wrap',
+      className: 'wrap items-center gap-2',
       children: <Widget>[
         WAnchor(
           onTap: () {},

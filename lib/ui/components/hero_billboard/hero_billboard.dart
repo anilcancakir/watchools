@@ -131,8 +131,14 @@ class HeroBillboard extends StatelessWidget {
   Widget _meta(Programme now) {
     final int left = now.endMinute - nowMinute;
 
+    // `wrap` leads and there is no `flex` beside it. Wind's display family
+    // resolves FIRST-wins (`flexbox_grid_parser.dart:239` guards on
+    // `displayType == null`), the opposite of its documented last-class-wins
+    // rule, so `flex flex-row ... wrap` silently composed a Row that could
+    // never wrap. This row carries a time range, a countdown and up to three
+    // fact chips, and on a phone it needs the second line.
     return WDiv(
-      className: 'flex flex-row items-center wrap gap-2 mt-2',
+      className: 'wrap items-center gap-2 mt-2',
       children: <Widget>[
         if (now.episode != null) FactChip(label: now.episode!),
         WText(
