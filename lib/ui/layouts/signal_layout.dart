@@ -62,7 +62,6 @@ class SignalLayout extends StatelessWidget {
   }
 
   Widget _toolbar({required bool showToggle, required GuideMode mode}) {
-    final int total = controller.matches.length;
     final String? note = controller.noGuideNote;
 
     return WDiv(
@@ -84,10 +83,7 @@ class SignalLayout extends StatelessWidget {
             ''',
           ),
         ),
-        WText(
-          controller.query.isEmpty ? '$total kanal' : '$total sonuç',
-          className: 'shrink-0 text-xs text-fg-muted',
-        ),
+        WText(controller.countLabel, className: 'shrink-0 text-xs text-fg-muted'),
         if (note != null) WText('· $note', className: 'text-xs text-fg-disabled'),
         const WDiv(className: 'flex-1'),
         if (showToggle) _modeToggle(),

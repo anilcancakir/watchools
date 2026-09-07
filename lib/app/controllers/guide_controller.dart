@@ -155,6 +155,19 @@ class GuideController extends SimpleMagicController {
   /// rather than quietly showing a shorter list than the count above it.
   int get withoutSchedule => matches.length - scheduled.length;
 
+  /// How many channels the current filter left, worded for whether a search is
+  /// active.
+  ///
+  /// On the controller rather than per layout: two of the four said `N kanal`
+  /// whatever the query, so a search that had narrowed the list to two still
+  /// reported the whole line-up. Same number, four spellings, is how a count
+  /// stops being trusted.
+  String get countLabel {
+    final int total = matches.length;
+
+    return query.trim().isEmpty ? '$total kanal' : '$total sonuç';
+  }
+
   /// The one-line statement every layout makes about missing guide data, or
   /// null when the provider covered the whole selection.
   ///

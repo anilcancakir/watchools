@@ -99,8 +99,7 @@ class LibraryToolbar extends StatelessWidget {
   }
 
   Widget _count() {
-    final int total = controller.matches.length;
-    final String head = controller.query.isEmpty ? '$total başlık' : '$total sonuç';
+    final String head = controller.countLabel;
     final String? note = controller.noArtworkNote;
 
     return WText(
