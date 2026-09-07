@@ -60,17 +60,20 @@ class CollectionLayout extends StatelessWidget {
                     const SliverToBoxAdapter(child: PageGutter.gap),
                     SliverToBoxAdapter(child: LibraryCategories(controller: controller)),
                     SliverToBoxAdapter(child: _providers()),
-                    if (groups.isEmpty)
-                      SliverToBoxAdapter(child: _noGroups())
-                    else
-                      SliverList.builder(
-                        itemCount: groups.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final (String name, List<TitleItem> items) = groups[index];
+                    // No empty-collections branch. `collections` falls back to
+                    // one unnamed group carrying the matches, so it is empty
+                    // only when the catalogue is, and that case is handled
+                    // above by `_emptyBody`. The branch that used to be here
+                    // explained the direction's own grouping rule to a user who
+                    // had asked a question, which is not an answer.
+                    SliverList.builder(
+                      itemCount: groups.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final (String name, List<TitleItem> items) = groups[index];
 
-                          return _collection(name, items, wide);
-                        },
-                      ),
+                        return _collection(name, items, wide);
+                      },
+                    ),
                     const SliverToBoxAdapter(child: SizedBox(height: 96)),
                   ],
                 ),
@@ -90,24 +93,6 @@ class CollectionLayout extends StatelessWidget {
         WDiv(
           className: 'flex-1 w-full',
           child: LibraryEmpty(controller: controller),
-        ),
-      ],
-    );
-  }
-
-  /// A filter can leave every collection under two entries while the catalogue
-  /// itself is not empty, so this is its own state rather than a fall-through
-  /// to the empty screen: the answer is "narrow differently", not "nothing
-  /// matched".
-  Widget _noGroups() {
-    return const WDiv(
-      className: 'flex flex-col gap-2 items-center w-full ${PageGutter.x} py-16',
-      children: <Widget>[
-        WIcon(Icons.dashboard_customize_outlined, className: 'text-3xl text-fg-disabled'),
-        WText('Bu seçimde koleksiyon oluşmadı', className: 'text-base font-semibold text-fg'),
-        WText(
-          'Koleksiyonlar en az iki başlık gerektirir. Daha geniş bir kategori seçin.',
-          className: 'text-sm text-fg-muted text-center',
         ),
       ],
     );
@@ -303,11 +288,7 @@ class CollectionLayout extends StatelessWidget {
 
   /// The supports, two across, wrapping.
   ///
-  /// `wrap` with no `flex` beside it. Wind's display family resolves
-  /// first-wins, against its own documented last-class-wins rule, so
-  /// `flex flex-row wrap` takes `flex` and discards the wrap silently. Recorded
-  /// as defect 3 in `.ac/research/ecosystem-defects.md`.
-  /// No `w-full` on the wrap.
+  /// `wrap` with no `flex` beside it, and no `w-full` on it either.
   ///
   /// It sits inside a `flex-1`, which Wind composes as an `Expanded`, so the
   /// width is already tight. Adding `w-full` on top wraps it in a

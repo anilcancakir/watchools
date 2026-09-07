@@ -111,10 +111,12 @@ class LibraryController extends SimpleMagicController {
   late TitleItem _selected = titles.first;
   int _season = 1;
 
-  /// Cached for the frame, for the same reason the line-up caches: one build
+  /// Cached until a mutation drops it, for the same reason the line-up caches: one build
   /// asks for [matches] from the toolbar, the body and the shelves.
   List<TitleItem>? _matchCache;
   List<(String, List<TitleItem>)>? _sectionCache;
+  List<TitleItem>? _sortCache;
+  List<(String, List<TitleItem>)>? _collectionCache;
 
   /// Which catalogue direction is on show.
   LibraryDirection get direction => _direction;
@@ -211,12 +213,18 @@ class LibraryController extends SimpleMagicController {
   /// order the provider chose, which groups related titles together, and
   /// alphabetising by default throws away the only structure the feed shipped
   /// with. The other three orders exist because the user asked for them.
+  /// Cached like [matches], because it is read from the grid's builder, the
+  /// table's builder AND the title screen's previous/next arrows within one
+  /// frame, and every read re-copied and re-sorted the whole catalogue.
   List<TitleItem> get sorted {
+    final List<TitleItem>? cached = _sortCache;
+    if (cached != null) return cached;
+
     final List<TitleItem> result = List<TitleItem>.of(matches);
 
     switch (_sort) {
       case ShelfSort.provider:
-        return result;
+        return _sortCache = result;
       case ShelfSort.name:
         // Turkish collation, not `compareTo`. Dart compares UTF-16 code units,
         // which puts every dotted and accented letter after `z`: `Çınar` sorts
@@ -231,17 +239,31 @@ class LibraryController extends SimpleMagicController {
         result.sort((TitleItem a, TitleItem b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
     }
 
-    return result;
+    return _sortCache = result;
   }
 
   /// The Turkish alphabet in order, for collation.
   static const String _alphabet = 'aâbcçdefgğhıiîjklmnoöprsştuüûvyz';
 
+  /// The two case mappings Dart's locale-independent `toLowerCase` gets wrong
+  /// for Turkish, applied before it.
+  ///
+  /// `I` lowercases to `i` rather than `ı`, so `Irmak` sorted after `İnce`.
+  /// `İ` lowercases to `i` plus a combining dot above, and the combining mark
+  /// then landed past every letter in the key. Both have to be replaced first,
+  /// because after `toLowerCase` neither is distinguishable from a correctly
+  /// cased one.
+  static const Map<String, String> _turkishLower = <String, String>{'I': 'ı', 'İ': 'i'};
+
   /// Maps a name onto a sortable key in Turkish alphabetical order.
   static String _fold(String value) {
     final StringBuffer out = StringBuffer();
+    String folded = value;
+    for (final MapEntry<String, String> entry in _turkishLower.entries) {
+      folded = folded.replaceAll(entry.key, entry.value);
+    }
 
-    for (final int rune in value.toLowerCase().runes) {
+    for (final int rune in folded.toLowerCase().runes) {
       final int index = _alphabet.indexOf(String.fromCharCode(rune));
       // Anything outside the alphabet (a digit, a space, punctuation) keeps its
       // own code point offset past the letters, so it sorts consistently
@@ -272,7 +294,14 @@ class LibraryController extends SimpleMagicController {
   /// often also half-watched), so without this the same artwork appears at
   /// hero scale two or three times down one screen and the composition's whole
   /// claim, that size means importance, stops being true.
+  /// Cached, because it is the only derived getter here that is O(n·m): the
+  /// `featured` membership test runs inside the group loop, and the whole thing
+  /// is recomputed on every build of the direction that reads it. Invisible at
+  /// fifteen titles and not at five thousand.
   List<(String, List<TitleItem>)> get collections {
+    final List<(String, List<TitleItem>)>? cached = _collectionCache;
+    if (cached != null) return cached;
+
     final List<TitleItem> pool = matches;
 
     final List<(String, List<TitleItem>)> groups = <(String, List<TitleItem>)>[
@@ -300,7 +329,23 @@ class LibraryController extends SimpleMagicController {
       result.add((name, <TitleItem>[lead, ...members]));
     }
 
-    return result;
+    // A narrowed catalogue still has to show its results.
+    //
+    // Every group needs two entries to compose, so a search that matches one
+    // title fills none of them and the screen said "no collections formed"
+    // while holding a perfectly good result. That is this direction failing the
+    // doctrine's sixth rule outright: search is a peer of navigation, and a
+    // browse surface that answers a query with an explanation of its own
+    // internals is not one.
+    //
+    // The fallback is a single unnamed group, so the composition still applies
+    // (first tile large, rest supporting) and nothing about the direction
+    // changes except that it answers.
+    if (result.isEmpty && pool.isNotEmpty) {
+      return _collectionCache = <(String, List<TitleItem>)>[('Sonuçlar', List<TitleItem>.of(pool))];
+    }
+
+    return _collectionCache = result;
   }
 
   /// How many titles the current filter left, worded for whether a search is
@@ -360,10 +405,7 @@ class LibraryController extends SimpleMagicController {
   void showScope(LibraryScope scope) {
     _scope = scope;
     _invalidate();
-    // The selection has to follow the scope or the detail surface keeps showing
-    // a series while the grid behind it shows films.
-    final List<TitleItem> visible = matches;
-    if (visible.isNotEmpty && !visible.contains(_selected)) select(visible.first);
+    _followFilter();
     refreshUI();
   }
 
@@ -371,7 +413,26 @@ class LibraryController extends SimpleMagicController {
   void selectCategory(String category) {
     _category = category;
     _invalidate();
+    _followFilter();
     refreshUI();
+  }
+
+  /// Re-points the selection when the filter has moved it out of view.
+  ///
+  /// The invariant is that the title screen shows something the catalogue
+  /// behind it is also showing, and it used to be enforced by the scope switch
+  /// alone: narrowing by CATEGORY left the detail on a title the grid no longer
+  /// held, so the previous/next arrows walked a list the selection was not in.
+  ///
+  /// Search is deliberately not a caller. A query is transient and often
+  /// mistyped, and re-pointing on every keystroke would drag the detail screen
+  /// through whatever half-typed prefix matched.
+  void _followFilter() {
+    final List<TitleItem> visible = matches;
+    if (visible.isEmpty) return;
+    if (visible.contains(_selected)) return;
+
+    select(visible.first);
   }
 
   /// Applies a search term.
@@ -419,5 +480,7 @@ class LibraryController extends SimpleMagicController {
   void _invalidate() {
     _matchCache = null;
     _sectionCache = null;
+    _sortCache = null;
+    _collectionCache = null;
   }
 }
