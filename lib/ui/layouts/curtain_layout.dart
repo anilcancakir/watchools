@@ -135,7 +135,14 @@ class CurtainLayout extends StatelessWidget {
             ),
           ],
         ),
-        if (title.synopsis != null && wide)
+        // The empty case says so rather than leaving a gap. This direction is
+        // the one that had no such state at all: a provider that sends no
+        // synopsis is the common case, and a hero that simply omits the
+        // paragraph reads as a page that failed to load rather than as a
+        // provider that sent nothing.
+        if (title.synopsis == null)
+          const WText('Sağlayıcı bu başlık için özet göndermedi.', className: 'text-base text-fg-disabled')
+        else if (wide)
           WText(title.synopsis!, className: 'text-base text-fg-muted line-clamp-3 max-w-prose'),
         if (next != null && title.isSeries)
           WText('Sırada ${next.code} · ${next.title}', className: 'text-sm font-semibold text-fg line-clamp-1'),
