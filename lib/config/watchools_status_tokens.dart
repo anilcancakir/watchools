@@ -67,6 +67,26 @@ const Map<String, String> watchoolsStatusAliases = <String, String>{
   'bg-fact': 'bg-[#EAEDF0] dark:bg-[#1C1F23]',
   'text-fact': 'text-[#4A5058] dark:text-[#C4CAD1]',
 
+  // Three roles `design:sync` does not emit, each of which was silently
+  // resolving to the wrong thing until an audit caught it.
+  //
+  // `text-primary` had no alias, so it fell through the alias table to
+  // `designColors['primary']`, which is a single `MaterialColor` seeded on the
+  // LIGHT gold `#A36200` with no `dark:` half. Every gold label in the app was
+  // rendering the light value on a dark surface, roughly 4:1 and under the 4.5
+  // floor the rest of this palette is tested against, while `bg-primary` beside
+  // it correctly rendered `#F59B14`.
+  //
+  // `ring-*` resolves through a separate map from `border-*`, and Wind's ring
+  // colour regex (`^ring-(?<color>[a-zA-Z]+)(?:-(?<shade>[0-9]+))?$`) cannot
+  // match a hyphenated name at all. `focus:ring-focus-ring` therefore set only
+  // the width, and the colour came from `WindThemeData.ringColor`, whose
+  // default is Tailwind blue-500: every focus ring in the app was `#3B82F6`,
+  // identical in both modes, and plausible enough on screen to survive review.
+  'text-primary': 'text-[#A36200] dark:text-[#F59B14]',
+  'bg-primary-hover': 'bg-[#8F5600] dark:bg-[#FAB338]',
+  'ring-focus-ring': 'ring-[#1D6FD0] dark:ring-[#7FB2FF]',
+
   // The scrim, for a control that sits on top of artwork.
   //
   // Neither `surface` nor `surface-container` works there: a chip over a still
@@ -77,8 +97,16 @@ const Map<String, String> watchoolsStatusAliases = <String, String>{
   //
   // Two weights. `scrim` is enough behind an icon, `scrim-strong` is what a
   // line of text needs to clear AA over an arbitrary frame.
-  'bg-scrim': 'bg-[#00000073] dark:bg-[#00000073]',
-  'bg-scrim-strong': 'bg-[#000000B8] dark:bg-[#000000B8]',
+  //
+  // The opacity is an `/NN` modifier rather than an eight-digit hex, and the
+  // difference is not cosmetic: Wind's `bg-[...]` regex admits only three or
+  // six hex digits, so `bg-[#00000073]` matched nothing and resolved to no
+  // background at all. `border-[...]` accepts eight, and `ring-[...]` accepts
+  // three to eight, which is why the shape of this looked obviously fine.
+  // Caught by `test/config/token_resolution_test.dart`, which exists because
+  // `flutter analyze` cannot see any of this.
+  'bg-scrim': 'bg-[#000000]/45 dark:bg-[#000000]/45',
+  'bg-scrim-strong': 'bg-[#000000]/72 dark:bg-[#000000]/72',
 
   // The inverted surface, for the one thing the user is pointed at.
   //
