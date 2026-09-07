@@ -1,6 +1,6 @@
 # Ecosystem defects found building the design phase
 
-Seven defects in the sibling packages, each reproduced against a specific line
+Ten defects in the sibling packages, each reproduced against a specific line
 and each currently worked around in this app with a comment at the site. Per
 `.claude/rules/workflow.md` the fix belongs in the sibling, on its own branch,
 with its own CI green, following that repository's own rules.
@@ -133,6 +133,58 @@ URL is not the root and it is noise in any exception gate.
 
 **Fix**: an `onUnknownRoute` on the placeholder that returns the same
 placeholder.
+
+## 9. `wind`: `w-full` inside a `flex-1` brings down a route change
+
+`w-full` composes a `FractionallySizedBox` inside a `LayoutBuilder`. Inside a
+child that is already tight (`flex-1`, which Wind composes as an `Expanded`)
+that pair is redundant, and when it is torn down mid-layout by a route change
+it throws a cascade: one `Unexpected null value` from `viewport.dart:478`, then
+about twenty `RenderBox was not laid out` assertions walking back up the chain,
+then `!semantics.parentDataDirty is not true`.
+
+**Reproduced** in the collection direction: opening a title from a
+`wrap gap-3 w-full` sitting inside a `flex-1 min-w-0` produced twenty
+exceptions on every navigation, in both directions, at both widths. Removing
+the redundant `w-full` removes all of them.
+
+**Fix**: skip the fractional wrapper when the incoming width constraint is
+already tight. `w-full` under a tight constraint cannot mean anything else.
+
+**Local workaround**: never write `w-full` on a child of a `flex-1`.
+
+## 10. `wind`: `WInput` paints a hairline unless the width is zero
+
+`lib/src/widgets/w_input.dart:758`
+
+```dart
+if (parsed?.border is Border) {
+  final Border b = parsed!.border as Border;
+  border = b.top.width == 0 ? null : b;
+} else {
+  border = Border.all(color: _defaultBorderColor, width: _defaultBorderWidth);
+}
+```
+
+Only a zero WIDTH drops the border. `border-transparent` takes the first branch
+and, through defect 4, resolves to a near-white `#E5E7EB` rather than to
+nothing, so a field written to have no border gets the most visible one in the
+app. Every search field in this app rendered a bright rounded rectangle on a
+dark surface until `border-transparent` was changed to `border-0`.
+
+**Fix**: honour a transparent colour as well as a zero width, and resolve
+`_defaultBorderColor` from the theme.
+
+## 11. `dusk`: `exceptions --clear` empties half the store
+
+`dusk:exceptions` returns two kinds of entry, `"type":"overflow"` from the
+render-error walk and `"type":"FlutterError"` from the framework's own handler.
+`--clear` empties the first and leaves the second, with its original timestamp,
+so a cleared store still reports the previous run's overflows and a zero cannot
+be trusted without a restart.
+
+**Local workaround**: the walks reset by hot-restarting rather than clearing,
+which they already did for unrelated reasons.
 
 ---
 

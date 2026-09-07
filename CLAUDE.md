@@ -66,6 +66,22 @@ Wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no ke
 
 These are package gaps, not app gaps. Fix them in the sibling and follow the contribution flow in `.claude/rules/workflow.md`. Do not work around one locally.
 
+## Four layout traps this app has already paid for
+
+None of these is a defect. All four look like they should work and quietly do not.
+
+**Wind's breakpoints read the viewport, not the parent.** A row inside an 860 pixel column of a 1440 pixel window evaluates `xl:` as true and builds its widest arrangement into a column that cannot hold it. A component whose columns depend on real width takes a `double` and decides in Dart; `ChannelRow.available` is the worked example.
+
+**`flex-1` with a `max-w-*` beside it does not clamp.** `flex-1` composes an `Expanded`, whose tight minimum beats a `ConstrainedBox` maximum, so the child renders at the full row width. Use a fixed `w-[Npx] shrink-0` above the breakpoint and `flex-1 min-w-0` below it. `w-full shrink-0` is the other wrong answer: it claims the whole row and then refuses to give any of it back.
+
+**A `Row` hands its child unbounded width on the main axis**, so a `wrap` nested inside a `flex flex-row` has nothing to wrap against and never wraps. Put the wrapping element in the column directly.
+
+**A cell's height has to come from the component, not from the caller.** A `Rail` and a `SliverGridDelegate` both state the cell height before the cell is laid out, and every caller that worked it out itself was short: `LiveTile.heightFor`, `TitlePoster.heightFor` and `PersonCircle.height` exist so the arithmetic lives with the widget that knows it. `SliverGridDelegateWithMaxCrossAxisExtent` makes this worse by treating the extent as a maximum and then dividing the row evenly, so the cell it gives you is wider than the number you passed.
+
+## One page container
+
+Every screen sits inside the same box, and `lib/ui/layouts/support/page_gutter.dart` is the only place its numbers live. `PageGutter.x` horizontally, `PageGutter.top` and `PageGutter.gap` between blocks, `PageGutter.inner` within a block, all 24 except the last. The nine directions were first written with gutters of 12, 16, 20, 24 and 32 depending on which file the widget lived in, and the visible result was a toolbar and the strip beneath it starting at different places on the same screen, and a strip sitting eight pixels under the hero and thirty one above the heading.
+
 ## Testing
 
 The coverage target is **90% on both halves** and both halves are there, over a denominator that excludes Magic's generated scaffold. A floor moves in the same pull request as the tests that earned it, never in a commit of its own.
@@ -76,9 +92,13 @@ Wind's parser cache is static and outlives a single test, so every widget test c
 
 Two things a widget test here cannot tell you, both measured. `flutter_test` substitutes a font whose every glyph is a square of the font size (four characters at `fontSize: 14` measure exactly 56 logical pixels), so text is half again to twice as wide as in Schibsted Grotesk and **overflow assertions are meaningless**: `test/support/screen.dart` ignores overflow deliberately and records why. And a widget test never touches the real engine, so a CanvasKit crash or an absorbed semantics label only shows up in the dusk walks.
 
+`pumpScreen()` collects errors through `FlutterError.onError` rather than reading them back with `takeException`, and that is load-bearing rather than stylistic. **`takeException` does not return one error at a time when several are pending**: it collapses them into a synthetic `Multiple exceptions (N) were detected` carrying none of the individual messages, so a filter keyed to the word `overflowed` cannot see it. Three directions failed that gate for two overflows apiece while the report printed above the failure named both.
+
 A whole screen goes through `pumpScreen()` in `test/support/screen.dart` rather than `wrapWithTheme()`, which leaves the surface at the test default of 800x600: neither width this app is designed against, and on the wrong side of `md` from both.
 
-The walks are `tool/dusk/lineup_e2e.sh` and `tool/dusk/library_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: four of its comments record a way an earlier version of that gate passed unconditionally.
+The walks are `tool/dusk/lineup_e2e.sh`, `tool/dusk/library_e2e.sh` and `tool/dusk/title_e2e.sh`, sharing `tool/dusk/_lib.sh`, and they need an app started with `--cdp-port`. Read the shared file before changing an assertion: five of its comments record a way an earlier version of that gate passed unconditionally. `tool/dusk/probe.sh` sweeps all nine directions at both widths without asserting anything, and `tool/dusk/shots.sh` captures one screenshot each, which is what a design decision actually gets made from.
+
+Three of the walks' findings were things no unit test could reach: a direction that lost its favourite control at 414 pixels, a direction that stated the channel count and left the missing-EPG note to a rail below the fold, and a route change that threw twenty cascading layout assertions.
 
 `.env` is a real asset during `flutter test`, so a test asserting an `env()` default passes because `.env` supplies the same string, never because the default ran. Assert an overridden value instead.
 
