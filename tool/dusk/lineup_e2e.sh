@@ -56,10 +56,20 @@ SEEN_EXCEPTIONS=0
 # because an exception thrown during a rebuild does not stop the app: the frame
 # renders with a red box or a missing subtree and every later assertion passes
 # against a broken screen.
+# Known-benign, and the reason it is filtered rather than fixed: Flutter's
+# `WidgetsApp` resolves an initial route before go_router has a chance to, so a
+# restart whose browser URL is not `/` logs "Could not navigate to initial
+# route" for a path the app does in fact serve. go_router then routes it
+# correctly, which every later assertion here confirms.
+BENIGN='Could not navigate to initial route'
+
 expect_no_exceptions() {
   local body count
-  body="$($FSA dusk:exceptions 2>/dev/null)"
-  count="$(printf '%s' "$body" | rg -o '"count":[0-9]+' | rg -o '[0-9]+' | head -1)"
+  body="$($FSA dusk:exceptions 2>/dev/null | rg -v -- "$BENIGN")"
+  # Counted on `"fatal":`, which every exception entry carries and the
+  # response envelope does not. Counting `"type":` matched the envelope's own
+  # `"type":"Response"` and reported one exception on an empty list.
+  count="$(printf '%s' "$body" | rg -o '"fatal":' | wc -l | tr -d ' ')"
   count="${count:-0}"
 
   if [ "$count" -le "$SEEN_EXCEPTIONS" ]; then
@@ -109,6 +119,10 @@ reset_app() {
   $FSA hot-restart >/dev/null 2>&1
   sleep 12
   $FSA dusk:resize --width "$1" --height "$2" >/dev/null 2>&1
+  sleep 2
+  # A hot restart keeps the browser URL, so a previous run of the catalogue
+  # walk would leave this one asserting against the wrong screen.
+  $FSA dusk:navigate --route / >/dev/null 2>&1
   sleep 2
 
   # A hot restart replaces Dart state but cannot revive a dead renderer, and
