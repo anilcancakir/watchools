@@ -92,9 +92,11 @@ Every screen sits inside the same box, and `lib/ui/layouts/support/page_gutter.d
 
 ## Measuring at provider scale
 
-The fixtures are 23 channels and 15 titles, which cannot answer a performance question: a real Xtream playlist is hundreds of `group-title` values and five figures of channels. `lib/app/support/scale_fixture.dart` generates one of any size, deterministically, with the missing-data shares that decide the layout, and `?scale=N` on the route switches to it. Read once when a controller is built, so the sequence is navigate then restart, which is what `tool/dusk/perf.sh` and the walks already do.
+The fixtures are 23 channels and 15 titles, which cannot answer a performance question: a real Xtream playlist is hundreds of `group-title` values and five figures of channels. `lib/app/support/scale_fixture.dart` generates one of any size, deterministically, with the missing-data shares that decide the layout, and `--dart-define=WATCHOOLS_SCALE=N` switches to it.
 
-Run it against a **profile** build (`fsa start --profile-static`). A debug build's numbers rank causes; they do not describe a device.
+`tool/dusk/perf.sh` starts the app itself, in profile mode, carrying that define. That is not a convenience: the scale is a compile-time value, so an app somebody started by hand carries the small fixture and every session then measures the wrong thing and reports it as fast. A debug build's numbers rank causes; they do not describe a device, which is why the script picks profile.
+
+The define reaches the app through `fsa start --flutter-arg=`, which `artisan` gained in `fluttersdk/artisan#53`. On an older artisan the launch fails loudly rather than measuring the small fixture. This replaced a `?scale=N` query parameter read off `Uri.base`, which only exists on web: on macOS, Android or iOS `Uri.base` is a file URI with no query, so the switch silently did nothing on every target except the browser.
 
 Three things about the numbers, all of them learned the expensive way:
 

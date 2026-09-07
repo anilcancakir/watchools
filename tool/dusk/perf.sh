@@ -5,9 +5,8 @@
 # The hand-written fixtures are 23 channels and 15 titles, which is the right
 # size for judging a design and useless for judging a frame: every lazy-list
 # question this app has is invisible below about a thousand rows. So this drives
-# the app against the generated fixture (`?scale=N`, see
-# `lib/app/support/fixture_scale.dart`) and reports what Flutter's own build
-# profiling saw.
+# the app against the generated fixture (see `lib/app/support/fixture_scale.dart`)
+# and reports what Flutter's own build profiling saw.
 #
 # What to believe in the output, in order.
 #
@@ -38,20 +37,27 @@
 # something is dirty, so a session that opens, sleeps and closes draws nothing
 # and a zero report would read as "fast".
 #
+# This script starts the app itself, and that is not a convenience. The scale
+# is a compile-time define, so an app somebody started by hand carries the 23
+# channel fixture and every session then measures the wrong thing and reports it
+# as fast. Owning the launch is the only way the number in the output and the
+# number on the command line cannot disagree.
+#
 # Every group starts from a hot restart. The controllers are singletons and a
 # search term survives `dusk:navigate`, so a typing session left the line-up
 # filtered to one channel and every session after it measured an empty screen.
-# That is also how the fixture scale is picked up, since it is read once when
-# the controller is built.
 #
 # The generated fixture carries no network URLs. It used to point at
 # `picsum.photos`, so every session raced hundreds of live fetches and decodes
 # against the frames it was timing; `scale_fixture.dart` records the swap. The
 # cost is that this harness cannot measure image memory, which needs its own.
 #
-# Requires an app started with CDP:
-#   ./bin/fsa start --device chrome --port 3210 --vm-service-port 8299 \
-#     --cdp-port 9322 --timeout 300
+# Needs `--flutter-arg`, which `fsa start` gained in `fluttersdk/artisan#53`. On
+# an older artisan the launch fails with `Could not find an option named
+# "--flutter-arg"` rather than quietly measuring the small fixture.
+#
+# Leaves the app running, in profile mode, so a screenshot or a follow-up
+# session can use it. `./bin/fsa stop` when done.
 #
 # Usage: tool/dusk/perf.sh [scale] [width] [height] [output-dir]
 
@@ -96,6 +102,26 @@ reset_to() {
   sleep 16
   $FSA dusk:resize --width "$W" --height "$H" >/dev/null 2>&1
   sleep 2
+}
+
+# Boots the app in profile mode carrying the scale define.
+#
+# Profile rather than debug because a debug build's milliseconds rank causes and
+# do not describe a device, and because `FixtureScale` gates on `kReleaseMode`
+# precisely so a profile run still gets the generated fixture.
+boot() {
+  $FSA stop >/dev/null 2>&1
+  pkill -f 'user-data-dir=/tmp/dusk-chrome-' 2>/dev/null
+  sleep 2
+
+  if ! $FSA start --device chrome --port 3210 --vm-service-port 8299 \
+    --cdp-port 9322 --profile-static --timeout 400 \
+    --flutter-arg="--dart-define=WATCHOOLS_SCALE=$SCALE" >/dev/null 2>&1; then
+    printf '\033[31mfsa start failed. An artisan without --flutter-arg cannot carry the scale;\n'
+    printf 'this needs fluttersdk/artisan#53 or later.\033[0m\n'
+    exit 1
+  fi
+  sleep 18
 }
 
 # Closes a session and prints the numbers that matter, or the refusal.
@@ -168,11 +194,12 @@ PY
 }
 
 printf '\033[1mPerformance walk at scale=%s, %sx%s, artefacts in %s\033[0m\n' "$SCALE" "$W" "$H" "$OUT"
+boot
 
 # ---------------------------------------------------------------------------
 log 'Şimdi: the live hero over editorial rails'
 # ---------------------------------------------------------------------------
-reset_to "/?scale=$SCALE"
+reset_to '/'
 $FSA dusk:snap 2>/dev/null | rg -o '[0-9]+ kanal · [0-9]+ kanalda akış yok' | head -1
 
 # Vertical, through the rails. The ref is the HERO's play button, and choosing
@@ -206,7 +233,13 @@ else
   report 'horizontal inside a rail' 'now-horizontal'
 fi
 
-# The category strip at hundreds of groups.
+# The category strip at hundreds of groups, and it needs its own clean screen
+# for the same reason the typing session does. The strip sits between the hero
+# and the rails, so the vertical session above scrolls it out of the semantics
+# tree: this session was skipped on every run, and before the skip counter
+# existed it was skipped SILENTLY, which is how one run produced a
+# `now-strip.json` and the next did not while both reported success.
+reset_to '/'
 STRIP="$(ref_matching 'kategorisi')"
 if [ -z "$STRIP" ]; then
   skip 'category strip sideways' 'no category chip on screen'
@@ -226,7 +259,7 @@ fi
 #
 # Every keystroke drops the frame caches, re-filters the whole line-up and
 # rebuilds the category strip with it.
-reset_to "/?scale=$SCALE"
+reset_to '/'
 $FSA dusk:perf_begin >/dev/null 2>&1
 for term in A An And Anad Anado Anadol Anadolu; do
   SREF="$($FSA dusk:snap 2>/dev/null | rg '^\s*-?\s*textbox' | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1)"
@@ -237,7 +270,7 @@ report 'typing seven keystrokes' 'now-typing'
 # ---------------------------------------------------------------------------
 log 'Zaman: the broadcast grid'
 # ---------------------------------------------------------------------------
-reset_to "/?scale=$SCALE"
+reset_to '/'
 
 SWITCH="$(ref_matching '"Zaman görünümü"')"
 if [ -z "$SWITCH" ]; then
@@ -267,7 +300,7 @@ fi
 # ---------------------------------------------------------------------------
 log 'Vitrin: the catalogue'
 # ---------------------------------------------------------------------------
-reset_to "/kutuphane?scale=$SCALE"
+reset_to '/kutuphane'
 $FSA dusk:snap 2>/dev/null | rg -o '[0-9]+ başlık · [0-9]+ başlıkta afiş yok' | head -1
 
 CHEAD="$(ref_matching 'detayı"')"
@@ -290,7 +323,7 @@ if [ -n "$CCARD" ]; then
   report 'catalogue horizontal' 'library-horizontal'
 fi
 
-reset_to "/kutuphane?scale=$SCALE"
+reset_to '/kutuphane'
 $FSA dusk:perf_begin >/dev/null 2>&1
 for term in A An And Anad Anado Anadol Anadolu; do
   SREF="$($FSA dusk:snap 2>/dev/null | rg '^\s*-?\s*textbox' | rg -o 'ref=e[0-9]+' | rg -o 'e[0-9]+' | head -1)"

@@ -8,35 +8,30 @@ import 'vod_fixture.dart';
 
 /// How large a provider the fixtures should pretend to be.
 ///
-/// Read from `?scale=N` on the route, so a measurement run is
-/// `dusk:navigate --route "/?scale=5000"` followed by a hot restart, which is
-/// the sequence the end-to-end walks already perform between cases. Nothing
-/// else in the app writes it.
+/// Set at compile time:
 ///
-/// A query parameter rather than a `--dart-define`, and that is not the first
-/// choice. `artisan`'s `fsa start` assembles a fixed argv for `flutter run`
-/// (`start_command.dart:385` and `:583`) with no passthrough, so a define
-/// cannot reach the app through the tooling that also gives dusk its session
-/// state. Nor an `.env` key: `.env` is a real asset during `flutter test`, so a
+/// ```
+/// ./bin/fsa start --flutter-arg=--dart-define=WATCHOOLS_SCALE=5000
+/// ```
+///
+/// `tool/dusk/perf.sh` passes it; nothing else in the app writes it, and no
+/// other value in the app reads it.
+///
+/// A define rather than the `?scale=N` query parameter this used to read off
+/// [Uri.base], and the swap is worth the churn for one reason: a query
+/// parameter only exists on web. `Uri.base` on macOS, Android or iOS is a file
+/// URI with no query at all, so the scale switch silently did nothing on every
+/// target except the browser, and a run on a real device would have measured 23
+/// channels and reported it as fast. A define reaches every platform.
+///
+/// It could not be a define until now. `artisan`'s `fsa start` assembled a
+/// fixed argv for `flutter run` with no passthrough, so nothing could reach the
+/// app through the tooling that also gives dusk its session state. That gap is
+/// `fluttersdk/artisan#53`, and `--flutter-arg` is what closed it.
+///
+/// Not an `.env` key either: `.env` is a real asset during `flutter test`, so a
 /// scale left set there would silently generate five thousand channels under
-/// every widget test. The URL is the one channel that reaches a running app,
-/// survives a hot restart, and cannot leak into another gate.
-///
-/// Read off [Uri.base] rather than through `MagicRouter.queryParameter`, and
-/// the reason is timing rather than any fault in the router. This value is read
-/// from a controller's field initialiser, which can run before any route has
-/// resolved, and `MagicRouter` only records a location inside `pageBuilder`
-/// (`magic_router.dart:320`): before that it has nothing to answer with.
-/// [Uri.base] carries the whole URL, fragment included, needs no router to be
-/// built yet, and works on the first frame as well as after a restart.
-///
-/// Worth stating because the first version of this comment blamed the router,
-/// on the evidence that `dusk:get_routes` reported `location: /` while the
-/// browser sat on `#/?scale=5000`. That field is `route.settings.name` off the
-/// Navigator, which under `MaterialApp.router` is the declared path pattern and
-/// was always going to read `/`. Six tests in `magic` now pin
-/// `queryParameter`, inline-query form included, and all six passed on the
-/// first run: `fluttersdk/magic#147`.
+/// every widget test.
 ///
 /// Gated on [kReleaseMode] rather than on `kDebugMode`, and the difference is
 /// the whole point of the harness. A debug build carries assertions, no
@@ -47,31 +42,20 @@ import 'vod_fixture.dart';
 /// false there, so gating on it would have silently handed a profile run the 23
 /// channel fixture and reported it as fast.
 ///
-/// A release build reads zero whatever the URL says.
+/// A release build reads zero whatever the define says.
 abstract final class FixtureScale {
-  /// Resolved once, so two controllers built at different moments cannot
-  /// disagree about how large the provider is.
-  static int? _resolved;
+  /// The raw define, before the release gate and the clamp.
+  ///
+  /// `const` so a release build tree-shakes the generator out entirely rather
+  /// than carrying a few thousand lines of fixture nobody can reach.
+  static const int _requested = int.fromEnvironment('WATCHOOLS_SCALE');
 
   /// The requested channel count, or zero for the hand-written fixtures.
-  static int get channels {
-    final int? cached = _resolved;
-    if (cached != null) return cached;
-
-    if (kReleaseMode) return _resolved = 0;
-
-    final Uri base = Uri.base;
-    // Query first, then the fragment: `/?scale=N` is what a path strategy
-    // gives and `/#/?scale=N` is what the hash strategy gives, and the app is
-    // served under the second.
-    final String? raw = base.queryParameters['scale'] ?? Uri.parse(base.fragment).queryParameters['scale'];
-    final int parsed = raw == null ? 0 : (int.tryParse(raw) ?? 0);
-
-    // Clamped rather than trusted. `?scale=99999999` is a typo away from
-    // `?scale=9999999`, and the difference is a tab that never paints against
-    // one that paints slowly, which is the measurement.
-    return _resolved = parsed.clamp(0, 50000);
-  }
+  ///
+  /// Clamped rather than trusted. `WATCHOOLS_SCALE=99999999` is a typo away
+  /// from `9999999`, and the difference is a run that never paints against one
+  /// that paints slowly, which is the measurement.
+  static int get channels => kReleaseMode ? 0 : _requested.clamp(0, 50000);
 
   /// Whether the generated fixtures are in use at all.
   static bool get active => channels > 0;
