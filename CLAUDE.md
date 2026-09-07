@@ -60,11 +60,19 @@ The five ecosystem skills are symlinked into `.claude/skills/` and the artisan M
 
 Two known limits to design around rather than fight. The Magic ORM is CRUD-shaped: no `index()` in `Blueprint`, no `whereIn` / `like` / `join` in the query builder, and a row-at-a-time `insertAll`. The channel catalogue goes through `DB.statement` and `DB.transaction`. And `wind/lib/src/core/platform_service.dart:43` maps `TargetPlatform.android` to `('android', true)`, so on Android TV the platform reads `android` **and `isMobile` is true**: every `mobile:` variant fires on a 55 inch screen, and Apple TV reads `ios` the same way.
 
-## Wind gaps this project has to fill
+## The ecosystem packages are ours, so report what you find in them
 
-Wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no key handling), no focus traversal policy, no virtualized list (`overflow-*` is a `SingleChildScrollView`, so a 10,000 channel list builds every row), and no TV form factor axis.
+`wind`, `magic`, `artisan`, `dusk`, `telescope` and the `magic_*` plugins are in-house. A defect or a missing capability in one of them is our backlog rather than an obstacle to route around, and it only reaches that backlog if you say so.
 
-These are package gaps, not app gaps. Fix them in the sibling and follow the contribution flow in `.claude/rules/workflow.md`. Do not work around one locally.
+**Say it in the reply, not only in a file.** Eleven wind and magic findings came out of building the browse screens; every one went into `.ac/research/ecosystem-defects.md` and none was ever mentioned out loud, so the first I heard of any of them was when I asked weeks of work later. The file is the record. The reply is the report, and it belongs in the same message as the work that hit the defect.
+
+A report is one or two sentences carrying four things: the sibling source line, what you measured, the local opt-out that unblocked the app, and what the fix in the sibling would be. Without the source line it is a complaint.
+
+**Read the sibling source before filing.** Four of those eleven were wrong and had to be retracted, one of them because a parser loop that iterates backwards makes last-wins behave exactly as documented. A wrongly filed defect costs someone a day in a repository they trusted.
+
+Separate the three kinds, because they get fixed differently. A **defect** is behaviour that contradicts the package's own documentation or its sibling parsers. A **gap** is a capability that was never built: wind has no D-pad activation (`WAnchor` is `Focus` plus `GestureDetector`, no key handling), no focus traversal policy, no virtualized list (`overflow-*` is a `SingleChildScrollView`, so a 10,000 channel list builds every row), and no TV form factor axis. An **improvement** is an API that works and costs more than it should.
+
+All three are package work, not app work. Fix them in the sibling and follow the contribution flow in `.claude/rules/workflow.md`. Never work around one silently.
 
 ## Four layout traps this app has already paid for
 
