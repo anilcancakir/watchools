@@ -25,13 +25,24 @@ class GuideViewSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return WDiv(
-      className: 'flex flex-row gap-1 p-1 rounded-full shrink-0 bg-surface-container',
-      children: <Widget>[_segment(GuideMode.now, 'Şimdi'), _segment(GuideMode.grid, 'Zaman')],
+    // The switch reads exactly one field, so it is the cheapest thing on the
+    // toolbar to scope and it sits next to the one control that changes on
+    // every character. Unscoped it rebuilt two anchors, three containers and
+    // two labels per keystroke to show the same two words.
+    return MagicSelector<GuideController, GuideMode>(
+      controller: controller,
+      selector: (GuideController c) => c.mode,
+      builder: (GuideMode current) => WDiv(
+        className: 'flex flex-row gap-1 p-1 rounded-full shrink-0 bg-surface-container',
+        children: <Widget>[
+          _segment(GuideMode.now, 'Şimdi', current: current),
+          _segment(GuideMode.grid, 'Zaman', current: current),
+        ],
+      ),
     );
   }
 
-  Widget _segment(GuideMode mode, String label) {
+  Widget _segment(GuideMode mode, String label, {required GuideMode current}) {
     return WAnchor(
       onTap: () => controller.showMode(mode),
       semanticLabel: '$label görünümü',
@@ -44,7 +55,7 @@ class GuideViewSwitch extends StatelessWidget {
           focus:ring-2 focus:ring-focus-ring
           selected:bg-inverse selected:text-on-inverse
         ''',
-        states: controller.mode == mode ? const <String>{'selected'} : const <String>{},
+        states: current == mode ? const <String>{'selected'} : const <String>{},
         child: WText(label, className: 'text-xs font-semibold'),
       ),
     );

@@ -232,27 +232,7 @@ class _TimeLayoutState extends State<TimeLayout> {
     return WDiv(
       className: 'flex flex-col w-full h-full',
       children: <Widget>[
-        // The ruler. Its left inset matches the identity column exactly, and it
-        // is a separate viewport rather than a row inside the grid so that
-        // scrolling down never scrolls the times away.
-        WDiv(
-          className: 'flex flex-row w-full shrink-0 ${PageGutter.x} pb-1',
-          children: <Widget>[
-            WDiv(
-              className: '$column flex flex-row items-center',
-              child: const WText('BUGÜN', className: 'text-[11px] font-bold text-fg-disabled'),
-            ),
-            WDiv(
-              className: 'flex-1 min-w-0',
-              child: SingleChildScrollView(
-                controller: _rulerH,
-                scrollDirection: Axis.horizontal,
-                physics: const NeverScrollableScrollPhysics(),
-                child: TimeAxis(pixelsPerMinute: _ppm, windowStart: controller.windowStart, now: controller.now),
-              ),
-            ),
-          ],
-        ),
+        _ruler(column: column),
         WDiv(
           className: 'flex-1 w-full',
           child: WDiv(
@@ -305,6 +285,46 @@ class _TimeLayoutState extends State<TimeLayout> {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The ruler, rebuilt only when the window, the minute or the column width
+  /// moves.
+  ///
+  /// It draws ten half-hour ticks and knows nothing about the query, so a
+  /// keystroke that re-filtered the rows below it used to redraw every one of
+  /// them. `column` is in the selected value for the reason `now_layout`'s hero
+  /// records: it is captured from the enclosing build, and a cached subtree
+  /// cannot see anything its closure captured.
+  Widget _ruler({required String column}) {
+    return MagicSelector<GuideController, (int, int, String)>(
+      controller: controller,
+      selector: (GuideController c) => (c.windowStart, c.now, column),
+      builder: ((int, int, String) state) => _rulerRow(windowStart: state.$1, now: state.$2, column: state.$3),
+    );
+  }
+
+  /// Its left inset matches the identity column exactly, and it is a separate
+  /// viewport rather than a row inside the grid so that scrolling down never
+  /// scrolls the times away.
+  Widget _rulerRow({required int windowStart, required int now, required String column}) {
+    return WDiv(
+      className: 'flex flex-row w-full shrink-0 ${PageGutter.x} pb-1',
+      children: <Widget>[
+        WDiv(
+          className: '$column flex flex-row items-center',
+          child: const WText('BUGÜN', className: 'text-[11px] font-bold text-fg-disabled'),
+        ),
+        WDiv(
+          className: 'flex-1 min-w-0',
+          child: SingleChildScrollView(
+            controller: _rulerH,
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            child: TimeAxis(pixelsPerMinute: _ppm, windowStart: windowStart, now: now),
           ),
         ),
       ],

@@ -82,7 +82,7 @@ class NowLayout extends StatelessWidget {
                   ? _emptyBody()
                   : CustomScrollView(
                       slivers: <Widget>[
-                        SliverToBoxAdapter(child: _hero(wide)),
+                        SliverToBoxAdapter(child: _heroScope(wide: wide)),
                         const SliverToBoxAdapter(child: PageGutter.gap),
                         SliverList.builder(
                           itemCount: controller.rails.length,
@@ -116,11 +116,32 @@ class NowLayout extends StatelessWidget {
     return GuideEmpty(controller: controller);
   }
 
+  /// The hero, rebuilt only when the minute, the selection or the width moves.
+  ///
+  /// It is the largest block on the screen and the query is not one of its
+  /// inputs, so before this it redrew the artwork, both scrims, the title, the
+  /// countdown, the play button, the star and every fact chip on each character
+  /// the user typed into the field above it.
+  ///
+  /// `wide` is in the selected value even though it is not a controller field,
+  /// and leaving it out is the trap this optimisation brings with it: the
+  /// builder captures it from the enclosing `build`, a cached subtree cannot
+  /// see anything its closure captured, and the hero would then hold whichever
+  /// form it was first built in until the clock or the selection happened to
+  /// move. `MediaQuery` read INSIDE the subtree would not need this, because a
+  /// dependent element is rebuilt directly rather than through its parent;
+  /// `wide` is read outside it.
+  Widget _heroScope({required bool wide}) {
+    return MagicSelector<GuideController, (Channel, Programme?, int, bool)>(
+      controller: controller,
+      selector: (GuideController c) => (c.channel, c.programme, c.now, wide),
+      builder: ((Channel, Programme?, int, bool) state) => _hero(state.$1, state.$2, now: state.$3, wide: state.$4),
+    );
+  }
+
   /// The hero: what is on the selected channel right now.
-  Widget _hero(bool wide) {
-    final Channel channel = controller.channel;
-    final Programme? live = controller.programme;
-    final Programme? next = channel.nextAfter(controller.now);
+  Widget _hero(Channel channel, Programme? live, {required int now, required bool wide}) {
+    final Programme? next = channel.nextAfter(now);
 
     // 440 at desktop, not 520.
     //
@@ -157,7 +178,7 @@ class NowLayout extends StatelessWidget {
             bottom: 28,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _heroContent(channel, live, next, wide: wide),
+              child: _heroContent(channel, live, next, now: now, wide: wide),
             ),
           ),
           if (live != null)
@@ -165,7 +186,7 @@ class NowLayout extends StatelessWidget {
               left: 0,
               right: 0,
               bottom: 0,
-              child: PlayProgress(value: live.progressAt(controller.now), tone: 'live', size: 'lg'),
+              child: PlayProgress(value: live.progressAt(now), tone: 'live', size: 'lg'),
             ),
         ],
       ),
@@ -250,8 +271,8 @@ class NowLayout extends StatelessWidget {
     );
   }
 
-  Widget _heroContent(Channel channel, Programme? live, Programme? next, {required bool wide}) {
-    final int left = live == null ? 0 : live.endMinute - controller.now;
+  Widget _heroContent(Channel channel, Programme? live, Programme? next, {required int now, required bool wide}) {
+    final int left = live == null ? 0 : live.endMinute - now;
 
     return WDiv(
       className: 'flex flex-col gap-3 w-full max-w-[620px]',
