@@ -66,9 +66,18 @@ class GuideController extends SimpleMagicController {
   /// counted.
   final GuideClock clock;
 
+  /// Whether this controller built its own clock and therefore owns it.
+  ///
+  /// A caller that passes one keeps it: a test drives a stub across several
+  /// controllers, and disposing it on the first `onClose` would break the
+  /// second. Latent while the default is a `FixedGuideClock`, which holds no
+  /// resource; the day the default becomes a `TickingGuideClock` this is the
+  /// difference between a cancelled timer and a leaked one.
+  final bool _ownsClock;
+
   /// Creates the controller, stopped at the fixture's hour unless told
   /// otherwise.
-  GuideController({GuideClock? clock}) : clock = clock ?? FixedGuideClock() {
+  GuideController({GuideClock? clock}) : clock = clock ?? FixedGuideClock(), _ownsClock = clock == null {
     this.clock.addListener(_onTick);
   }
 
@@ -120,6 +129,7 @@ class GuideController extends SimpleMagicController {
   @override
   void onClose() {
     clock.removeListener(_onTick);
+    if (_ownsClock) clock.dispose();
     super.onClose();
   }
 

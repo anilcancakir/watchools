@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchools/app/controllers/guide_controller.dart';
 import 'package:watchools/app/models/channel.dart';
@@ -358,14 +359,40 @@ void main() {
       expect(controller.programme, channel.programmeAt(first.endMinute));
     });
 
-    test('it stops listening when the controller closes', () {
+    test('a clock it was handed is not its to dispose', () {
+      // A test drives one stub across several controllers, so disposing an
+      // injected clock on the first `onClose` would break the second.
       controller.onClose();
 
-      int notifications = 0;
-      controller.addListener(() => notifications++);
       clock.set(20 * 60 + 20);
 
-      expect(notifications, 0);
+      expect(clock.minute, 20 * 60 + 20, reason: 'the stub still works');
+    });
+
+    test('a clock it built itself is disposed with it', () {
+      final GuideController owner = GuideController();
+      final GuideClock own = owner.clock;
+
+      owner.onClose();
+
+      // The observable consequence of `dispose`: a disposed `ChangeNotifier`
+      // throws on `addListener`. Latent while the default holds no resource,
+      // and the difference between a cancelled and a leaked timer the day the
+      // default becomes `TickingGuideClock`.
+      expect(() => own.addListener(() {}), throwsFlutterError);
+    });
+
+    test('it stops listening when the controller closes', () {
+      // Asserted on the CLOCK's listener count rather than on whether the
+      // controller notified. `MagicController.onClose` sets `_disposed`, and
+      // `refreshUI` returns early on it, so deleting the `removeListener` line
+      // from `onClose` leaves a version of this test that watches for
+      // notifications entirely green while the listener leaks.
+      expect(clock.listeners, 1);
+
+      controller.onClose();
+
+      expect(clock.listeners, 0);
     });
   });
 
@@ -400,6 +427,25 @@ class _StubClock extends GuideClock {
   int _minute;
 
   _StubClock(this._minute);
+
+  /// How many listeners are attached.
+  ///
+  /// Counted here because `ChangeNotifier.hasListeners` is `@protected` and
+  /// only legal inside a subclass instance member, and a test asserting that
+  /// the controller detached has to see the count from outside.
+  int listeners = 0;
+
+  @override
+  void addListener(VoidCallback listener) {
+    listeners++;
+    super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    listeners--;
+    super.removeListener(listener);
+  }
 
   @override
   int get minute => _minute;
