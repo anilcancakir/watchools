@@ -85,3 +85,9 @@ pubspec_overrides.yaml
 # Snapshots, console logs and screenshots dropped by `playwright-cli` next to
 # wherever it was run. Session artefacts, and it writes them without asking.
 .playwright-cli/
+
+# The mock panel's codec matrix: 48 MB of generated MPEG-TS, fMP4 and AVI that
+# `node tool/xtream-mock/encode.mjs` rebuilds from a test pattern in four
+# seconds. Committing it would put a video library in a Flutter repository to
+# save one command.
+tool/xtream-mock/media/
