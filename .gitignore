@@ -81,3 +81,7 @@ CLAUDE.local.md
 # machine. Listed in .worktreeinclude so a worktree still gets a copy.
 pubspec_overrides.yaml
 .artisan/
+
+# Snapshots, console logs and screenshots dropped by `playwright-cli` next to
+# wherever it was run. Session artefacts, and it writes them without asking.
+.playwright-cli/
