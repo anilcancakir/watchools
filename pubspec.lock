@@ -154,7 +154,7 @@ packages:
     source: hosted
     version: "2.1.0"
   fake_async:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: fake_async
       sha256: "5368f224a74523e8d2e7399ea1638b37aecfca824a3cc4dfdf77bf1fa905ac44"
@@ -369,10 +369,10 @@ packages:
     dependency: "direct main"
     description:
       name: fluttersdk_wind
-      sha256: "7374b032db392aa092e0e05466ec3f510b32f84d0179de66691d3d022a65d65f"
+      sha256: d5ea10858bb1d6bcc11b56477fd880ae022578566a243cac072f0327e76bcdf1
       url: "https://pub.dev"
     source: hosted
-    version: "1.5.0"
+    version: "1.5.2"
   fluttersdk_wind_diagnostics_contracts:
     dependency: transitive
     description:
