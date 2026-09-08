@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:watchools/app/controllers/guide_controller.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/models/programme.dart';
+import 'package:watchools/app/support/guide_clock.dart';
 import 'package:watchools/app/support/guide_fixture.dart';
 
 /// The line-up controller, which holds every claim the end-to-end walk can only
@@ -50,7 +51,7 @@ void main() {
       controller.search(first.numberLabel);
       expect(controller.matches, contains(first));
 
-      final Programme? now = first.programmeAt(GuideController.now);
+      final Programme? now = first.programmeAt(controller.now);
       expect(now, isNotNull, reason: 'the fixture leads with a channel that is on air');
       controller.search(now!.title);
       expect(controller.matches, contains(first));
@@ -145,7 +146,7 @@ void main() {
   group('selection', () {
     test('starts on the first channel and its current programme', () {
       expect(controller.channel, controller.channels.first);
-      expect(controller.programme, controller.channels.first.programmeAt(GuideController.now));
+      expect(controller.programme, controller.channels.first.programmeAt(controller.now));
     });
 
     test('selecting a channel points the programme at what is on now', () {
@@ -230,7 +231,7 @@ void main() {
       final GuideRail soon = controller.rails.firstWhere((GuideRail r) => r.title == 'Birazdan başlıyor');
 
       final int furthest = soon.channels
-          .map((Channel c) => c.nextAfter(GuideController.now)!.startMinute - GuideController.now)
+          .map((Channel c) => c.nextAfter(controller.now)!.startMinute - controller.now)
           .reduce((int a, int b) => a > b ? a : b);
 
       expect(furthest, greaterThan(30), reason: 'otherwise the old half-hour name was accurate');
@@ -298,11 +299,81 @@ void main() {
     });
   });
 
+  group('the clock', () {
+    /// A clock the test moves by hand, standing in for the ticking one.
+    ///
+    /// The real [TickingGuideClock] is tested against virtual time in
+    /// `guide_clock_test.dart`. What matters here is only what the controller
+    /// does when a clock says the minute changed, so a notifier the test drives
+    /// directly is the shorter route to it.
+    late _StubClock clock;
+
+    setUp(() {
+      clock = _StubClock(20 * 60 + 12);
+      controller = GuideController(clock: clock);
+    });
+
+    test('defaults to a clock that does not move', () {
+      expect(GuideController().clock, isA<FixedGuideClock>());
+    });
+
+    test('the window follows the clock rather than a written constant', () {
+      expect(controller.windowStart, 19 * 60 + 30);
+
+      clock.set(22 * 60 + 5);
+
+      expect(controller.windowStart, 21 * 60 + 30);
+      expect(controller.now - controller.windowStart, lessThan(60));
+    });
+
+    test('a tick repaints', () {
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+
+      clock.set(20 * 60 + 13);
+
+      expect(notifications, 1);
+    });
+
+    test('a tick drops the rails, which are built from now', () {
+      final List<GuideRail> before = controller.rails;
+      expect(identical(controller.rails, before), isTrue, reason: 'the cache holds while nothing moves');
+
+      clock.set(20 * 60 + 13);
+
+      expect(identical(controller.rails, before), isFalse);
+    });
+
+    test('a tick moves the selection onto whatever is on now', () {
+      // The billboard's subject is the programme, not the channel, so a channel
+      // that rolls into its next programme has to bring the hero with it. Before
+      // the clock existed the selection was written once and could not go stale.
+      final Channel channel = controller.channels.firstWhere((Channel c) => c.schedule.length > 1);
+      controller.selectChannel(channel);
+
+      final Programme first = channel.programmeAt(controller.now)!;
+      clock.set(first.endMinute);
+
+      expect(controller.programme, isNot(first));
+      expect(controller.programme, channel.programmeAt(first.endMinute));
+    });
+
+    test('it stops listening when the controller closes', () {
+      controller.onClose();
+
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      clock.set(20 * 60 + 20);
+
+      expect(notifications, 0);
+    });
+  });
+
   group('the window the guide draws', () {
     test('starts on the half hour before now', () {
-      expect(GuideController.windowStart, lessThan(GuideController.now));
-      expect(GuideController.now - GuideController.windowStart, lessThan(60));
-      expect(GuideController.windowStart % 30, 0);
+      expect(controller.windowStart, lessThan(controller.now));
+      expect(controller.now - controller.windowStart, lessThan(60));
+      expect(controller.windowStart % 30, 0);
     });
 
     test('covers prime time end to end rather than fitting a viewport', () {
@@ -310,7 +381,7 @@ void main() {
       // to fit a laptop without scrolling; the grid scrolls now, so the window
       // is a question about the evening rather than about the screen.
       expect(GuideController.windowMinutes, 300);
-      expect(GuideController.windowStart + GuideController.windowMinutes, greaterThan(GuideController.now));
+      expect(controller.windowStart + GuideController.windowMinutes, greaterThan(controller.now));
 
       // The last programme in the fixture has to fall inside it, or the grid
       // draws a window with an empty right half and nothing says why.
@@ -319,7 +390,22 @@ void main() {
           .map((Programme p) => p.endMinute)
           .reduce((int a, int b) => a > b ? a : b);
 
-      expect(GuideController.windowStart + GuideController.windowMinutes, greaterThanOrEqualTo(lastEnd));
+      expect(controller.windowStart + GuideController.windowMinutes, greaterThanOrEqualTo(lastEnd));
     });
   });
+}
+
+/// A clock the test sets by hand.
+class _StubClock extends GuideClock {
+  int _minute;
+
+  _StubClock(this._minute);
+
+  @override
+  int get minute => _minute;
+
+  void set(int value) {
+    _minute = value;
+    notifyListeners();
+  }
 }
