@@ -179,6 +179,26 @@ The walks reset by hot-restarting, so nothing here depends on it.
 
 ---
 
+## Documentation gaps
+
+**`magic`: `MagicSelector`'s dartdoc does not say when the selector runs
+relative to the tree reacting.** `magic_selector.dart:99` says "Called on every
+notification, so keep it cheap", which is about cost. The load-bearing half is
+the timing: `refreshUI` notifies the view and every selector in one loop and the
+view's `setState` only marks it dirty, so a selector under a branch that is
+about to be swapped away runs against the new controller state while its element
+is still mounted. Wiring the catalogue hero here, `_featured` was
+`controller.matches.first` and threw `Bad state: No element` on exactly the
+keystroke that emptied the catalogue and replaced the hero with `LibraryEmpty`.
+The class doc already warns about the two capture traps and the `List` identity
+trap, so this is the third member of that family and belongs beside them. The
+fix in the sibling is one paragraph under "The contract this buys": a selector
+must be total over every state the controller can reach, because it will be
+called in states the tree has not rendered. Local opt-out: `_featured` returns
+`TitleItem?` and the builder answers a null with `SizedBox.shrink()`.
+
+---
+
 ## Gaps rather than defects
 
 Already recorded in `CLAUDE.md` and unchanged: no D-pad activation in `WAnchor`,
