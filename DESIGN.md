@@ -296,6 +296,27 @@ failing; stated once it becomes a fact about their subscription.
 Devam, and everything beside them is a ghost or an icon. This product follows
 that without exception.
 
+**A provider fault names itself and ends in one action.** Our login is a third
+party credential that expires, gets throttled and goes unreachable, and the
+three are opposite from where the user sits: one wants a minute, one wants a new
+password, one wants a retry. `ProviderNotice` renders all three, one component
+for every surface, because an unreachable host means the same thing on a line-up
+as in a catalogue. Each says what happened, why they are seeing it, what the
+provider actually replied, and then the one verb that can change it. A retry
+offered for a lapsed subscription fails identically every time and teaches the
+user that the app is broken rather than that their subscription is.
+
+Severity lives in the disc behind the icon rather than in the glyph, and only
+the lapsed credential carries it. That is forced by the palette rather than
+chosen: `destructive` is defined below as a button colour, so there is no
+`text-destructive` to spend, and `warning` shares its hue with `primary` and
+`accent` to within two degrees, so a warning-tinted panel above an amber primary
+button reads as part of the button.
+
+Loading is not one of these. It is not a fault, and it is drawn as a skeleton of
+the layout it replaces rather than as a message, so it belongs to each surface
+rather than to a shared component.
+
 ## Colors
 
 Seventeen semantic roles drive everything; nothing else is hardcoded. The dark

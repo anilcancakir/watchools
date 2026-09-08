@@ -177,6 +177,30 @@ wired telescope owns its own store". The surviving entries are telescope's, and
 the fix, if one is wanted, is a clear on telescope rather than a change to dusk.
 The walks reset by hot-restarting, so nothing here depends on it.
 
+**`dusk`: `dusk:navigate` reports success for a route that does not exist.**
+`dusk:navigate --route /preview` printed `✓ Navigated to /preview` against a
+build where `/preview` had never been registered, and `dusk:get_routes` in the
+same breath reported `location: "/"`. The screen stayed on the live line-up. It
+cost half an hour of chasing a registration that was in fact absent, because the
+one tool that could have said so was agreeing with the mistake. `dusk:tap`
+already solves this: it returns an `effect: {kind: "treeChanged", changed:
+bool}` block precisely so a caller can tell a no-op from an action. `navigate`
+needs the same, or simply to compare the location before and after and report
+what it found. Local opt-out: read `dusk:get_routes` after every navigate and
+believe that instead.
+
+**`artisan`: `tinker --eval` cannot evaluate against a web app.** Every
+expression comes back as
+`evaluate: (-32603) NoSuchMethodError: Class 'WebSocketProxyService' has no
+instance method 'evaluate' with matching arguments`, and the error prints a
+`Tried calling:` and a `Found:` signature that read as identical, so it looks
+like a version skew between the bundled `vm_service` and the proxy rather than a
+call-site bug. Reproduced twice, on `kDebugMode` and on a static field read.
+**Not investigated further**, so treat the cause as unknown; `dusk:snap` plus
+`dusk:get_routes` answered the question that sent me there. Worth pinning down
+before anything relies on state inspection, because it takes the whole tinker
+surface out on the one platform this app is developed against.
+
 ---
 
 ## Gaps rather than defects
