@@ -11,6 +11,7 @@ import 'ui/components/episode_row/episode_row.preview.dart';
 import 'ui/components/fact_chip/fact_chip.preview.dart';
 import 'ui/components/favourite_button/favourite_button.preview.dart';
 import 'ui/components/play_progress/play_progress.preview.dart';
+import 'ui/components/provider_notice/provider_notice.preview.dart';
 import 'ui/components/status_badge/status_badge.preview.dart';
 import 'ui/components/title_poster/title_poster.preview.dart';
 
@@ -22,6 +23,7 @@ List<PreviewEntry> previewEntries() {
     PreviewEntry(label: 'FactChip', slug: 'fact_chip', builder: (_) => const FactChipPreview()),
     PreviewEntry(label: 'FavouriteButton', slug: 'favourite_button', builder: (_) => const FavouriteButtonPreview()),
     PreviewEntry(label: 'PlayProgress', slug: 'play_progress', builder: (_) => const PlayProgressPreview()),
+    PreviewEntry(label: 'ProviderNotice', slug: 'provider_notice', builder: (_) => const ProviderNoticePreview()),
     PreviewEntry(label: 'StatusBadge', slug: 'status_badge', builder: (_) => const StatusBadgePreview()),
     PreviewEntry(label: 'TitlePoster', slug: 'title_poster', builder: (_) => const TitlePosterPreview()),
   ];
