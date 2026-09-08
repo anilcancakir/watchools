@@ -25,16 +25,12 @@ class SearchField extends StatelessWidget {
   /// What the field is searching, for the placeholder and the label.
   final String subject;
 
-  /// Whether the field sits over artwork rather than over a surface.
-  final bool onScrim;
-
   /// Creates a [SearchField].
   const SearchField({
     super.key,
     required this.value,
     required this.onChanged,
     this.subject = 'Kanal, numara veya program',
-    this.onScrim = false,
   });
 
   /// The width Plex gives its own field, and the width to give this one on any
@@ -51,20 +47,13 @@ class SearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WDiv(
-      className: onScrim
-          ? '''
-            flex flex-row items-center gap-2 w-full h-11
-            px-3 rounded-full
-            bg-scrim-strong
-            focus:ring-2 focus:ring-focus-ring
-          '''
-          : '''
-            flex flex-row items-center gap-2 w-full h-11
-            px-3 rounded-full
-            bg-surface-container
-            border border-color-border-subtle
-            focus:ring-2 focus:ring-focus-ring
-          ''',
+      className: '''
+        flex flex-row items-center gap-2 w-full h-11
+        px-3 rounded-full
+        bg-surface-container
+        border border-color-border-subtle
+        focus:ring-2 focus:ring-focus-ring
+      ''',
       children: <Widget>[
         const WDiv(
           className: 'shrink-0',
