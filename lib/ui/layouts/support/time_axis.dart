@@ -18,8 +18,18 @@ class TimeAxis extends StatelessWidget {
   /// How many pixels one minute of the window occupies.
   final double pixelsPerMinute;
 
+  /// The first minute the ruler draws, from `GuideController.windowStart`.
+  final int windowStart;
+
+  /// The current minute, from `GuideController.now`.
+  ///
+  /// Injected rather than read off the controller, for the same reason
+  /// `LiveTile` takes it: the clock ticks, and a widget that reaches for a
+  /// global is a widget whose caller cannot say which minute it is drawing.
+  final int now;
+
   /// Creates the [TimeAxis].
-  const TimeAxis({super.key, required this.pixelsPerMinute});
+  const TimeAxis({super.key, required this.pixelsPerMinute, required this.windowStart, required this.now});
 
   /// Formats [minute] (minutes from midnight) as `HH:mm`.
   static String hhmm(int minute) =>
@@ -28,8 +38,7 @@ class TimeAxis extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const int start = GuideController.windowStart;
-    const int now = GuideController.now;
+    final int start = windowStart;
     final List<Widget> ticks = <Widget>[];
 
     for (int m = start; m < start + GuideController.windowMinutes; m += 30) {

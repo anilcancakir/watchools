@@ -249,6 +249,16 @@ search_ref() {
 # sequence that snapshots in between points at nothing: the fill reported
 # success, the screen did not change, and the two assertions after it failed
 # while naming controls that were fine. Returns non-zero when there is no field.
+#
+# What this CANNOT see, and it is the sixth entry on that list. It writes the
+# whole term in one `dusk:fill`, so it never types a second character against a
+# field whose parent has just been rebuilt. Both browse screens shipped a bug
+# where the keystroke that emptied the result list destroyed the input, and
+# `fill_search 'zzzzzz'` below passed straight through it: one fill, one frame,
+# nothing to lose focus between. A user reported it instead. The key-by-key
+# probe that does see it is `tool/web/search_focus_probe.js`, and it needs a
+# browser rather than dusk, because on web the keyboard arrives through a hidden
+# DOM input that the semantics tree does not describe.
 fill_search() {
   local sref
   sref="$(search_ref)"

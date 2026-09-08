@@ -37,7 +37,7 @@ import 'support/search_field.dart';
 /// and `Yarım saat içinde` are questions only a schedule can answer.
 ///
 /// It is the arrival screen. `Zaman` is the other half of the same line-up and
-/// is one tap away on the hero bar's switch.
+/// is one tap away on the toolbar's switch.
 @immutable
 class NowLayout extends StatelessWidget {
   /// The shared line-up state.
@@ -55,82 +55,83 @@ class NowLayout extends StatelessWidget {
       children: <Widget>[
         if (wide) const NavRail(),
         WDiv(
-          className: 'flex-1 min-w-0 h-full',
-          child: controller.matches.isEmpty
-              ? _emptyBody(wide)
-              : CustomScrollView(
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(child: _hero(wide)),
-                    // The gap above the strip and the `PageGutter.top` on the
-                    // first rail below it are the same number, which is the
-                    // whole point: the strip used to sit eight pixels under the
-                    // hero and thirty one above the heading, and the page read
-                    // as two designs stacked.
-                    const SliverToBoxAdapter(child: PageGutter.gap),
-                    SliverToBoxAdapter(child: CategoryStrip(controller: controller)),
-                    SliverList.builder(
-                      itemCount: controller.rails.length,
-                      itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
-                    ),
-                    // One gutter, not the 96 that used to clear the floating
-                    // switcher. The switch is in the toolbar now, so a tail
-                    // that size is just an unexplained hole under the last rail.
-                    const SliverToBoxAdapter(child: PageGutter.gap),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  /// The empty state keeps the search, the categories and the view switch on
-  /// screen.
-  ///
-  /// A no-results screen that hides the controls that caused it forces the user
-  /// to guess how to get back, and on a remote there is no obvious way to. The
-  /// switch is on that list for a second reason: the other view is a legitimate
-  /// answer to an empty result, and losing the way to it here would strand a
-  /// viewer on the one cut of the line-up that found nothing.
-  Widget _emptyBody(bool wide) {
-    return WDiv(
-      className: 'flex flex-col w-full h-full',
-      children: <Widget>[
-        WDiv(
-          className: 'flex flex-row items-center gap-3 w-full ${PageGutter.x} ${PageGutter.top}',
+          className: 'flex flex-col flex-1 min-w-0 h-full',
           children: <Widget>[
-            // Not the hero's scrimmed field. There is no artwork on this
-            // branch, and `bg-scrim-strong` with no border is near-black on a
-            // near-black page: the empty state rendered a search field a user
-            // could only find by clicking where they remembered it.
-            WDiv(className: wide ? 'w-[470px] shrink-0' : 'flex-1 min-w-0', child: _search(onScrim: false)),
-            if (wide) const WDiv(className: 'flex-1'),
-            GuideViewSwitch(controller: controller),
+            // Above the branch, and that position is the fix rather than a
+            // preference. The field used to live inside the hero on one branch
+            // and inside a plain column on the other, so the keystroke that
+            // emptied the line-up rebuilt it from scratch and took `WInput`'s
+            // `FocusNode` with it: measured in a browser, typing `z`, `q`, `x`,
+            // `v` into this view left the field holding `z`, while the same
+            // keys in `Zaman`, whose toolbar was already outside its branch,
+            // produced `zqxv`. A `GlobalKey` carried the element but not the
+            // web text-editing connection, and neither did forcing the focus
+            // back. One position is the only shape that works.
+            _toolbar(wide: wide),
+            PageGutter.gap,
+            // Out of the branch for the same reason as the toolbar, one rung
+            // down. It is a horizontal `ListView.builder`, so it owns a scroll
+            // position, and inside the branch a viewer who had scrolled to a
+            // far category got it back at zero the moment their query stopped
+            // matching. `Zaman` puts it in this exact place.
+            CategoryStrip(controller: controller),
+            PageGutter.gap,
+            WDiv(
+              className: 'flex-1 w-full',
+              child: controller.matches.isEmpty
+                  ? _emptyBody()
+                  : CustomScrollView(
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(child: _hero(wide)),
+                        const SliverToBoxAdapter(child: PageGutter.gap),
+                        SliverList.builder(
+                          itemCount: controller.rails.length,
+                          itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
+                        ),
+                        // One gutter, not the 96 that used to clear the
+                        // floating switcher. The switch is in the toolbar now,
+                        // so a tail that size is just an unexplained hole under
+                        // the last rail.
+                        const SliverToBoxAdapter(child: PageGutter.gap),
+                      ],
+                    ),
+            ),
           ],
         ),
-        PageGutter.gap,
-        CategoryStrip(controller: controller),
-        PageGutter.gap,
-        WDiv(
-          className: 'flex-1 w-full',
-          child: GuideEmpty(controller: controller),
-        ),
       ],
     );
   }
 
-  Widget _search({bool onScrim = true}) {
-    return SearchField(value: controller.query, onChanged: controller.search, onScrim: onScrim);
+  /// What replaces the hero and the rails when nothing matched.
+  ///
+  /// Only the body. The search, the categories and the view switch are above
+  /// this and shared with the populated branch, which is both the fix for the
+  /// focus bug and what the doc for this method always claimed: a no-results
+  /// screen that hides the controls that caused it forces the user to guess how
+  /// to get back, and on a remote there is no obvious way to. The switch is on
+  /// that list for a second reason: the other view is a legitimate answer to an
+  /// empty result, and losing the way to it here would strand a viewer on the
+  /// one cut of the line-up that found nothing.
+  Widget _emptyBody() {
+    return GuideEmpty(controller: controller);
   }
 
   /// The hero: what is on the selected channel right now.
   Widget _hero(bool wide) {
     final Channel channel = controller.channel;
     final Programme? live = controller.programme;
-    final Programme? next = channel.nextAfter(GuideController.now);
-    final String? note = controller.noGuideNote;
+    final Programme? next = channel.nextAfter(controller.now);
 
+    // 440 at desktop, not 520.
+    //
+    // The toolbar and the category strip are pinned above this now, which costs
+    // roughly 156 pixels the hero used to have, and a 520 pixel hero then
+    // pushed the first rail's caption row below the fold on a 900 pixel window:
+    // the channel name and the `N dk kaldı` under each card, which is the half
+    // of a live tile that says what it is. `showcase_layout` was cut from 540
+    // to 440 for exactly this, by exactly this measurement.
     return WDiv(
-      className: 'w-full h-[420px] sm:h-[520px] relative',
+      className: 'w-full h-[420px] sm:h-[440px] relative',
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -140,12 +141,6 @@ class NowLayout extends StatelessWidget {
           ),
           Scrim.left,
           Scrim.bottom,
-          Positioned(
-            top: PageGutter.value,
-            left: PageGutter.value,
-            right: PageGutter.value,
-            child: _heroBar(note: note, wide: wide),
-          ),
           // `Align`, and it is load-bearing rather than decorative. A
           // `Positioned` carrying both `left` and `right` hands its child a
           // TIGHT width, and `BoxConstraints.enforce` clamps a `max-w-*` into
@@ -170,15 +165,26 @@ class NowLayout extends StatelessWidget {
               left: 0,
               right: 0,
               bottom: 0,
-              child: PlayProgress(value: live.progressAt(GuideController.now), tone: 'live', size: 'lg'),
+              child: PlayProgress(value: live.progressAt(controller.now), tone: 'live', size: 'lg'),
             ),
         ],
       ),
     );
   }
 
-  /// The search field, the missing-guide count and the view switch, over the
-  /// hero's artwork.
+  /// The search field, the missing-guide count and the view switch.
+  ///
+  /// Above the scrolling body rather than over the hero's artwork, which is
+  /// what makes the field's position independent of the result count. It also
+  /// settles a consistency debt: `Zaman` already pinned its toolbar in exactly
+  /// this place, so the two live views now differ below the toolbar and nowhere
+  /// above it, and the doctrine's rule that search is a peer of navigation
+  /// rather than a mode is kept on both.
+  ///
+  /// No scrim on any of it any more. The bar sits on the page surface, so the
+  /// count is a plain label and the switch takes its normal form; a
+  /// `bg-scrim-strong` chip here would be a dark pill on a dark page with
+  /// nothing behind it to justify the contrast.
   ///
   /// One line on a wide screen and two on a narrow one. Stacked is not a
   /// fallback: at 414 pixels the count is a whole sentence
@@ -188,36 +194,39 @@ class NowLayout extends StatelessWidget {
   ///
   /// The switch is last on the line at both widths, and it is the fixed-width
   /// element, so the count grows leftwards into the spacer instead of pushing a
-  /// control around as the user types. `Zaman` puts it in exactly the same
-  /// place; the two views differ below the toolbar and nowhere above it.
+  /// control around as the user types.
   ///
   /// The count carries the missing-guide note as the grid view does. Without it
   /// this one stated the count and left the EPG gap to a rail below the fold,
   /// so a user met it one blank card at a time and read it as the app failing
   /// rather than as their provider not sending it.
-  ///
-  /// On a scrim, because these are the only controls in this hero sitting over
-  /// unscrimmed artwork and the fixture's first backdrop is a bright sky.
-  Widget _heroBar({required String? note, required bool wide}) {
+  Widget _toolbar({required bool wide}) {
+    final String? note = controller.noGuideNote;
+
     final Widget count = WDiv(
-      className: 'shrink-0 rounded-full bg-scrim-strong px-3 py-1.5',
+      className: 'shrink-0',
       child: WText(
         note == null ? controller.countLabel : '${controller.countLabel} · $note',
-        className: 'text-xs font-semibold text-fg line-clamp-1',
+        className: 'text-xs text-fg-muted line-clamp-1',
       ),
+    );
+
+    final Widget search = WDiv(
+      className: wide ? 'w-[470px] shrink-0' : 'w-full',
+      child: SearchField(value: controller.query, onChanged: controller.search),
     );
 
     if (!wide) {
       return WDiv(
-        className: 'flex flex-col items-start gap-2 w-full',
+        className: 'flex flex-col items-start gap-2 w-full ${PageGutter.x} ${PageGutter.top}',
         children: <Widget>[
-          WDiv(className: 'w-full', child: _search()),
+          search,
           WDiv(
             className: 'flex flex-row items-center gap-2 w-full',
             children: <Widget>[
               count,
               const WDiv(className: 'flex-1'),
-              GuideViewSwitch(controller: controller, onScrim: true),
+              GuideViewSwitch(controller: controller),
             ],
           ),
         ],
@@ -225,9 +234,9 @@ class NowLayout extends StatelessWidget {
     }
 
     return WDiv(
-      className: 'flex flex-row items-center gap-3 w-full',
+      className: 'flex flex-row items-center gap-3 w-full ${PageGutter.x} ${PageGutter.top}',
       children: <Widget>[
-        WDiv(className: 'w-[470px] shrink-0', child: _search()),
+        search,
         // A bare spacer, then each trailing element as a `shrink-0` child of
         // the row itself. The grid view's toolbar uses the same shape, and the
         // reason to copy it rather than nest is that a `flex-1` wrapper around
@@ -236,13 +245,13 @@ class NowLayout extends StatelessWidget {
         // loses. Written that way this overflowed the hero by 22 pixels.
         const WDiv(className: 'flex-1'),
         count,
-        GuideViewSwitch(controller: controller, onScrim: true),
+        GuideViewSwitch(controller: controller),
       ],
     );
   }
 
   Widget _heroContent(Channel channel, Programme? live, Programme? next, {required bool wide}) {
-    final int left = live == null ? 0 : live.endMinute - GuideController.now;
+    final int left = live == null ? 0 : live.endMinute - controller.now;
 
     return WDiv(
       className: 'flex flex-col gap-3 w-full max-w-[620px]',
@@ -362,8 +371,8 @@ class NowLayout extends StatelessWidget {
 
             return LiveTile(
               channel: channel,
-              programme: channel.programmeAt(GuideController.now),
-              now: GuideController.now,
+              programme: channel.programmeAt(controller.now),
+              now: controller.now,
               width: width,
               onTap: () => controller.selectChannel(channel),
               onFavourite: () => controller.toggleFavourite(channel),

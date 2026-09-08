@@ -4,6 +4,7 @@ import 'package:magic/magic.dart';
 import '../models/channel.dart';
 import '../models/programme.dart';
 import '../support/fixture_scale.dart';
+import '../support/guide_clock.dart';
 
 /// The two ways to look at the same line-up.
 ///
@@ -55,12 +56,42 @@ class GuideController extends SimpleMagicController {
   /// the query, the category and the favourites the user just set.
   static GuideController get instance => Magic.findOrPut(GuideController.new);
 
-  /// 20:12, fixed so the mockup renders the same every time.
-  static const int now = 20 * 60 + 12;
+  /// What time it is, and the only source of it on this screen.
+  ///
+  /// Injected rather than read from the wall, for two reasons that pull the
+  /// same way. The fixtures are one evening, so a real clock shows an empty
+  /// guide for the nineteen hours a day that evening is not on. And a
+  /// measurement session runs twenty to sixty seconds, so a free-running clock
+  /// would tick inside it and put a rebuild in the middle of the frames being
+  /// counted.
+  final GuideClock clock;
+
+  /// Whether this controller built its own clock and therefore owns it.
+  ///
+  /// A caller that passes one keeps it: a test drives a stub across several
+  /// controllers, and disposing it on the first `onClose` would break the
+  /// second. Latent while the default is a `FixedGuideClock`, which holds no
+  /// resource; the day the default becomes a `TickingGuideClock` this is the
+  /// difference between a cancelled timer and a leaked one.
+  final bool _ownsClock;
+
+  /// Creates the controller, stopped at the fixture's hour unless told
+  /// otherwise.
+  GuideController({GuideClock? clock}) : clock = clock ?? FixedGuideClock(), _ownsClock = clock == null {
+    this.clock.addListener(_onTick);
+  }
+
+  /// Minutes since the schedule's midnight, never wrapped. See [GuideClock].
+  int get now => clock.minute;
 
   /// The axis starts on the half hour before now, which is what a guide does:
   /// you want to see what you just missed, not what already ended an hour ago.
-  static const int windowStart = 19 * 60 + 30;
+  ///
+  /// Derived rather than declared, so it follows the clock. As a constant it
+  /// agreed with [now] only because both were written by hand on the same day;
+  /// the first tick past 20:30 would have left the now line sitting an hour
+  /// into a window that no longer started where it claimed.
+  int get windowStart => (now ~/ 30) * 30 - 30;
 
   /// Five hours, 19:30 to 00:30.
   ///
@@ -83,6 +114,24 @@ class GuideController extends SimpleMagicController {
   String _query = '';
   late Channel _channel = channels.first;
   late Programme? _programme = channels.first.programmeAt(now);
+
+  /// Drops everything derived from [now] and repaints.
+  ///
+  /// Every cache below is time-dependent, including the two that do not look
+  /// it: `matches` searches the programme currently on air, and `sections` is
+  /// built over `matches`.
+  void _onTick() {
+    _programme = _channel.programmeAt(now);
+    _invalidate();
+    refreshUI();
+  }
+
+  @override
+  void onClose() {
+    clock.removeListener(_onTick);
+    if (_ownsClock) clock.dispose();
+    super.onClose();
+  }
 
   /// Cached until a mutation drops it. `matches` walks the whole line-up and one build asks
   /// for it several times: in the toolbar, through [scheduled], and in the body.

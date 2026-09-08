@@ -38,6 +38,24 @@ jobs:
           flutter-version: '3.47.x'
           cache: true
 
+      # Before `pub get`, which is the only moment the committed file is still
+      # the committed file: `pub get` re-resolves an unusable lock rather than
+      # failing on it, so every gate after this point passes over a lock that
+      # names paths from one developer's machine. One such lock reached master
+      # carrying seven `source: path` entries under /Users/, and the whole
+      # pipeline went green.
+      - name: Check the lock is the hosted-only one
+        run: |
+          if grep -q 'source: path' pubspec.lock; then
+            echo "pubspec.lock carries path dependencies:"
+            grep -B4 'source: path' pubspec.lock
+            echo
+            echo "Regenerate it without the overrides active:"
+            echo "  mv pubspec_overrides.yaml /tmp/ && flutter pub get && git add pubspec.lock"
+            echo "  mv /tmp/pubspec_overrides.yaml . && flutter pub get"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: flutter pub get
 

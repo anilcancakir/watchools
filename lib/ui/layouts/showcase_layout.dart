@@ -46,48 +46,56 @@ class ShowcaseLayout extends StatelessWidget {
       children: <Widget>[
         if (wide) const NavRail(),
         WDiv(
-          className: 'flex-1 min-w-0 h-full',
-          child: controller.matches.isEmpty
-              ? _emptyBody(wide)
-              : CustomScrollView(
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(child: _hero(wide)),
-                    SliverToBoxAdapter(
-                      child: LibraryToolbar(controller: controller, wide: wide),
-                    ),
-                    const SliverToBoxAdapter(child: PageGutter.gap),
-                    SliverToBoxAdapter(child: LibraryCategories(controller: controller)),
-                    if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
-                    SliverList.builder(
-                      itemCount: controller.sections.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final (String name, List<TitleItem> items) = controller.sections[index];
+          className: 'flex flex-col flex-1 min-w-0 h-full',
+          children: <Widget>[
+            // Above the branch, and that position is the fix rather than a
+            // preference. The toolbar used to be a sliver inside the scroll
+            // view on one branch and a plain child on the other, so the
+            // keystroke that emptied the catalogue rebuilt it from scratch and
+            // took the search field's `FocusNode` with it: every key after the
+            // one that found nothing went nowhere. `NowLayout` documents the
+            // measurement; this is the same trap in the same shape.
+            LibraryToolbar(controller: controller, wide: wide),
+            PageGutter.gap,
+            // Out of the branch for the same reason as the toolbar. It is a
+            // horizontal `ListView.builder` and owns a scroll position, which
+            // inside the branch was reset to zero by the keystroke that emptied
+            // the catalogue.
+            LibraryCategories(controller: controller),
+            PageGutter.gap,
+            WDiv(
+              className: 'flex-1 w-full',
+              child: controller.matches.isEmpty
+                  ? _emptyBody()
+                  : CustomScrollView(
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(child: _hero(wide)),
+                        const SliverToBoxAdapter(child: PageGutter.gap),
+                        if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
+                        SliverList.builder(
+                          itemCount: controller.sections.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final (String name, List<TitleItem> items) = controller.sections[index];
 
-                        return _posterRail(name, items, wide);
-                      },
+                            return _posterRail(name, items, wide);
+                          },
+                        ),
+                        const SliverToBoxAdapter(child: PageGutter.gap),
+                      ],
                     ),
-                    const SliverToBoxAdapter(child: PageGutter.gap),
-                  ],
-                ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _emptyBody(bool wide) {
-    return WDiv(
-      className: 'flex flex-col w-full h-full',
-      children: <Widget>[
-        LibraryToolbar(controller: controller, wide: wide),
-        PageGutter.gap,
-        LibraryCategories(controller: controller),
-        PageGutter.gap,
-        WDiv(
-          className: 'flex-1 w-full',
-          child: LibraryEmpty(controller: controller),
-        ),
-      ],
-    );
+  /// What replaces the hero and the rails when nothing matched.
+  ///
+  /// Only the body: the toolbar above this is shared with the populated branch,
+  /// which is what keeps the search field in one place.
+  Widget _emptyBody() {
+    return LibraryEmpty(controller: controller);
   }
 
   /// The promoted title: what the viewer left unfinished, or the first entry.
