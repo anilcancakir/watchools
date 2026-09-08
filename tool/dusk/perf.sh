@@ -47,6 +47,14 @@
 # search term survives `dusk:navigate`, so a typing session left the line-up
 # filtered to one channel and every session after it measured an empty screen.
 #
+# That hot restart also means DO NOT EDIT lib/ WHILE THIS IS RUNNING. Flutter
+# web serves this through DDC, so a restart recompiles, and a source change made
+# after `boot()` silently reaches every group after the next `reset_to`. Two
+# runs were lost that way: the first reported an exception from code that had
+# not been compiled when the run started, and the second produced the same
+# catalogue counts as a later run of different code. One of them also read as a
+# clean result for a version that still had the fault. Let the run finish.
+#
 # The generated fixture carries no network URLs. It used to point at
 # `picsum.photos`, so every session raced hundreds of live fetches and decodes
 # against the frames it was timing; `scale_fixture.dart` records the swap. The
