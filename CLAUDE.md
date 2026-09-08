@@ -106,6 +106,10 @@ Three things about the numbers, all of them learned the expensive way:
 
 The generated fixture carries no network URLs. It pointed at `picsum.photos` for one round and every session then raced hundreds of live fetches against the frames it was timing. Image memory is therefore the one thing this harness cannot measure; it needs its own.
 
+Two tools sit beside it. `tool/dusk/perf_phases.sh` runs ONE session with `phases: true`, for a frame the build ranking cannot explain; phase spans multiply the output, so it takes one screen and one gesture rather than surveying. `tool/dusk/perf_compare.py` diffs two or three envelopes on counts **normalised per painted frame**, which is the correction that matters: a run that drew ten per cent fewer frames reports ten per cent fewer of everything, and that reads as an improvement.
+
+**`h-full` is not free.** Wind composes it as a `LayoutBuilder` whose bounded branch returns `FractionallySizedBox(heightFactor: 1)` (`w_div.dart:1721`), and a `LayoutBuilder` defers its subtree into a second layout pass. Measured on the grid at scale 5000: 1056 of them in an eight-scroll session against 258 `WDiv` builds. Under a parent that already gives a tight height (a `Positioned` carrying both `top` and `bottom`, a fixed-extent sliver's child) the class does nothing at all and costs one anyway. That is the same family as the `max-w-*` trap above, from the other side.
+
 ## Testing
 
 The coverage target is **90% on both halves** and both halves are there, over a denominator that excludes Magic's generated scaffold. A floor moves in the same pull request as the tests that earned it, never in a commit of its own.
