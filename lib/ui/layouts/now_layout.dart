@@ -126,7 +126,7 @@ class NowLayout extends StatelessWidget {
   Widget _hero(bool wide) {
     final Channel channel = controller.channel;
     final Programme? live = controller.programme;
-    final Programme? next = channel.nextAfter(GuideController.now);
+    final Programme? next = channel.nextAfter(controller.now);
     final String? note = controller.noGuideNote;
 
     return WDiv(
@@ -170,7 +170,7 @@ class NowLayout extends StatelessWidget {
               left: 0,
               right: 0,
               bottom: 0,
-              child: PlayProgress(value: live.progressAt(GuideController.now), tone: 'live', size: 'lg'),
+              child: PlayProgress(value: live.progressAt(controller.now), tone: 'live', size: 'lg'),
             ),
         ],
       ),
@@ -242,7 +242,7 @@ class NowLayout extends StatelessWidget {
   }
 
   Widget _heroContent(Channel channel, Programme? live, Programme? next, {required bool wide}) {
-    final int left = live == null ? 0 : live.endMinute - GuideController.now;
+    final int left = live == null ? 0 : live.endMinute - controller.now;
 
     return WDiv(
       className: 'flex flex-col gap-3 w-full max-w-[620px]',
@@ -362,8 +362,8 @@ class NowLayout extends StatelessWidget {
 
             return LiveTile(
               channel: channel,
-              programme: channel.programmeAt(GuideController.now),
-              now: GuideController.now,
+              programme: channel.programmeAt(controller.now),
+              now: controller.now,
               width: width,
               onTap: () => controller.selectChannel(channel),
               onFavourite: () => controller.toggleFavourite(channel),

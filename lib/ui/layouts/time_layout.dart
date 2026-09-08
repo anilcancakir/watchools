@@ -218,7 +218,7 @@ class _TimeLayoutState extends State<TimeLayout> {
   Widget _grid(BuildContext context) {
     final List<Channel> rows = controller.matches;
     const double width = GuideController.windowMinutes * _ppm;
-    const double nowX = (GuideController.now - GuideController.windowStart) * _ppm;
+    final double nowX = (controller.now - controller.windowStart) * _ppm;
     final bool narrow = MediaQuery.sizeOf(context).width < _narrowAt;
 
     // The ruler's inset has to equal the identity column exactly, or every time
@@ -248,7 +248,7 @@ class _TimeLayoutState extends State<TimeLayout> {
                 controller: _rulerH,
                 scrollDirection: Axis.horizontal,
                 physics: const NeverScrollableScrollPhysics(),
-                child: const TimeAxis(pixelsPerMinute: _ppm),
+                child: TimeAxis(pixelsPerMinute: _ppm, windowStart: controller.windowStart, now: controller.now),
               ),
             ),
           ],
@@ -290,14 +290,14 @@ class _TimeLayoutState extends State<TimeLayout> {
                         // one element in this view that belongs to the
                         // whole grid rather than to a row, so it is painted on
                         // top of the list rather than repeated inside it.
-                        const Positioned(
+                        Positioned(
                           left: nowX,
                           top: 0,
                           bottom: 0,
                           // No `h-full`: `top` plus `bottom` is already a tight
                           // height, and the class would only add a
                           // `LayoutBuilder`. See `_block` for the measurement.
-                          child: WDiv(className: 'w-[2px] bg-live'),
+                          child: const WDiv(className: 'w-[2px] bg-live'),
                         ),
                       ],
                     ),
@@ -409,8 +409,8 @@ class _TimeLayoutState extends State<TimeLayout> {
 
   /// One channel's strip of programme blocks, positioned by time.
   Widget _blocks(Channel channel) {
-    const int start = GuideController.windowStart;
-    const int end = start + GuideController.windowMinutes;
+    final int start = controller.windowStart;
+    final int end = start + GuideController.windowMinutes;
 
     if (!channel.hasSchedule) {
       return const SizedBox(
@@ -464,7 +464,7 @@ class _TimeLayoutState extends State<TimeLayout> {
   }
 
   Widget _block(Channel channel, Programme programme) {
-    const int now = GuideController.now;
+    final int now = controller.now;
     final bool past = programme.endMinute <= now;
     final bool live = programme.contains(now);
     final bool selected = identical(programme, controller.programme);
