@@ -128,10 +128,29 @@ answers custom headers and DNS together, and recorded the landmine that Dart's
 factory returning a plain socket sends cleartext to port 443.
 
 `stream_cb.h` removes the whole problem. `mpv_stream_cb_add_ro` registers a
-protocol whose bytes we serve in-process, with our own read and seek callbacks:
-our resolver, our per-provider User-Agent, our prefetch policy, no port, no TLS
-termination of our own, and the `connectionFactory` branch never reached. Build
-the proxy only if AVFoundation becomes a second engine that needs it.
+protocol whose bytes we serve in-process, with our own read and seek callbacks.
+
+**But do not use it for the provider HTTP path**, because neither reason for it
+survives. The per-provider User-Agent has a supported option: mpv's
+`--user-agent` maps to FFmpeg's `user_agent` and `--http-header-fields` to
+`headers`, both per `mpv_handle`, and we run one handle per playback. And DNS is
+already out of scope by this project's own doctrine (`CLAUDE.md`: "Custom DNS is
+an onboarding problem, not a feature"). Taking the byte source over would mean
+owning TLS, the redirect chain, the redirect cache, the reconnect ladder,
+`Range` and seek, and `stream_cb.h` warns you cannot even cancel a stream from
+the callbacks: libmpv keeps using it until it gives up.
+
+So the provider path stays on `--user-agent`, `--http-header-fields` and
+`--stream-lavf-o`. Reserve `stream_cb` for something that genuinely needs byte
+control, a local disk cache or a recording tap.
+
+**One `--stream-lavf-o` setting is not optional here.** mpv sets `reconnect=1`
+and `reconnect_delay_max=7` but leaves `reconnect_on_http_error` empty, and
+FFmpeg then refuses to reconnect on any 4xx or 5xx. When this panel's token
+lapses mid-playback and the CDN answers 403, playback simply ends. Pass
+`reconnect_on_http_error=4xx,5xx`, `reconnect_streamed=1` and
+`reconnect_max_retries=3`, and treat it as best-effort, because a live endpoint
+will not honour the byte offset a reconnect resumes from.
 
 ## Connection budget, and what it kills
 
@@ -142,9 +161,39 @@ from the same budget on at least one real backend, so the two compete.
   (`google/ExoPlayer#565`, "we have no plans to support parallel loading") and
   Shaka declined preconnect (`shaka-player#2081`, will-not-implement).
 - **A pre-warmed second `mpv_handle` on the predicted next channel is also out**,
-  which reverses the obvious answer to "make zapping fast". The second
-  connection drops the first stream. Zap speed has to come from buffer tuning
-  and connection reuse alone.
+  which reverses the obvious answer to "make zapping fast". Zap speed has to
+  come from buffer tuning and connection reuse alone.
+
+### How the cap is enforced, measured with a control
+
+This was asserted before it was measured, so it is written down properly now.
+Two `.ts` requests on different variants of the same channel, then the same
+variant alone:
+
+| Run | Result |
+|---|---|
+| variant A alone, 14 s window | HTTP 200, ran the **full 14.0 s** |
+| variant A with variant B opening at t=4 s | HTTP 200, died at **5.79 s** |
+| variant B, opened while A ran | HTTP 200, ran its **full 8 s window** |
+
+**The panel evicts the older stream rather than refusing the newer one.** Three
+consequences, and they are the whole shape of the failover design:
+
+1. **Warm failover is impossible on this account**, now by measurement rather
+   than by assumption. Opening the warm handle kills the stream it was meant to
+   protect. This is what `clubTivi` does with a second muted player, and it
+   needs a provider that allows two connections.
+2. **Sequential failover is never refused.** The worry that the panel would hold
+   the slot and reject our own reopen is disproven: a new stream opened while
+   the old one was still live. The retry ladder will not burn itself against a
+   closed door.
+3. **A fourth fault class, and for a one-connection account it is the most
+   likely interruption there is.** When anyone else uses these credentials, our
+   stream dies mid-playback and the panel says nothing: the connection simply
+   ends. At the player layer that is indistinguishable from a network drop, so
+   it needs its own message ("another device is using your subscription") rather
+   than a generic retry, and the retry itself would evict that other device in
+   turn.
 - Chunked parallel download is out for the same reason, even though the panel
   would allow it: it answers `206 Partial Content` with
   `Content-Range: bytes 1000000-1008191/3693628462`, so Range, seek and resume
@@ -335,3 +384,197 @@ Not as a codec path. As four capabilities libmpv cannot have:
 
 Select it by capability, never by sniffing an extension: the measurements above
 are exactly the story of a URL that does not say what it contains.
+
+## Buffer, bandwidth and stability, measured on the real channel
+
+Three configs against the HEVC variant, 45 s each, strictly serial, `vo=null`
+so this measures the pipe rather than the pixels:
+
+| Config | Zap | Buffer mean / min | Read rate | Stalls | Drops |
+|---|---|---|---|---|---|
+| mpv defaults | 3040 ms | 20.2 s / 4.0 s | 1452 KB/s | 0 | 0 |
+| media_kit's shape (32 MiB both ways, `network-timeout=5`) | 1690 ms | 11.0 s / 0.2 s | 582 KB/s | 0 | unreadable |
+| clubTivi's fast tier | **1658 ms** | **18.1 s** / 0.2 s | 1266 KB/s | 0 | 0 |
+
+Four things follow.
+
+**Buffer policy alone moves zap from 3040 ms to 1658 ms**, a 45% cut with no
+code. And clubTivi's tier holds both ends: the fast start *and* an 18 second
+cushion, so there is no trade to make between them. Start from it.
+
+**media_kit's shape is measurably worse**, reading at 582 KB/s against 1452 and
+letting the cushion fall to 0.2 s. That is the concrete case for not inheriting
+its Dart.
+
+**Bandwidth is not the constraint.** The channel is about 3.5 Mbps and the
+connection reads at roughly 11.6 Mbps, so there is 3.3x headroom. Buffer policy
+is the lever; more sockets would collect nothing.
+
+**135 seconds of playback across three configs, zero stalls, zero dropped
+frames.** The stream is stable here, which means the failover work is for
+provider faults and for eviction rather than for this connection.
+
+### Why more sockets is the wrong answer
+
+The request was to use the bandwidth "like reducing ping in games". The analogy
+does not transfer, and the measurements say why. A game removes round trips from
+the critical path; video with a buffer in front of it has no latency in its
+critical path at all, only the question of whether the long-run read rate beats
+the bitrate, and here it beats it by 3.3x with zero stalls.
+
+Every mechanism is also absent. FFmpeg n8.1.2's `configure` has no `nghttp2`, no
+`http2`, no `quic` and no `http3`, and `libavformat/http.c` writes `HTTP/1.1`
+unconditionally, so a panel that speaks HTTP/2 gets HTTP/1.1 from libmpv anyway.
+Multiplexing would add nothing regardless: it removes head-of-line blocking
+between concurrent requests, and a sequential segment fetch has one outstanding.
+`--stream-buffer-size` is documented as helping mp4 seek storms and cacheless
+network filesystems, neither of which is live HLS. TCP window is auto-tuned by
+the kernel and not exposed.
+
+ExoPlayer's maintainer named the conditions where parallel fetching wins: a
+large round trip time, short chunks, and throughput still good enough. The read
+rate here is the proof the first is false.
+
+Build the concurrency gate on `max_connections - active_cons` anyway, and put
+exactly one thing behind it: a second `mpv_handle` for warm failover, which is
+worth a great deal on a line that allows two connections and is impossible on
+this one. Build no parallel chunk fetching.
+
+## Tracks: what the provider actually sends
+
+| Source | Tracks |
+|---|---|
+| `↺TRT 1 HEVC` live | 1 video (hevc), 1 audio (aac, `lang=-`), **0 subtitle** |
+| A real `mkv` VOD | 1 video (h264), 1 audio (mp2, `lang=tur`), **0 subtitle** |
+
+So the language tag arrives on VOD and not on live, and neither sample carries a
+second audio track or any subtitles. Two samples of a Turkish film and a Turkish
+channel prove nothing general, and one place has not been looked at:
+`#EXT-X-MEDIA:TYPE=AUDIO` and `TYPE=SUBTITLES` in a master playlist, which is
+the HLS-level shape rather than a second MPEG-TS PID.
+
+On the Xtream side, subtitles hide in `get_vod_info` and `get_series_info` under
+a field whose shape is up to the panel author. Five shapes exist in the wild:
+empty, an array of URLs, an array of objects keyed `url|file|src|link|path`, a
+language-keyed map, and **ffprobe stream descriptors** describing tracks already
+muxed into the file rather than files to fetch. Filtering that last shape for a
+URL and finding none is how a player reports "no subtitles" about a file with
+two.
+
+The engine exposes `Track {id, kind, lang, codec, title, isDefault, isForced,
+isExternal}` plus `select(kind, id?)` and a `preferredLanguages` list reapplied
+after every `loadfile`, which a variant switch needs anyway. External sources
+are first-class: `--sub-files-append` and `--audio-files-append` attach a sidecar
+with no reload, and `--secondary-sid` renders two subtitle tracks at once.
+
+Our build's subtitle decoders, read off MPVKit's configure line: `ass`,
+`ccaption`, `dvbsub`, `dvdsub`, `mpl2`, `movtext`, `pgssub`, `srt`, `ssa`,
+`subrip`, `xsub`, `webvtt`, with libass for rendering. **`dvb_teletext` is
+missing**: it needs `--enable-libzvbi`, which MPVKit does not pass. On a Turkish
+provider carrying DVB-sourced feeds that is a real gap, and it is a build change
+rather than a redesign since we already vendor a patched build.
+
+## Variant failover
+
+The provider carries one logical channel several times (`↺TRT 1 HEVC`,
+`TRT 1 RAW`, `TRT 1 4K`, plus a QHD category), and they share **no identifier**:
+`epg_channel_id` is empty on 91% and `custom_sid` is null on 100%. There is no
+convention being missed; the market answer is normalisation plus a curated
+identity list plus a user override, and it should be copied rather than improved
+on.
+
+Normalisation, in order: NFKC, then strip Unicode categories `So`, `No`, `Lm`
+and `Sk` but deliberately not `Sm`, which handles `↺`, the `✦●✦` separator rows
+and superscript `ᴿᴬᵂ` in one rule while keeping `+` so `Disney+` stays distinct.
+Then drop a leading country-code prefix from a curated list only. Then
+**extract** quality, codec, resolution and tier into a variant record rather
+than discarding them, because they are the preference key. Do not strip bare
+`East` / `West` / `Central` / `Atlantic`, or `Comedy Central` truncates. Match
+the residue against `iptv-org/database`'s `channels.csv` `name` and `alt_names`;
+on no match, group by exact residue **scoped to a category**, never globally,
+because providers reuse names across categories.
+
+One caution worth settling before grouping: iptv-org lists `TRT 4K` as
+`TRT4K.tr`, a separate channel from `TRT1.tr`, not a feed of it. Whether the
+provider's `TRT 1 4K` is a UHD re-encode of TRT 1 or the separate channel has to
+be answered by opening it.
+
+Model it as data rather than a rule: a channel row, an ordered variant join
+carrying the extracted `{quality, codec, tier}`, and an override table that
+survives a catalogue refresh.
+
+### The ladder
+
+Trigger on `cache-speed` and `demuxer-cache-state/fw-bytes`, not on
+`demuxer-cache-duration`, which mpv's own docs call "very unreliable, and often
+the property will not be available at all".
+
+| Tier | Signal | Threshold | Action |
+|---|---|---|---|
+| 0 | `end-file` with reason `ERROR`, or open failure | immediate | switch |
+| 1 | `cache-speed == 0` and not user-paused | 3 s | switch |
+| 2 | `paused-for-cache` continuously | 5 s, user-configurable | switch |
+| 3 | 10 s mean `cache-speed` below the stream bitrate | 10 s | switch |
+
+Four guards: a variant that ran stably for 30 s earns one same-variant retry
+before the ladder moves on, while one that stalled immediately does not; a
+60 second cooldown before wrapping back to the top; a cap of about 10 switches
+per session, reset after a stable period; and a longer grace before the first
+byte than after, because opening is slower than running. Gate every tier on the
+user not having paused, since `cache-speed` goes to zero on a pause and would
+otherwise switch variants under a paused viewer.
+
+What the user sees, given warm failover is impossible: the last frame holds,
+because nothing clears the `CAMetalLayer`. So the seam is a freeze rather than
+black, which reads as buffering rather than as broken. Put a Flutter overlay
+over it naming the variant being tried, reapply the fast buffer profile for the
+reopen, and order the ladder most-compatible-first rather than
+highest-quality-first, which here means the H.264 variant ahead of the HEVC one.
+
+**Grouping errors are worse than no grouping**: folding two genuinely different
+channels sends a viewer to the wrong programme, which is more visible than a
+freeze. Require an identity match or an exact in-category residue match for
+automatic folding, never a similarity score alone, and let the user split a
+group.
+
+### The decisions, and one that overturned part of this plan
+
+Settled with the owner on 2026-09-09:
+
+- **Fold the variants into one channel** with a quality ladder, rather than
+  trusting iptv-org's identity split. Measurement vindicates the call, and see
+  below for why.
+- **Variant order is a fixed user-editable list, with a bandwidth step-down.**
+  Most compatible first, and drop a rung if the read rate falls under the stream
+  bitrate. On this account the step-down never fires, and that is fine: it is
+  there for a user who is actually constrained.
+- **All three stall thresholds are user-exposed**, not just tier 2. Clamp them
+  to sane floors in code rather than trusting the input, because a threshold set
+  to a second produces a player that switches variants continuously.
+- **The seam is the held frame plus an overlay naming the variant being tried.**
+  Not black, not a spinner: nothing clears the `CAMetalLayer`, so the last frame
+  stays, and a freeze with an explanation reads as waiting while a black screen
+  reads as broken.
+
+**The channel names lie about quality, and that invalidates a step above.** The
+grouping plan says to extract quality from the name and use it as the preference
+key. Probed:
+
+| Variant | Video | Audio |
+|---|---|---|
+| `TRT 1 RAW` | h264 Main, 1920x1080 | HE-AAC stereo |
+| `↺TRT 1 HEVC` | hevc Main, 1920x1080 | AAC LC **mono** |
+| `TRT 1 4K` | hevc **Main 10**, 1920x1080, 50 fps | **mp2** stereo |
+
+`TRT 1 4K` is 1080p. Every variant is 1080p. So the name's quality token is a
+hint and never evidence: the preference key has to come from the probed stream,
+or from a fixed codec preference, and a "4K" label must not promote a variant
+above another. It does confirm the fold, since all three really are encodings of
+one 1080p channel and iptv-org's separate `TRT4K.tr` is a different thing from
+this provider's mislabelled entry.
+
+Two smaller notes from the same probe. `Main 10` is 10-bit HEVC, a different
+hardware decode path worth watching on weaker targets. And the audio differs
+across variants (mono AAC, stereo HE-AAC, stereo MP2), so a variant switch
+changes the audio layout mid-channel and the engine has to reapply the track
+preference after every `loadfile`.
