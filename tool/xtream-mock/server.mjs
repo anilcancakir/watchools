@@ -412,6 +412,26 @@ function segmentDurations(channel) {
  * window wraps past the last segment a DISCONTINUITY is emitted, because the
  * loop really does reset the timeline and a player told otherwise stalls.
  *
+ * Segment URIs carry the **absolute** sequence number rather than the media
+ * file's index, because that is what a real panel serves and a client that
+ * dedupes by URI would otherwise see the same three segments forever.
+ *
+ * It does **not** fix the periodic stall this channel has, which was measured
+ * and is worth knowing about before anything is measured against it: libmpv
+ * buffers the three-segment window, drains it, and then sits with `fw-bytes` at
+ * 0 and `demuxer-cache-state/underrun` true for **eight seconds** before the
+ * timeline resets, and the cycle repeats every twenty four. Changing the URIs
+ * moved nothing; `cache-end` still freezes at 11.9 s and then reads negative,
+ * which points at the DISCONTINUITY below rather than at the naming. The cause
+ * is that the loop is only SEGMENT_COUNT * SEGMENT_SECONDS long, so a genuine
+ * timeline reset arrives inside every window.
+ *
+ * The consequence for the player work: this channel cannot host a stall
+ * measurement, because its healthy state is indistinguishable from the
+ * token-lapse stall the variant ladder exists to detect. The RAW TS channel
+ * (`streamEndless`) is genuinely continuous and measured clean over 39 s, so
+ * use that one until the loop here is long enough for a wrap to be rare.
+ *
  * @param {import('./catalogue.mjs').Channel} channel
  * @param {number} now
  * @returns {string}
@@ -445,12 +465,13 @@ function livePlaylist(channel, now) {
     }
 
     for (let offset = 0; offset < WINDOW_SEGMENTS; offset += 1) {
-        const index = (((first + offset) % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
+        const absolute = first + offset;
+        const index = ((absolute % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
         if (index === 0) {
             lines.push('#EXT-X-DISCONTINUITY');
         }
         lines.push(`#EXTINF:${durations[index].toFixed(3)},`);
-        lines.push(`${base}/seg-${String(index).padStart(3, '0')}.${extension}`);
+        lines.push(`${base}/s-${absolute}.${extension}`);
     }
 
     return `${lines.join('\n')}\n`;
@@ -1020,6 +1041,21 @@ const server = createServer((request, response) => {
         return;
     }
 
+    // A sliding-window URI: `s-<absolute sequence>.<ext>` resolves to the loop
+    // position it names. The client never sees the same URI twice, which is what
+    // keeps libmpv following the live edge, while the bytes on disk stay four
+    // segments per channel.
+    const sliding = path.match(/^\/segments\/(\d+)\/s-(\d+)\.(ts|m4s)$/);
+    if (sliding) {
+        const [, channelId, sequence, extension] = sliding;
+        const index = Number(sequence) % SEGMENT_COUNT;
+        const name = `seg-${String(index).padStart(3, '0')}.${extension}`;
+        sendFile(join(MEDIA, channelId, name), request, response);
+        return;
+    }
+
+    // The init segment an fMP4 channel's EXT-X-MAP names, and the raw
+    // `seg-NNN` paths, which `verify.mjs` reaches directly.
     const segment = path.match(/^\/segments\/(\d+)\/(.+)$/);
     if (segment) {
         sendFile(join(MEDIA, segment[1], segment[2]), request, response);
