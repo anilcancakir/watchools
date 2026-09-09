@@ -22,21 +22,37 @@ final class MpvEngine {
     /// behaviour the viewer sees.
     private static let liveOptions: [String: String] = [
         "cache": "yes",
+        // A cap, not a target. mpv's default reads back as 3,600,000 s, so the
+        // only real limiter out of the box is `demuxer-max-bytes`, which on a
+        // 2 Mbps channel would read close to an hour ahead of a live edge that
+        // does not exist. 180 s is the deliberate ceiling; whichever of the two
+        // binds first still wins.
+        //
+        // `demuxer-readahead-secs` is absent on purpose: with the cache on, mpv
+        // uses the maximum of the two, so any value below 180 here would be
+        // inert and any value above it would silently defeat this cap.
         "cache-secs": "180",
         "cache-pause": "no",
         "cache-pause-initial": "no",
         "cache-pause-wait": "0",
         "demuxer-max-bytes": "800MiB",
         "demuxer-max-back-bytes": "200MiB",
-        "demuxer-readahead-secs": "60",
         // mpv's own default is 60 s, which is a minute of a viewer staring at a
         // dead channel before anything happens.
         "network-timeout": "10",
-        // Without this FFmpeg refuses to reconnect on any 4xx or 5xx, and the
-        // real panel answers 509 when its stream token lapses mid-playback, so
-        // playback simply ends. Best effort only: a live endpoint will not
-        // honour the byte offset a reconnect resumes from.
-        "stream-lavf-o": "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=4xx\\,5xx,reconnect_max_retries=3",
+        // A key/value list, so the value has to be bracketed: mpv's
+        // `read_subparam` accepts `[...]` and `"..."` and has no backslash
+        // escape, so `4xx\,5xx` splits at the comma and produces a garbage key
+        // instead of the option. `stream-lavf-o` silently ignores what FFmpeg
+        // does not recognise, so nothing reports the loss.
+        //
+        // `reconnect_max_retries` is deliberate rather than defensive. Measured
+        // against the mock's lapsing token with a starved cache: unbounded
+        // retries keep the core alive and silent for the full 75 s deadline
+        // while the demuxer reads 3 to 7 s of content, and `state()` still
+        // reports `gpu-next` and a picture. A bounded failure is recoverable,
+        // an indefinite silent stall is not.
+        "stream-lavf-o": "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=[4xx,5xx],reconnect_max_retries=3",
         // Nothing here is a YouTube URL and the hook costs a subprocess probe
         // on every load.
         "ytdl": "no",
