@@ -421,7 +421,7 @@ repo-relative from the segment after `player-reconnect/`.
 
 ### Wave 5
 
-- [ ] **Step 10**: Swap the controllers off the fixtures
+- [x] **Step 10**: Swap the controllers off the fixtures
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-1-cross-layer: two controllers, their caches and the four internal cache invalidations, plus the fixture seam and the scale define that the performance harness depends on.
@@ -455,7 +455,7 @@ This is the same class as the fault arm in step 11 and lands in the same pull re
         - Delete the fixture path or the `WATCHOOLS_SCALE` define
         - Perform I/O from a getter; the controller reads what the session already holds
 
-- [ ] **Step 11**: Render the fault on all four surfaces
+- [x] **Step 11**: Render the fault on all four surfaces
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: four layout files, each a small conditional change, following a placement the component's own doc already specifies.

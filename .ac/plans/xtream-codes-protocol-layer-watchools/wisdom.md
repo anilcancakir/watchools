@@ -201,3 +201,52 @@ behaviour.
     `Channel.toggleFavourite` and `TitleItem.toggleFavourite`) where adding a field and forgetting
     one line produces a valid object with silently dropped state. Worth a real `copyWith` on both
     types the next time either is touched.
+
+## Wave 5
+
+20. **[REMEDIATION] The real clock was half-delivered: right value, no repaint.** Step 10 wired
+    `now => (_session.clock ?? clock).minute`, which reads the anchored clock correctly, but the
+    controller's `_onTick` stayed subscribed to the `FixedGuideClock` it was constructed with,
+    because the session's clock does not exist yet at construction time. Reading the right minute
+    is not the same as being told when it changes: every progress bar, the countdown and the grid's
+    now line would have sat at whatever minute some unrelated rebuild last caught. Added
+    `_followSessionClock()`, called from the existing `_syncWithSession()`, which moves the
+    subscription and never disposes what it detaches from (the session owns that instance and
+    re-anchors it across a calendar day). Mutation-checked: removing the one call makes exactly
+    that test red.
+
+21. **[REMEDIATION, and the briefing was mine] Step 11 correctly refused to start.** Its briefing
+    said the retry callback "already exists on the controller: look for the reload or refresh
+    method the `GuideEmpty` / `LibraryEmpty` components already call". No such method existed on
+    either controller, and both empty components render static copy with no callback at all, which
+    the worker established by reading all four files. `ProviderNotice.onRetry` is required, so the
+    arm could not compile. It reported a `[CONTRADICTION]`, made **no edits**, and named the two
+    ways forward it was not authorised to take. That is the protocol working exactly as intended,
+    and the alternative would have been either a Must-NOT violation or a layout reaching past its
+    controller into `ProviderSession`. Fixed by adding `reload()` to both controllers, which is
+    where it structurally belongs: the screens read their state from the controller, so a widget
+    calling the session directly would give one screen two sources of truth.
+
+22. **A nullable-ising change breaks compilation in the NEXT step's files, twice now.** Making
+    `GuideController.channel` and `LibraryController.selected` nullable was required (three `late …
+    .first` initialisers threw on an empty provider catalogue) and left `now_layout.dart:121`
+    uncompilable, taking four test files down with it. This is the same shape as `ProviderFault.evicted`
+    breaking `provider_notice.dart`'s exhaustive switch two waves earlier. The lesson for a plan
+    rather than for a worker: when a step widens or nullables a type, the steps that consume it
+    belong in the same wave, or every barrier in between commits a tree that does not build.
+
+23. **`tool/dusk/perf.sh` was not run, and the substitute is weaker.** Step 10's fourth `Done when`
+    asks for it, but it launches a real app through `fsa start` and `CLAUDE.md` warns that an
+    `fsa` call from a worktree can silently drive the main checkout instead. The worker substituted
+    a checkable proof that both scale defines still reach `FixtureScale` and said so rather than
+    claiming the run. Recorded here because the harness path is exactly the thing that fails
+    silently: a hand-started app carries the small fixture and every session then measures the
+    wrong thing and reports it as fast.
+
+24. **`groups` and `categories` had no defined provider-side answer.** The fixtures have a curated
+    `guideGroups` list; a provider catalogue has none. Step 10 synthesised `Tümü` / `Favoriler`
+    (plus `İzlemeye devam et` on the library side) followed by every distinct group in
+    first-appearance order, which matches the QA's own wording and is the only shape that keeps
+    `matches`'s filter and the category strip agreeing. Worth knowing it was a judgment call rather
+    than a specified one, because a curated ordering is the kind of thing a product decision could
+    later want.

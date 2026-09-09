@@ -1,0 +1,50 @@
+Step 10: Swap the controllers off the fixtures
+=================================================
+
+1) flutter test test/app/controllers/  (all 72 pass, including the 6 new
+   "the provider session" tests per controller)
+-------------------------------------------------------------------------
+00:00 +70: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/guide_controller_test.dart: the provider session starring on the provider path routes through the session
+00:00 +71: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/guide_controller_test.dart: the provider session now reads the session clock once a refresh has anchored one
+00:00 +72: All tests passed!
+
+2) flutter analyze --fatal-infos --fatal-warnings, scoped to the six changed files (0 issues)
+-------------------------------------------------------------------------
+Analyzing 6 items...                                            
+No issues found! (ran in 3.8s)
+
+3) flutter analyze --fatal-infos --fatal-warnings, whole project (KNOWN boundary with step 11,
+   see report Issues section: now_layout.dart:121 assigns the now-nullable GuideController.channel
+   to a non-null local; step 11 owns that file)
+-------------------------------------------------------------------------
+Analyzing player-reconnect...                                   
+
+  error • A value of type 'Channel?' can't be assigned to a variable of type 'Channel'. Try changing the type of the variable, or casting the right-hand type to 'Channel' • lib/ui/layouts/now_layout.dart:121:29 • invalid_assignment
+
+1 issue found. (ran in 4.7s)
+
+4) tool/dusk/perf.sh could not be launched here: it starts a real app in profile mode via
+   fsa start, and CLAUDE.md warns a dusk/fsa call from a worktree can silently drive the MAIN
+   checkout instead of this one. Weaker, checkable proof instead: WATCHOOLS_SCALE and the new
+   WATCHOOLS_TITLE_SCALE both reach FixtureScale through the controllers, shown below by
+   deliberately failing the no-credentials fixture-count assertion at scale.
+-------------------------------------------------------------------------
+WATCHOOLS_SCALE=100 and WATCHOOLS_TITLE_SCALE=777 via dart define, guide controller: channels.length flips from 23 to 100
+  package:matcher                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18     expect
+  test/app/controllers/guide_controller_test.dart 433:7  main.<fn>.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/guide_controller_test.dart: the provider session a session with no credentials still yields the fixture line-up
+
+same defines, library controller: titles.length flips from 15 to 777, not 50 (100 slash 2), proving WATCHOOLS_TITLE_SCALE overrides the channels-half default independently
+  package:matcher                                          expect
+  package:flutter_test/src/widget_tester.dart 473:18       expect
+  test/app/controllers/library_controller_test.dart 244:7  main.<fn>.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/library_controller_test.dart: the provider session a session with no credentials still yields the fixture catalogue

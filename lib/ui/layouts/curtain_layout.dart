@@ -3,13 +3,16 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
+import '../../app/models/provider_fault.dart';
 import '../../app/models/title_item.dart';
 import '../components/artwork/index.dart';
 import '../components/episode_row/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/play_progress/index.dart';
+import '../components/provider_notice/index.dart';
 import '../components/scrim/index.dart';
 import '../components/section_header/index.dart';
+import 'support/library_empty.dart';
 import 'support/page_gutter.dart';
 import 'support/title_sections.dart';
 
@@ -38,7 +41,38 @@ class CurtainLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TitleItem title = controller.selected;
+    // A fault takes precedence over the no-selection arm below, because they
+    // are different statements: no selection can mean a healthy but empty
+    // catalogue, while a fault means the provider itself is the problem, and
+    // the fault is the more specific of the two. It is a new arm rather than
+    // a third one, unlike the other three layouts: this screen had no empty
+    // branch at all before the previous step added the one below.
+    final ProviderFault? fault = controller.fault;
+    if (fault != null) {
+      return WDiv(
+        className: 'w-full h-full bg-surface',
+        child: ProviderNotice(
+          fault: fault,
+          onRetry: controller.reload,
+          onOpenSettings: () => MagicRoute.to('/saglayici'),
+        ),
+      );
+    }
+
+    final TitleItem? title = controller.selected;
+
+    // No selection is the normal state during a provider's first refresh
+    // (`LibraryController.selected` falls back to `titles.first`, which is
+    // null on an empty catalogue) rather than an edge case: this screen had
+    // no branch at all before, so a `late TitleItem` read here threw the
+    // moment a fixture-free catalogue reached it.
+    if (title == null) {
+      return WDiv(
+        className: 'w-full h-full bg-surface',
+        child: LibraryEmpty(controller: controller),
+      );
+    }
+
     final bool wide = MediaQuery.sizeOf(context).width >= 900;
 
     return WDiv(

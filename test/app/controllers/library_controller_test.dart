@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchools/app/controllers/library_controller.dart';
+import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/models/title_item.dart';
+import 'package:watchools/app/provider/provider_session.dart';
+import 'package:watchools/app/support/vod_fixture.dart';
 
 /// The catalogue controller.
 ///
@@ -41,7 +44,7 @@ void main() {
       controller.select(controller.titles.firstWhere((TitleItem t) => t.isSeries));
       controller.showScope(LibraryScope.movies);
 
-      expect(controller.selected.isSeries, isFalse);
+      expect(controller.selected!.isSeries, isFalse);
       expect(controller.matches, contains(controller.selected));
     });
 
@@ -183,16 +186,16 @@ void main() {
       controller.select(target);
       controller.toggleFavourite(target);
 
-      expect(controller.selected.favourite, isTrue);
-      expect(controller.selected.name, target.name);
+      expect(controller.selected!.favourite, isTrue);
+      expect(controller.selected!.name, target.name);
     });
 
     test('starring an unselected title leaves the selection alone', () {
-      final TitleItem selected = controller.selected;
+      final TitleItem selected = controller.selected!;
       final TitleItem other = controller.titles.lastWhere((TitleItem t) => t.name != selected.name);
       controller.toggleFavourite(other);
 
-      expect(controller.selected.name, selected.name);
+      expect(controller.selected!.name, selected.name);
     });
   });
 
@@ -230,4 +233,91 @@ void main() {
       expect(controller.matches, isNot(same(byCategory)));
     });
   });
+
+  group('the provider session', () {
+    test('a session with no credentials still yields the fixture catalogue', () {
+      // This is the perf harness's own path: `tool/dusk/perf.sh` starts the
+      // app with no `Vault` entry, so `hasCredentials` is false and the
+      // compile-time `WATCHOOLS_SCALE` fixture must still be what renders.
+      final LibraryController fromSession = LibraryController(session: ProviderSession());
+
+      expect(fromSession.titles.length, vodFixture.length);
+    });
+
+    test('an empty provider catalogue does not throw', () {
+      final LibraryController empty = LibraryController(session: _FakeProviderSession(titles: const <TitleItem>[]));
+
+      // Mutation check: reverting `selected` to the old
+      // `late TitleItem = titles.first` shape makes this throw a
+      // `StateError` instead of returning null.
+      expect(() => empty.selected, returnsNormally);
+      expect(empty.selected, isNull);
+      expect(empty.matches, isEmpty);
+    });
+
+    test('provider titles reach matches and categories', () {
+      final List<TitleItem> two = <TitleItem>[
+        const TitleItem(kind: TitleKind.movie, name: 'Ada', category: 'Aksiyon', year: 2020, providerId: 1),
+        const TitleItem(kind: TitleKind.movie, name: 'Boğaz', category: 'Dram', year: 2021, providerId: 2),
+      ];
+      final LibraryController fromSession = LibraryController(session: _FakeProviderSession(titles: two));
+
+      expect(fromSession.matches.length, 2);
+      expect(fromSession.categories, containsAll(<String>['Aksiyon', 'Dram']));
+    });
+
+    test('a fault on the session surfaces without emptying matches', () {
+      final List<TitleItem> one = <TitleItem>[
+        const TitleItem(kind: TitleKind.movie, name: 'Ada', category: 'Aksiyon', year: 2020, providerId: 1),
+      ];
+      final LibraryController fromSession = LibraryController(
+        session: _FakeProviderSession(titles: one, fault: ProviderFault.expired),
+      );
+
+      expect(fromSession.fault, ProviderFault.expired);
+      expect(fromSession.matches, isNotEmpty);
+    });
+
+    test('starring on the provider path routes through the session', () {
+      const TitleItem title = TitleItem(
+        kind: TitleKind.series,
+        name: 'Ada',
+        category: 'Dram',
+        year: 2020,
+        providerId: 7,
+      );
+      final _FakeProviderSession session = _FakeProviderSession(titles: <TitleItem>[title]);
+      final LibraryController fromSession = LibraryController(session: session);
+
+      fromSession.toggleFavourite(title);
+
+      expect(session.favouriteCalls, <({TitleKind kind, int providerId, bool favourite})>[
+        (kind: TitleKind.series, providerId: 7, favourite: true),
+      ]);
+    });
+  });
+}
+
+/// A session double that reports whatever the test built it with, so the
+/// provider path is exercised without a network, a `Vault` entry or SQLite.
+class _FakeProviderSession extends ProviderSession {
+  _FakeProviderSession({required this.titles, this.fault});
+
+  @override
+  final List<TitleItem> titles;
+
+  @override
+  bool get hasCredentials => true;
+
+  @override
+  final ProviderFault? fault;
+
+  /// Every call [LibraryController.toggleFavourite] made, in order.
+  final List<({TitleKind kind, int providerId, bool favourite})> favouriteCalls =
+      <({TitleKind kind, int providerId, bool favourite})>[];
+
+  @override
+  void setTitleFavourite({required TitleKind kind, required int providerId, required bool favourite}) {
+    favouriteCalls.add((kind: kind, providerId: providerId, favourite: favourite));
+  }
 }

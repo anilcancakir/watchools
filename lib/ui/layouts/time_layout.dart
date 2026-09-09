@@ -6,8 +6,10 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/guide_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../../app/models/provider_fault.dart';
 import '../components/channel_mark/index.dart';
 import '../components/favourite_button/index.dart';
+import '../components/provider_notice/index.dart';
 import '../components/status_badge/index.dart';
 import 'support/category_strip.dart';
 import 'support/guide_empty.dart';
@@ -143,10 +145,7 @@ class _TimeLayoutState extends State<TimeLayout> {
               PageGutter.gap,
               CategoryStrip(controller: controller),
               PageGutter.gap,
-              WDiv(
-                className: 'flex-1 w-full',
-                child: controller.matches.isEmpty ? GuideEmpty(controller: controller) : _grid(context),
-              ),
+              WDiv(className: 'flex-1 w-full', child: _body(context)),
             ],
           ),
         ),
@@ -213,6 +212,25 @@ class _TimeLayoutState extends State<TimeLayout> {
         GuideViewSwitch(controller: controller),
       ],
     );
+  }
+
+  /// A provider fault, an empty result, or the grid.
+  ///
+  /// A fault takes precedence over an empty result, because they are
+  /// different statements: an empty [matches] can mean a search found
+  /// nothing while the line-up is healthy, while a fault means the provider
+  /// itself is the problem, and the fault is the more specific of the two.
+  Widget _body(BuildContext context) {
+    final ProviderFault? fault = controller.fault;
+    if (fault != null) {
+      return ProviderNotice(
+        fault: fault,
+        onRetry: controller.reload,
+        onOpenSettings: () => MagicRoute.to('/saglayici'),
+      );
+    }
+
+    return controller.matches.isEmpty ? GuideEmpty(controller: controller) : _grid(context);
   }
 
   Widget _grid(BuildContext context) {
