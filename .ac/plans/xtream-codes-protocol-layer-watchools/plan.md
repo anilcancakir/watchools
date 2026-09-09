@@ -309,7 +309,7 @@ repo-relative from the segment after `player-reconnect/`.
 
 ### Wave 3
 
-- [ ] **Step 6**: Map the wire onto Channel, Programme and TitleItem
+- [x] **Step 6**: Map the wire onto Channel, Programme and TitleItem
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: factories on four existing value types, following their existing shape, but each field needs the right source field and the derived ones must not be invented.
@@ -334,7 +334,7 @@ repo-relative from the segment after `player-reconnect/`.
         - Persist or read `ChannelStatus` from the provider
         - Touch `favourite` or `progress`
 
-- [ ] **Step 7**: Build the catalogue store as a cold-start cache
+- [x] **Step 7**: Build the catalogue store as a cold-start cache
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: before, no provider-supplied string reaches SQL anywhere in the app; after, 41,000 third-party channel names, category names and descriptions from a host the user typed are written into SQLite on every refresh, so this step decides the injection surface and whether it is bound or interpolated.

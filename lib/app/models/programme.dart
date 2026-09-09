@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../protocol/xtream/xtream_json.dart';
+
 /// One entry in a channel's schedule.
 ///
 /// Times are minutes from midnight rather than `DateTime`. A real programme
@@ -41,6 +43,59 @@ class Programme {
     this.imageUrl,
     this.episode,
   });
+
+  /// Builds a [Programme] from a decoded `get_short_epg` /
+  /// `get_simple_data_table` listing (`tool/xtream-mock/server.mjs:355`), or
+  /// `null` when the listing has no parsable `start` or `end`.
+  ///
+  /// [referenceMidnight] is the panel-local calendar day the caller has
+  /// chosen as minute zero for the WHOLE schedule this listing belongs to,
+  /// typically the earliest listing's own day: it must be the same value
+  /// across every call for one channel's schedule, or a listing that starts
+  /// exactly at the reference's midnight reads as minute 0 while an earlier
+  /// listing that ran past midnight reads as, say, 1470, which is the
+  /// intended shape (`CLAUDE.md`'s never-wrapped rule) rather than a bug.
+  ///
+  /// The wire's `start_timestamp` / `stop_timestamp` are absolute epochs, but
+  /// converting an epoch into "minutes since the panel's local midnight"
+  /// needs the panel's UTC offset, which only `xmltv.php` states
+  /// (`explore-mock-surface.md`); the JSON actions never do. `start` and
+  /// `end`, by contrast, are already formatted in the panel's local time, so
+  /// this reads those two strings and takes a plain wall-clock difference
+  /// from [referenceMidnight], sidestepping the offset entirely. Both sides
+  /// go through [DateTime.parse] with no zone suffix, which Dart resolves as
+  /// the device's own local zone: the one caveat is a listing and its
+  /// [referenceMidnight] straddling this device's own DST transition, which
+  /// would skew the result by the transition's offset. The panel's calendar
+  /// has no DST of its own, so this is a device-clock hedge, not a
+  /// panel-clock one.
+  static Programme? fromXtream(Map<String, dynamic> listing, {required DateTime referenceMidnight}) {
+    final DateTime? start = _parsePanelLocal(readNullableString(listing, 'start'));
+    final DateTime? stop = _parsePanelLocal(readNullableString(listing, 'end'));
+
+    if (start == null || stop == null) return null;
+
+    final DateTime midnight = DateTime(referenceMidnight.year, referenceMidnight.month, referenceMidnight.day);
+
+    return Programme(
+      startMinute: start.difference(midnight).inMinutes,
+      endMinute: stop.difference(midnight).inMinutes,
+      title: readBase64Text(listing, 'title') ?? '',
+      description: readBase64Text(listing, 'description'),
+    );
+  }
+
+  /// Parses a panel-local `YYYY-MM-DD HH:MM:SS` string, or `null` when
+  /// [value] is missing or not in that shape.
+  static DateTime? _parsePanelLocal(String? value) {
+    if (value == null) return null;
+
+    try {
+      return DateTime.parse(value);
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// How long the programme runs, in minutes.
   int get durationMinutes => endMinute - startMinute;

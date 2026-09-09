@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../protocol/xtream/xtream_json.dart';
+
 /// What kind of catalogue entry this is.
 ///
 /// A provider sends movies and series through separate Xtream endpoints with
@@ -126,9 +128,10 @@ class CastMember {
 
 /// One movie or series in the user's VOD catalogue.
 ///
-/// A plain value type for the same reason [Episode] is: there is no data layer
-/// yet, and the design phase needs a shape to render. It becomes a `Model` when
-/// the Xtream client lands.
+/// A plain value type, and it stays one once the Xtream client lands: the
+/// library controller filters and searches the catalogue in Dart
+/// (`explore-controllers.md`), same as `Channel`, so there are no queries
+/// here for an ORM model to serve, only a shape to render.
 @immutable
 class TitleItem {
   /// Movie or series.
@@ -184,6 +187,12 @@ class TitleItem {
   /// Whether the user starred it.
   final bool favourite;
 
+  /// The provider's identifier for this title: a movie's `stream_id`, a
+  /// series' `series_id`. The two are different ID spaces that can collide
+  /// numerically, and [kind] is what says which space this value came from.
+  /// Null on a fixture-built title, which honestly has no provider.
+  final int? providerId;
+
   /// Creates a [TitleItem].
   const TitleItem({
     required this.kind,
@@ -201,7 +210,50 @@ class TitleItem {
     this.episodes = const <Episode>[],
     this.progress = 0,
     this.favourite = false,
+    this.providerId,
   });
+
+  /// Builds a [TitleItem] from a decoded `get_vod_streams` (movie) entry
+  /// (`tool/xtream-mock/server.mjs:226`). A series equivalent reads the same
+  /// shape where the wire carries it; `get_series` answers `[]` on this mock,
+  /// so that path is untested against an executable contract here.
+  ///
+  /// [categoryName] is the resolved `category_name` for the entry's
+  /// `category_id`, the same lookup `Channel.fromXtream` takes for a
+  /// channel's `group`.
+  ///
+  /// [kind] says which ID space [providerId] reads from: `stream_id` for a
+  /// movie, `series_id` for a series.
+  ///
+  /// Every field this mock's entry does not carry (`genre`, `year`, cast)
+  /// stays at [TitleItem]'s default rather than a guess: an empty [genres]
+  /// or a zero [year] is the honest reading of a wire that sent nothing here,
+  /// not a mapping gap. [minutes] reads `duration_secs`, which only
+  /// `get_vod_info` sends, so it stays null when mapping a `get_vod_streams`
+  /// entry directly.
+  ///
+  /// [facts] holds the container extension, uppercased, when the wire sent
+  /// one (`mp4` | `mkv` | `avi`): it is the one technical fact a
+  /// `get_vod_streams` entry actually carries.
+  factory TitleItem.fromXtream(Map<String, dynamic> entry, {required TitleKind kind, required String categoryName}) {
+    final String? poster = readNullableString(entry, 'stream_icon');
+    final String? containerExtension = readNullableString(entry, 'container_extension');
+    final int? durationSecs = readInt(entry, 'duration_secs');
+
+    return TitleItem(
+      kind: kind,
+      name: readNullableString(entry, 'name') ?? '',
+      category: categoryName,
+      year: readInt(entry, 'year') ?? 0,
+      posterUrl: (poster == null || poster.isEmpty) ? null : poster,
+      minutes: durationSecs == null ? null : (durationSecs / 60).round(),
+      rating: readDouble(entry, 'rating'),
+      facts: containerExtension == null || containerExtension.isEmpty
+          ? const <String>[]
+          : <String>[containerExtension.toUpperCase()],
+      providerId: kind == TitleKind.movie ? readInt(entry, 'stream_id') : readInt(entry, 'series_id'),
+    );
+  }
 
   /// Whether this is a series.
   bool get isSeries => kind == TitleKind.series;
@@ -289,5 +341,6 @@ class TitleItem {
     episodes: episodes,
     progress: progress,
     favourite: !favourite,
+    providerId: providerId,
   );
 }

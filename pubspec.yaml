@@ -50,6 +50,20 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
+  # Reaches this app transitively through magic already. Declared directly for
+  # one reason: `lib/app/provider/catalogue_store.dart` needs a prepared
+  # statement to write 38,247 catalogue rows, and `DB` exposes no `prepare`, so
+  # the store reaches `DatabaseManager.connection`, whose type is
+  # `CommonDatabase` from this package. `flutter_lints` brings
+  # `depend_on_referenced_packages`, which fails `flutter analyze
+  # --fatal-infos` on an undeclared import however well it resolves.
+  #
+  # Same constraint magic itself carries (`magic/pubspec.yaml:39`) so version
+  # solving stays trivial. This is the only sanctioned direct reach past a
+  # magic facade in the whole app; everything else below the widget goes
+  # through `DB`, `Http` and `Vault`.
+  sqlite3: ^3.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

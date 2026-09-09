@@ -96,3 +96,47 @@
     `lib/_previews.g.dart` in a shape `dart format --output=none --set-exit-if-changed lib test`
     rejects, so running the generator breaks step 14's format gate until the file is re-formatted;
     the content is identical once it is.
+
+## Wave 3
+
+11. **[REMEDIATION] Neither `Channel` nor `TitleItem` carried a provider identifier, and the plan
+    never noticed.** Both types were built for a design phase that only had to render, so between
+    them they had `number, name, group, status, logoUrl, schedule, facts, favourite` and
+    `kind, name, category, year, posterUrl, backdropUrl, minutes, rating, genres, synopsis, facts,
+    cast, episodes, progress, favourite`, and not one ID. Three things immediately downstream need
+    one: the store writes columns "to rebuild a value object", `get_short_epg` is keyed on
+    `stream_id`, and `/baslik/:id` needs to know **which** ID space a number came from, since
+    `stream_id` and `series_id` collide numerically. Added in step 6 as `Channel.streamId` and
+    `TitleItem.providerId` (the space read off the existing `kind`), both **nullable** so the
+    fixture path and every hand-built test object keep compiling. Adding it one step later would
+    have been a store migration.
+
+12. **[REMEDIATION] The catch-up columns the plan asked for had nowhere to live.** Step 7's
+    Description says carry `tv_archive` and `tv_archive_duration` "as columns from day one so
+    `ChannelStatus.catchup` stays computable and no migration follows", but its `Files` cannot
+    touch `channel.dart` and step 6's factory read neither field, having concluded the archive
+    state was inaccessible. It is not: `server.mjs:214,216` put both on every `get_live_streams`
+    entry. Folded into one nullable `Channel.catchupDays`, with `tv_archive` as the authority
+    because a panel can send a non-zero duration beside a zero flag. One column instead of two,
+    since the model is what the store rebuilds.
+
+13. **A value type's `copyWith`-shaped method is where a new field silently disappears.**
+    `Channel.toggleFavourite()` rebuilds the whole object field by field, so every field added to
+    the class has to be added there too or starring a channel quietly nulls it. Both new fields are
+    covered by a test that stars a channel and asserts they survive, because the failure is
+    invisible: the object is still valid, just orphaned from its provider.
+
+14. **The Magic ORM works headless under `flutter test`, now proven rather than assumed.** No test
+    in this repository had ever touched it. `DatabaseManager().setConnection(sqlite3.openInMemory())`
+    is magic's own seam (`database_manager.dart:75`) and reaches the system libsqlite3 with no
+    plugin registrant and no `sqlite3_flutter_libs`. Resolved versions: `sqlite3` 3.5.2, libsqlite3
+    3.53.4.
+
+15. **Two SQLite facts worth not taking on faith.** The `sqlite3_exec` routing claim **holds** at
+    the resolved version (`sqlite3-3.5.2/lib/src/implementation/database.dart:287`), so passing a
+    non-empty params list really is the anti-stacking defence rather than a style preference. And
+    the bound-variable cap is **32,766** on this build, not the 999 that most advice still repeats:
+    32,767 answers "too many SQL variables", and 32,766 hits the separate SELECT column cap first.
+    Measured by preparing N placeholders. That is why the store needs no chunking at all: one row
+    per `execute` binds 9 or 15 variables, so the cap is unreachable and there is no row count to
+    guess, which removes the exact temptation the plan's `Must NOT` was written to guard.

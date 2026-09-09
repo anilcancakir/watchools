@@ -101,4 +101,58 @@ void main() {
       expect(after.toggleFavourite().favourite, isFalse);
     });
   });
+
+  group('TitleItem.fromXtream', () {
+    test('maps name, resolved category, provider id and the quoted rating', () {
+      final TitleItem movie = TitleItem.fromXtream(
+        const <String, dynamic>{
+          'num': 3,
+          'name': 'Sessiz Şehir',
+          'stream_id': 501,
+          'stream_icon': 'http://host/logo/501.svg',
+          'rating': '7.5',
+          'rating_5based': 3.8,
+        },
+        kind: TitleKind.movie,
+        categoryName: 'Aksiyon',
+      );
+
+      expect(movie.kind, TitleKind.movie);
+      expect(movie.name, 'Sessiz Şehir');
+      expect(movie.category, 'Aksiyon');
+      expect(movie.providerId, 501);
+      expect(movie.posterUrl, 'http://host/logo/501.svg');
+      expect(movie.rating, 7.5);
+    });
+
+    test('turns an empty stream_icon into a null posterUrl', () {
+      final TitleItem movie = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'X', 'stream_id': 1, 'stream_icon': ''},
+        kind: TitleKind.movie,
+        categoryName: 'Aksiyon',
+      );
+
+      expect(movie.posterUrl, isNull);
+    });
+
+    test('keeps a container_extension of mkv as a fact', () {
+      final TitleItem movie = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'X', 'stream_id': 1, 'container_extension': 'mkv'},
+        kind: TitleKind.movie,
+        categoryName: 'Aksiyon',
+      );
+
+      expect(movie.facts, contains('MKV'));
+    });
+
+    test('reads a series provider id from series_id rather than stream_id', () {
+      final TitleItem series = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'Bozkır Hattı', 'series_id': 77, 'stream_id': 501},
+        kind: TitleKind.series,
+        categoryName: 'Dram',
+      );
+
+      expect(series.providerId, 77);
+    });
+  });
 }
