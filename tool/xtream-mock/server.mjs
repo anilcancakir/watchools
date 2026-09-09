@@ -17,7 +17,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -500,12 +500,35 @@ function streamEndless(file, response) {
 }
 
 /**
- * Serves a file from the media tree.
+ * Serves a file from the media tree, with byte ranges.
+ *
+ * Ranges are not a nicety here, they are the surface that decides seeking,
+ * resume and any form of download, and this fixture answered every request with
+ * a chunked 200 until it was measured against the real panel. Two engines read
+ * that as an unseekable stream for different reasons:
+ *
+ * - FFmpeg (so mpv, libmpv, media_kit) learns seekability from `Accept-Ranges`
+ *   prefix-matching `bytes`, or from any `Content-Range`. With neither, and with
+ *   `Transfer-Encoding: chunked`, it sets the file size to unknown and treats a
+ *   3 GB movie like a live stream.
+ * - Media3 never reads `Accept-Ranges` at all and decides from the status code:
+ *   on a 200 it skips forward to the requested offset by discarding bytes. On
+ *   the real 3.44 GB film a mid-point seek downloads and throws away 1.7 GB.
+ *
+ * So a developer who tested seeking against the old fixture would have seen it
+ * fail and gone looking for a problem the provider does not have.
+ *
+ * `Accept-Ranges` deliberately carries the real panel's non-standard
+ * `0-<total>` spelling rather than `bytes`. FFmpeg's prefix match fails on it
+ * and falls back to `Content-Range`, which is what really happens in the wild,
+ * and a hand-rolled Dart check of the shape `headers['accept-ranges'] == 'bytes'`
+ * is exactly the code somebody writes.
  *
  * @param {string} file
+ * @param {import('node:http').IncomingMessage} request
  * @param {import('node:http').ServerResponse} response
  */
-function sendFile(file, response) {
+function sendFile(file, request, response) {
     if (!existsSync(file)) {
         response.writeHead(404, { 'Content-Type': 'text/plain' });
         response.end(`Not generated: ${file}\nRun: node tool/xtream-mock/encode.mjs\n`);
@@ -513,11 +536,48 @@ function sendFile(file, response) {
     }
 
     const extension = file.split('.').pop() ?? '';
-    response.writeHead(200, {
-        'Content-Type': CONTENT_TYPES[extension] ?? 'application/octet-stream',
+    const type = CONTENT_TYPES[extension] ?? 'application/octet-stream';
+    const total = statSync(file).size;
+    const range = request.headers.range;
+
+    if (!range) {
+        response.writeHead(200, {
+            'Content-Type': type,
+            'Content-Length': String(total),
+            'Accept-Ranges': `0-${total}`,
+            'Cache-Control': 'no-store',
+        });
+        createReadStream(file).pipe(response);
+        return;
+    }
+
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match) {
+        response.writeHead(416, { 'Content-Range': `bytes */${total}` });
+        response.end();
+        return;
+    }
+
+    // An open-ended `bytes=N-` asks for the tail; a `bytes=-N` asks for the last
+    // N bytes, which is how a client reads an MP4's trailing `moov` atom.
+    const hasStart = match[1] !== '';
+    const start = hasStart ? Number(match[1]) : Math.max(0, total - Number(match[2] || 0));
+    const end = hasStart ? Math.min(total - 1, Number(match[2] || total - 1)) : total - 1;
+
+    if (!Number.isFinite(start) || start >= total || end < start) {
+        response.writeHead(416, { 'Content-Range': `bytes */${total}` });
+        response.end();
+        return;
+    }
+
+    response.writeHead(206, {
+        'Content-Type': type,
+        'Content-Length': String(end - start + 1),
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': `0-${total}`,
         'Cache-Control': 'no-store',
     });
-    response.end(readFileSync(file));
+    createReadStream(file, { start, end }).pipe(response);
 }
 
 /**
@@ -736,9 +796,10 @@ function answerTimeshift(account, channelId, duration, start, response) {
  * @param {string} kind `live`, `movie` or `series`.
  * @param {string} file
  * @param {number} now
+ * @param {import('node:http').IncomingMessage} request
  * @param {import('node:http').ServerResponse} response
  */
-function serveStream(kind, file, now, response) {
+function serveStream(kind, file, now, request, response) {
     if (kind === 'movie') {
         const item = VOD_ITEMS.find((v) => file.startsWith(String(v.id)));
         if (!item) {
@@ -746,7 +807,7 @@ function serveStream(kind, file, now, response) {
             response.end('No such movie\n');
             return;
         }
-        sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), response);
+        sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), request, response);
         return;
     }
 
@@ -832,7 +893,7 @@ const server = createServer((request, response) => {
             }
 
             if (path === '/get.php') {
-                response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+                response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'] });
                 response.end(
                     m3uPlaylist(username, password, host, query.get('type') ?? 'm3u_plus', query.get('output') ?? 'ts'),
                 );
@@ -917,7 +978,7 @@ const server = createServer((request, response) => {
             return;
         }
 
-        serveStream(kind, file, now, response);
+        serveStream(kind, file, now, request, response);
         return;
     }
 
@@ -947,7 +1008,13 @@ const server = createServer((request, response) => {
             // expected a playlist.
             'Content-Type': 'text/html; charset=UTF-8',
             Location: `http://${host}/${kind}/play/${token}/${file}`,
-            'Cache-Control': 'no-store',
+            // Deliberately no `Cache-Control`, matching the real panel, and the
+            // omission is not cosmetic. FFmpeg caches redirects keyed on
+            // `Expires` and `Cache-Control`, and a `no-store` here would force
+            // every entry to be skipped, making the fixture immune to
+            // stale-redirect reuse for a reason the panel does not share.
+            'Access-Control-Allow-Origin': '*',
+            Connection: 'close',
         });
         response.end('');
         return;
@@ -955,7 +1022,7 @@ const server = createServer((request, response) => {
 
     const segment = path.match(/^\/segments\/(\d+)\/(.+)$/);
     if (segment) {
-        sendFile(join(MEDIA, segment[1], segment[2]), response);
+        sendFile(join(MEDIA, segment[1], segment[2]), request, response);
         return;
     }
 

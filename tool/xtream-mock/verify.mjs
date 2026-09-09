@@ -270,7 +270,42 @@ async function run() {
     check('and the new token plays', freshPlay.status === 200, String(freshPlay.status));
     await freshPlay.body?.cancel();
 
-    // 13. VOD is where this protocol carries codec metadata.
+    // 13. Byte ranges, which decide seeking, resume and download, and which
+    //     this fixture answered with a chunked 200 until it was measured
+    //     against the real panel. FFmpeg then reads a 3 GB film as an
+    //     unseekable stream, and Media3 seeks by discarding bytes forward.
+    const ranged = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, {
+        headers: { Range: 'bytes=1000-2047' },
+    });
+    const rangedBody = await ranged.arrayBuffer();
+    check('a Range request answers 206', ranged.status === 206, String(ranged.status));
+    check('with the exact slice asked for', rangedBody.byteLength === 1048, `${rangedBody.byteLength} bytes`);
+    const contentRange = ranged.headers.get('content-range') ?? '';
+    check('and a Content-Range naming the total', /^bytes 1000-2047\/\d+$/.test(contentRange), contentRange);
+
+    const whole = await fetch(`${BASE}/movie/demo/demo/20001.mp4`);
+    await whole.body?.cancel();
+    check('an unranged request carries a Content-Length', (whole.headers.get('content-length') ?? '') !== '');
+    // The real panel spells this `0-<total>` rather than `bytes`, so FFmpeg's
+    // prefix match fails and it falls back to Content-Range. A hand-rolled
+    // check for the literal string `bytes` is the code this catches.
+    check(
+        'and the panel-shaped Accept-Ranges',
+        /^0-\d+$/.test(whole.headers.get('accept-ranges') ?? ''),
+        whole.headers.get('accept-ranges') ?? 'absent',
+    );
+
+    // A tail range is how a client reads an MP4's trailing moov atom.
+    const tail = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, { headers: { Range: 'bytes=-512' } });
+    check('a tail range answers 206', tail.status === 206, String(tail.status));
+    check('with 512 bytes', (await tail.arrayBuffer()).byteLength === 512);
+
+    const silly = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, {
+        headers: { Range: 'bytes=999999999-' },
+    });
+    check('an unsatisfiable range answers 416', silly.status === 416, String(silly.status));
+
+    // 14. VOD is where this protocol carries codec metadata.
     const vod = await json(`${API}?username=demo&password=demo&action=get_vod_info&vod_id=20002`);
     check('VOD reports its video codec', vod.info.video.codec_name === 'hevc');
     check('VOD reports its container', vod.movie_data.container_extension === 'mkv');
