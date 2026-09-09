@@ -82,9 +82,18 @@ public class WatchoolsPlayerPlugin: NSObject, FlutterPlugin {
             // A spike affordance, not product surface: proves Flutter composites
             // what mpv drew instead of covering it.
             //
+            // `viewId` is optional so the same call can be made before `play` as
+            // the control run: with no core started, both rects must be still,
+            // and a video rect that moves anyway means the measurement is
+            // reading something other than mpv.
             let args = call.arguments as? [String: Any] ?? [:]
             let path = args["path"] as? String ?? NSTemporaryDirectory() + "window.png"
-            result(SelfCapture.measureMotion(pngPath: path, after: 0.6))
+            let viewId = args["viewId"] as? Int64 ?? (args["viewId"] as? NSNumber)?.int64Value
+            result(SelfCapture.measureMotion(
+                pngPath: path,
+                after: 0.6,
+                view: viewId.flatMap { factory.view(for: $0) }
+            ))
 
         case "stop":
             factory.engine.stop()

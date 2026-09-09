@@ -101,6 +101,16 @@ class _SpikeScreenState extends State<SpikeScreen> {
   /// replaced a fixed delay that was racing the first frame.
   Future<void> _onViewReady(int viewId) async {
     _viewId = viewId;
+
+    // The control, before anything is playing: both rects must be still. A
+    // video rect that moves here would mean the scoped measurement is reading
+    // Flutter's own painting rather than mpv's layer.
+    final Map<Object?, Object?> control = await WatchoolsPlayer.captureSelf(
+      '${Directory.systemTemp.path}/window_control.png',
+      viewId: viewId,
+    );
+    await _write('watchools_player_control.json', control);
+
     await _play();
   }
 
@@ -145,6 +155,7 @@ class _SpikeScreenState extends State<SpikeScreen> {
           final Map<Object?, Object?> motion =
               await WatchoolsPlayer.captureSelf(
                 '${Directory.systemTemp.path}/window.png',
+                viewId: viewId,
               );
           await _write('watchools_player_motion.json', motion);
         }

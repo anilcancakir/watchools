@@ -26,15 +26,30 @@ is the renderer coming up inside the platform view rather than merely a demuxer
 opening a URL. The mock's own log shows segments being fetched continuously
 alongside it.
 
-And from the app capturing its own window twice, 0.6 s apart: **21,648 of
-155,570 sampled bytes changed**. The written PNG shows the Flutter chrome, the
-video inside the platform view with a correct 16:9 letterbox, and a Flutter
-overlay drawn on top of the video. That overlay is the compositing proof: an
-externally drawn `CALayer` with Flutter's own layers above it, which is exactly
-what the base-layer-black bug used to break.
+And MoltenVK's own log, which needs no capture permission and names the class:
 
-The capture also shows the Flutter UI frozen on a stale frame while the video's
-own timecode advances, because `SelfCapture` spins the run loop on the platform
+```
+[mvk-info] Created 3 swapchain images with size (1600, 1056) and contents scale 2.0
+           in layer CAMetalLayer: watchools_player.WatchoolsPlayerView on screen Main Screen.
+```
+
+That is the whole claim in one line: mpv's swapchain is built against **this
+package's platform view layer**, at the backing-store resolution rather than the
+logical one (1600x1056 for an 800x528 view, so `syncDrawableSize` is doing its
+job), and on screen rather than off it.
+
+A window capture measured **21,648 of 155,570 sampled bytes changing** over
+0.6 s, with the written PNG showing Flutter chrome, the video letterboxed inside
+the platform view, and a Flutter overlay on top of it. Treat that as a
+measurement taken once rather than a gate you can re-run: capture entitlement
+follows the **responsible** process, not the app, so the same bundle returns a
+uniform white image of the correct size when launched through LaunchServices
+instead of from an entitled terminal. `SelfCapture` now detects the uniform case
+and reports an error, because it previously read as `changed: 0` with
+`wrotePng: true`, which is indistinguishable from a video that is not playing.
+
+The capture also showed the Flutter UI frozen on a stale frame while the video's
+own timecode advanced, because `SelfCapture` spins the run loop on the platform
 thread. That is a wart in the affordance rather than in the architecture, and it
 happens to demonstrate the point: mpv drives its layer independently of
 Flutter's paint loop.
@@ -66,10 +81,13 @@ ask the API for a fresh URL and `loadfile` it.
   The main app already has it; a freshly generated example does not.
 - **A sandboxed app cannot write to `/tmp`.** The first attempt at the state
   file produced nothing and said nothing. It goes in the container.
-- **An app may capture its own window without Screen Recording permission, and
-  cannot capture another app's.** A helper binary outside the process found the
-  window, printed its size, and then got nil from the capture with no error, so
-  the capture had to move inside the plugin.
+- **Window capture entitlement follows the responsible process, not the app.** A
+  helper binary outside the process found the window, printed its size, and then
+  got nil from the capture with no error, so the capture moved inside the
+  plugin. That was written up as "an app may always capture its own window",
+  which is wrong: launched through LaunchServices the same bundle gets a uniform
+  white image of the correct size, and launched from an entitled terminal it
+  gets the real one. Both cases return success.
 - **MPVKit resolves through SPM into a Flutter plugin with no Podfile.** Flutter
   3.47 has Swift Package Manager on by default and this repository is already
   migrated, so the dependency is three lines in `Package.swift`.

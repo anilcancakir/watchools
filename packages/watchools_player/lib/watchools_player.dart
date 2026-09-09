@@ -71,15 +71,28 @@ class WatchoolsPlayer {
     });
   }
 
-  /// Captures the app's own window twice and reports how much moved.
+  /// Captures the app's own window twice and reports how much moved, inside the
+  /// platform view and in the Flutter chrome above it.
   ///
-  /// A spike affordance. An app may capture its own window without Screen
-  /// Recording permission, while a helper outside the process cannot, which is
-  /// why this has to live behind the channel to be usable at all.
-  static Future<Map<Object?, Object?>> captureSelf(String path) async {
+  /// A spike affordance, and a conditional one. Capture entitlement follows the
+  /// **responsible** process rather than the app, so the same bundle measures
+  /// real motion when launched from a terminal that holds Screen Recording
+  /// permission and returns a uniform white image when launched through
+  /// LaunchServices. The native side detects the uniform case and reports it as
+  /// an `error` key, because otherwise it reads as zero motion, which is
+  /// indistinguishable from a video that is not playing.
+  ///
+  /// Pass [viewId] for the scoped numbers. Call it once before [play] as the
+  /// control: with no core started nothing should move, and a video rect that
+  /// moves anyway means the measurement is reading something other than mpv.
+  static Future<Map<Object?, Object?>> captureSelf(
+    String path, {
+    int? viewId,
+  }) async {
     final Map<Object?, Object?>? raw = await _channel
         .invokeMethod<Map<Object?, Object?>>('captureSelf', <String, Object?>{
           'path': path,
+          'viewId': viewId,
         });
 
     return raw ?? const <Object?, Object?>{};
