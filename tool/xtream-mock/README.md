@@ -49,6 +49,48 @@ Three VOD titles (20001 to 20003) exist for `container_extension` and for
 that, so the empty case is real, but the other three return populated series
 lists: this is a stub with a citation attached rather than a modelled state.
 
+## Known defect: the HLS loop jumps its timestamps backwards
+
+**The four live HLS channels cannot be played past the first loop wrap, and
+usually not at all.** Found by the player plugin's own tick, after four wrong
+guesses, so the diagnosis is worth keeping.
+
+The encoded segments carry continuous timestamps within one pass:
+
+| Segment | first DTS | last DTS |
+|---|---|---|
+| `seg-000.ts` | 1.421 | 5.381 |
+| `seg-001.ts` | 5.421 | 9.381 |
+| `seg-002.ts` | 9.421 | 13.381 |
+| `seg-003.ts` | 13.421 | 17.381 |
+
+The loop then wraps to `seg-000` at 1.421, a **16 second jump backwards**, which
+libmpv reports as `mpegts: DTS 127920 < 1564320 out of order` (those are exactly
+1.421 and 17.381 in 90 kHz units) and after which its playback clock does not
+advance. `#EXT-X-DISCONTINUITY` is emitted at the wrap and does not save it.
+
+Because a three segment window slides over a four segment loop, most start
+times have the wrap inside the very first window, so playback commonly freezes
+at `time-pos` 0.08 with the buffer full, `underrun` false and `demuxerIdle`
+true, having never advanced at all.
+
+What this does **not** break, all verified: the server serves correctly (one
+90 s run answered 52 playlist reloads and 23 segment fetches with consecutive
+sequence numbers, no gap and no repeat), the client fetches correctly, and every
+codec probe passes because `ffprobe` reads the streams rather than playing them.
+The bytes are right; the timestamps are not.
+
+Use the **RAW TS** channels for anything that needs playback to advance. Channel
+02 is served by `streamEndless`, has no playlist and no wrap, and was measured
+clean over 39 s with `time-pos` advancing monotonically and `underrun` false
+throughout.
+
+Fixing it properly means timestamps that continue across the wrap, which is
+either a per-request remux (too heavy for a fixture) or generating the HLS
+segments from a continuous source the way `streamEndless` already does. A longer
+loop is **not** a fix: `SEGMENT_COUNT` at 16 was tried and the freeze survived,
+because a wrap that is rarer is still a wrap.
+
 ## Accounts
 
 | Credentials | What the panel does |
