@@ -26,6 +26,8 @@ import {
     LIVE_CATEGORIES,
     SEGMENT_COUNT,
     SEGMENT_SECONDS,
+    SHORT_TOKEN_SECONDS,
+    TOKEN_SECONDS,
     UNKNOWN_ACCOUNT,
     VOD_CATEGORIES,
     VOD_ITEMS,
@@ -64,6 +66,58 @@ const CONTENT_TYPES = {
  */
 function resolveAccount(username, password) {
     return ACCOUNTS[`${username}:${password}`] ?? UNKNOWN_ACCOUNT;
+}
+
+/**
+ * Mints an opaque stream token, the way the real panel's load balancer does.
+ *
+ * Not signed and not secret: this is a fixture, and the only property that
+ * matters is that it is opaque to the client and that it expires. Base64url so
+ * it survives a URL path, which is where the real one lives.
+ *
+ * @param {string} username
+ * @param {string} password
+ * @param {number} now
+ * @returns {string}
+ */
+function mintToken(username, password, now) {
+    const account = resolveAccount(username, password);
+    const ttl = account.kind === 'expiring' ? SHORT_TOKEN_SECONDS : TOKEN_SECONDS;
+
+    return Buffer.from(`${username}:${password}:${now + ttl}`, 'utf8').toString('base64url');
+}
+
+/**
+ * @typedef {object} TokenState
+ * @property {string} username
+ * @property {string} password
+ * @property {boolean} expired
+ */
+
+/**
+ * Reads a stream token back. A token that does not decode is treated as expired
+ * rather than as a distinct case, because from the client's side both mean the
+ * same thing: go back to the API and get a fresh URL.
+ *
+ * @param {string} token
+ * @param {number} now
+ * @returns {TokenState|null} Null when the token is not ours at all.
+ */
+function readToken(token, now) {
+    let decoded = '';
+    try {
+        decoded = Buffer.from(token, 'base64url').toString('utf8');
+    } catch {
+        return null;
+    }
+
+    const parts = decoded.split(':');
+    if (parts.length !== 3) return null;
+
+    const expiry = Number(parts[2]);
+    if (!Number.isFinite(expiry)) return null;
+
+    return { username: parts[0], password: parts[1], expired: now >= expiry };
 }
 
 /**
@@ -614,7 +668,9 @@ function handleFault(account, response) {
  * @returns {boolean} True when the request has been refused and must not continue.
  */
 function refuseStream(account, response) {
-    if (account.kind === 'active' || account.kind === 'lifetime') {
+    // `expiring` is a playable account: its fault arrives later, when the
+    // stream token it was given lapses.
+    if (account.kind === 'active' || account.kind === 'lifetime' || account.kind === 'expiring') {
         return false;
     }
 
@@ -666,6 +722,60 @@ function answerTimeshift(account, channelId, duration, start, response) {
 
     response.setHeader('X-Timeshift-Duration', duration);
     response.setHeader('X-Timeshift-Start', start);
+    streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
+}
+
+/**
+ * Serves the media itself, once a request has been through the redirect and its
+ * token has been accepted. Reached only from the tokenised path, so nothing
+ * here has to think about credentials or expiry.
+ *
+ * @param {string} kind `live`, `movie` or `series`.
+ * @param {string} file
+ * @param {number} now
+ * @param {import('node:http').ServerResponse} response
+ */
+function serveStream(kind, file, now, response) {
+    if (kind === 'movie') {
+        const item = VOD_ITEMS.find((v) => file.startsWith(String(v.id)));
+        if (!item) {
+            response.writeHead(404, { 'Content-Type': 'text/plain' });
+            response.end('No such movie\n');
+            return;
+        }
+        sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), response);
+        return;
+    }
+
+    // Everything below is live: either the channel's playlist or its
+    // progressive stream. Segments are served from /segments/<id>/.
+    const channel = CHANNELS.find((c) => String(c.id) === file.split('.')[0]);
+
+    if (!channel) {
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end('No such channel\n');
+        return;
+    }
+
+    const extension = file.split('.').pop() ?? '';
+    if (!channel.formats.includes(extension)) {
+        // AV1 has no MPEG-TS mapping, so channel 07 genuinely cannot serve a
+        // `.ts`. Saying so beats an empty body a client reads as a decode
+        // failure in its own player.
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end(
+            `${channel.name} serves ${channel.formats.join(', ')} only.\n` +
+                `AV1 has no MPEG-TS mapping; use the .m3u8 form.\n`,
+        );
+        return;
+    }
+
+    if (extension === 'm3u8') {
+        response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'], 'Cache-Control': 'no-store' });
+        response.end(livePlaylist(channel, now));
+        return;
+    }
+
     streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
 }
 
@@ -756,7 +866,49 @@ const server = createServer((request, response) => {
         return;
     }
 
+    // The tokenised path a redirect lands on. Everything past the redirect
+    // reaches the stream handler through here, so token expiry is checked once.
+    const played = path.match(/^\/(live|movie|series)\/play\/([^/]+)\/(.+)$/);
+    if (played) {
+        const [, kind, token, file] = played;
+        const state = readToken(token, now);
+
+        if (!state) {
+            response.writeHead(404, { 'Content-Type': 'text/plain' });
+            response.end('Not a stream token\n');
+            return;
+        }
+
+        // A lapsed token is a 403 with a short body, which is the shape that
+        // matters: mpv sets `reconnect=1` but leaves `reconnect_on_http_error`
+        // empty, so FFmpeg refuses to reconnect on any 4xx and playback simply
+        // ends. A client wanting to survive this has to pass
+        // `reconnect_on_http_error=4xx,5xx` or go back to the API for a fresh
+        // URL. The real panel does this after about forty minutes.
+        if (state.expired) {
+            console.log(`  token expired for ${kind}/${file}`);
+            response.writeHead(403, { 'Content-Type': 'text/plain' });
+            response.end('Token expired\n');
+            return;
+        }
+
+        // The streaming host checks the account again rather than trusting the
+        // token, because a subscription can lapse between the redirect and the
+        // play, and because the token is not signed. A real load balancer does
+        // the same for the same reason.
+        if (refuseStream(resolveAccount(state.username, state.password), response)) {
+            return;
+        }
+
+        serveStream(kind, file, now, response);
+        return;
+    }
+
     // Stream URLs: /live/:user/:pass/:file, /movie/..., /series/...
+    // The real panel is a load balancer and never serves from here: it answers
+    // 302 to a tokenised path, with `text/html` on the redirect itself. Without
+    // that hop nothing in this repository exercises redirect handling, token
+    // expiry, or a client that follows a redirect to a different origin.
     const stream = path.match(/^\/(live|movie|series)\/([^/]+)\/([^/]+)\/(.+)$/);
     if (stream) {
         const [, kind, username, password, file] = stream;
@@ -764,52 +916,23 @@ const server = createServer((request, response) => {
 
         // A dead subscription still lists its catalogue on a real panel and
         // only fails at the stream. Reproducing that is the point: it is the
-        // shape where the app looks healthy and nothing plays.
+        // shape where the app looks healthy and nothing plays. Checked before
+        // the redirect, because a real panel refuses at the first hop.
         if (refuseStream(account, response)) {
             return;
         }
 
-        if (kind === 'movie') {
-            const item = VOD_ITEMS.find((v) => file.startsWith(String(v.id)));
-            if (!item) {
-                response.writeHead(404, { 'Content-Type': 'text/plain' });
-                response.end('No such movie\n');
-                return;
-            }
-            sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), response);
-            return;
-        }
-
-        // Everything below is live: either the channel's playlist or its
-        // progressive stream. Segments are served from /segments/<id>/.
-        const channel = CHANNELS.find((c) => String(c.id) === file.split('.')[0]);
-
-        if (!channel) {
-            response.writeHead(404, { 'Content-Type': 'text/plain' });
-            response.end('No such channel\n');
-            return;
-        }
-
-        const extension = file.split('.').pop() ?? '';
-        if (!channel.formats.includes(extension)) {
-            // AV1 has no MPEG-TS mapping, so channel 07 genuinely cannot serve
-            // a `.ts`. Saying so beats an empty body a client reads as a decode
-            // failure in its own player.
-            response.writeHead(404, { 'Content-Type': 'text/plain' });
-            response.end(
-                `${channel.name} serves ${channel.formats.join(', ')} only.\n` +
-                    `AV1 has no MPEG-TS mapping; use the .m3u8 form.\n`,
-            );
-            return;
-        }
-
-        if (extension === 'm3u8') {
-            response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'], 'Cache-Control': 'no-store' });
-            response.end(livePlaylist(channel, now));
-            return;
-        }
-
-        streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
+        const token = mintToken(username, password, now);
+        response.writeHead(302, {
+            // `text/html` on the redirect is what the real panel sends, and it
+            // is worth reproducing: a client that sniffs the content type of
+            // the first response rather than the last sees HTML where it
+            // expected a playlist.
+            'Content-Type': 'text/html; charset=UTF-8',
+            Location: `http://${host}/${kind}/play/${token}/${file}`,
+            'Cache-Control': 'no-store',
+        });
+        response.end('');
         return;
     }
 

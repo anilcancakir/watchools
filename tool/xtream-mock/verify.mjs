@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNELS } from './catalogue.mjs';
+import { CHANNELS, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = 3399;
@@ -221,7 +221,52 @@ async function run() {
     const noArchive = await fetch(`${BASE}/timeshift/demo/demo/60/2026-09-09:01-30/10003.ts`);
     check('a channel without an archive refuses catch-up', noArchive.status === 404);
 
-    // 11. VOD is where this protocol carries codec metadata.
+    // 11. The redirect hop. The real panel is a load balancer and never serves
+    //     a stream from the URL the client built: it answers 302 to a tokenised
+    //     path. Without this nothing here exercises redirect handling at all.
+    const hop = await fetch(`${BASE}/live/demo/demo/10001.m3u8`, { redirect: 'manual' });
+    check('a stream URL answers 302', hop.status === 302, String(hop.status));
+    const location = hop.headers.get('location') ?? '';
+    check('the redirect carries a tokenised path', /\/live\/play\/[A-Za-z0-9_-]+\/10001\.m3u8$/.test(location), location);
+    // Worth pinning: a client that reads the content type of the FIRST response
+    // rather than the last sees HTML where it expected a playlist.
+    check('the redirect itself is text/html', (hop.headers.get('content-type') ?? '').startsWith('text/html'));
+
+    const followed = await (await fetch(`${BASE}/live/demo/demo/10001.m3u8`)).text();
+    check('following the redirect reaches the playlist', followed.startsWith('#EXTM3U'), followed.slice(0, 30));
+
+    const badToken = await fetch(`${BASE}/live/play/not-a-real-token/10001.m3u8`);
+    check('an unreadable token is 404, not 403', badToken.status === 404, String(badToken.status));
+
+    // 12. Token expiry mid-playback, which is the case FFmpeg's defaults get
+    //     wrong: mpv sets `reconnect=1` but leaves `reconnect_on_http_error`
+    //     empty, so a 403 ends playback instead of reconnecting.
+    const shortHop = await fetch(`${BASE}/live/expiring/expiring/10001.m3u8`, { redirect: 'manual' });
+    const shortUrl = shortHop.headers.get('location') ?? '';
+    check('the expiring account also gets a token', shortUrl.includes('/live/play/'), shortUrl);
+
+    const beforeExpiry = await fetch(shortUrl);
+    check('its token works at first', beforeExpiry.status === 200, String(beforeExpiry.status));
+    await beforeExpiry.body?.cancel();
+
+    // The account's TTL is SHORT_TOKEN_SECONDS; wait past it.
+    await new Promise((resolve) => setTimeout(resolve, (SHORT_TOKEN_SECONDS + 2) * 1000));
+
+    const afterExpiry = await fetch(shortUrl);
+    const afterBody = await afterExpiry.text();
+    check('a lapsed token answers 403', afterExpiry.status === 403, String(afterExpiry.status));
+    check('and says so in a short body', afterBody.trim() === 'Token expired', afterBody.slice(0, 40));
+
+    // The client's recovery is to go back to the API for a fresh URL, so that
+    // has to work while the old token is dead.
+    const reminted = await fetch(`${BASE}/live/expiring/expiring/10001.m3u8`, { redirect: 'manual' });
+    const freshUrl = reminted.headers.get('location') ?? '';
+    check('a fresh redirect mints a new token', freshUrl !== shortUrl, 'the token did not change');
+    const freshPlay = await fetch(freshUrl);
+    check('and the new token plays', freshPlay.status === 200, String(freshPlay.status));
+    await freshPlay.body?.cancel();
+
+    // 13. VOD is where this protocol carries codec metadata.
     const vod = await json(`${API}?username=demo&password=demo&action=get_vod_info&vod_id=20002`);
     check('VOD reports its video codec', vod.info.video.codec_name === 'hevc');
     check('VOD reports its container', vod.movie_data.container_extension === 'mkv');
