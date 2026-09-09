@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+export 'src/stall_detector.dart';
+
 /// A spike, not the player.
 ///
 /// It answers one question: does libmpv render into a `CAMetalLayer` that
