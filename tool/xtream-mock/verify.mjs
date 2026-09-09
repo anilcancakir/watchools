@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNELS } from './catalogue.mjs';
+import { CHANNELS, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = 3399;
@@ -221,7 +221,91 @@ async function run() {
     const noArchive = await fetch(`${BASE}/timeshift/demo/demo/60/2026-09-09:01-30/10003.ts`);
     check('a channel without an archive refuses catch-up', noArchive.status === 404);
 
-    // 11. VOD is where this protocol carries codec metadata.
+    // 11. The redirect hop. The real panel is a load balancer and never serves
+    //     a stream from the URL the client built: it answers 302 to a tokenised
+    //     path. Without this nothing here exercises redirect handling at all.
+    const hop = await fetch(`${BASE}/live/demo/demo/10001.m3u8`, { redirect: 'manual' });
+    check('a stream URL answers 302', hop.status === 302, String(hop.status));
+    const location = hop.headers.get('location') ?? '';
+    check('the redirect carries a tokenised path', /\/live\/play\/[A-Za-z0-9_-]+\/10001\.m3u8$/.test(location), location);
+    // Worth pinning: a client that reads the content type of the FIRST response
+    // rather than the last sees HTML where it expected a playlist.
+    check('the redirect itself is text/html', (hop.headers.get('content-type') ?? '').startsWith('text/html'));
+
+    const followed = await (await fetch(`${BASE}/live/demo/demo/10001.m3u8`)).text();
+    check('following the redirect reaches the playlist', followed.startsWith('#EXTM3U'), followed.slice(0, 30));
+
+    const badToken = await fetch(`${BASE}/live/play/not-a-real-token/10001.m3u8`);
+    check('an unreadable token is 404, not 403', badToken.status === 404, String(badToken.status));
+
+    // 12. Token expiry mid-playback, which is the case FFmpeg's defaults get
+    //     wrong: mpv sets `reconnect=1` but leaves `reconnect_on_http_error`
+    //     empty, so a 403 ends playback instead of reconnecting.
+    const shortHop = await fetch(`${BASE}/live/expiring/expiring/10001.m3u8`, { redirect: 'manual' });
+    const shortUrl = shortHop.headers.get('location') ?? '';
+    check('the expiring account also gets a token', shortUrl.includes('/live/play/'), shortUrl);
+
+    const beforeExpiry = await fetch(shortUrl);
+    check('its token works at first', beforeExpiry.status === 200, String(beforeExpiry.status));
+    await beforeExpiry.body?.cancel();
+
+    // The account's TTL is SHORT_TOKEN_SECONDS; wait past it.
+    await new Promise((resolve) => setTimeout(resolve, (SHORT_TOKEN_SECONDS + 2) * 1000));
+
+    const afterExpiry = await fetch(shortUrl);
+    const afterBody = await afterExpiry.text();
+    // 509, measured on the real panel rather than assumed. It is a 5xx, so a
+    // client reads "server error, retry" where the only action that helps is
+    // re-resolving through the API, and there is no body to sniff either.
+    check('a lapsed token answers 509', afterExpiry.status === 509, String(afterExpiry.status));
+    check('and its body is empty', afterBody.length === 0, `${afterBody.length} bytes`);
+    check('and it closes the connection', (afterExpiry.headers.get('connection') ?? '') === 'close');
+
+    // The client's recovery is to go back to the API for a fresh URL, so that
+    // has to work while the old token is dead.
+    const reminted = await fetch(`${BASE}/live/expiring/expiring/10001.m3u8`, { redirect: 'manual' });
+    const freshUrl = reminted.headers.get('location') ?? '';
+    check('a fresh redirect mints a new token', freshUrl !== shortUrl, 'the token did not change');
+    const freshPlay = await fetch(freshUrl);
+    check('and the new token plays', freshPlay.status === 200, String(freshPlay.status));
+    await freshPlay.body?.cancel();
+
+    // 13. Byte ranges, which decide seeking, resume and download, and which
+    //     this fixture answered with a chunked 200 until it was measured
+    //     against the real panel. FFmpeg then reads a 3 GB film as an
+    //     unseekable stream, and Media3 seeks by discarding bytes forward.
+    const ranged = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, {
+        headers: { Range: 'bytes=1000-2047' },
+    });
+    const rangedBody = await ranged.arrayBuffer();
+    check('a Range request answers 206', ranged.status === 206, String(ranged.status));
+    check('with the exact slice asked for', rangedBody.byteLength === 1048, `${rangedBody.byteLength} bytes`);
+    const contentRange = ranged.headers.get('content-range') ?? '';
+    check('and a Content-Range naming the total', /^bytes 1000-2047\/\d+$/.test(contentRange), contentRange);
+
+    const whole = await fetch(`${BASE}/movie/demo/demo/20001.mp4`);
+    await whole.body?.cancel();
+    check('an unranged request carries a Content-Length', (whole.headers.get('content-length') ?? '') !== '');
+    // The real panel spells this `0-<total>` rather than `bytes`, so FFmpeg's
+    // prefix match fails and it falls back to Content-Range. A hand-rolled
+    // check for the literal string `bytes` is the code this catches.
+    check(
+        'and the panel-shaped Accept-Ranges',
+        /^0-\d+$/.test(whole.headers.get('accept-ranges') ?? ''),
+        whole.headers.get('accept-ranges') ?? 'absent',
+    );
+
+    // A tail range is how a client reads an MP4's trailing moov atom.
+    const tail = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, { headers: { Range: 'bytes=-512' } });
+    check('a tail range answers 206', tail.status === 206, String(tail.status));
+    check('with 512 bytes', (await tail.arrayBuffer()).byteLength === 512);
+
+    const silly = await fetch(`${BASE}/movie/demo/demo/20001.mp4`, {
+        headers: { Range: 'bytes=999999999-' },
+    });
+    check('an unsatisfiable range answers 416', silly.status === 416, String(silly.status));
+
+    // 14. VOD is where this protocol carries codec metadata.
     const vod = await json(`${API}?username=demo&password=demo&action=get_vod_info&vod_id=20002`);
     check('VOD reports its video codec', vod.info.video.codec_name === 'hevc');
     check('VOD reports its container', vod.movie_data.container_extension === 'mkv');
@@ -233,10 +317,16 @@ const panel = spawn('node', [join(HERE, 'server.mjs')], {
 });
 
 // The panel exits non-zero when media/ is missing, which is the common first
-// run. Waiting on a fixed delay would report that as a wall of failed checks.
+// run, and when its port is taken, which is the common second one. Naming only
+// the first was wrong: a leftover server from an interrupted run reported itself
+// as a missing encode. The child's stderr is inherited, so it has already said
+// which it was; do not guess over the top of it.
 panel.on('exit', (code) => {
     if (code !== 0) {
-        console.error('The panel could not start. Run: node tool/xtream-mock/encode.mjs');
+        console.error(`\nThe panel exited with code ${code} before the checks could run.`);
+        console.error('Its own error is above. Two usual causes: media/ is missing');
+        console.error(`(run node tool/xtream-mock/encode.mjs) or port ${PORT} is still held`);
+        console.error('by an earlier run (lsof -ti :' + PORT + ' | xargs kill).');
         process.exit(1);
     }
 });

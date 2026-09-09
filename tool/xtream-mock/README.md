@@ -57,6 +57,7 @@ lists: this is a stub with a citation attached rather than a modelled state.
 | `expired:expired` | `auth: 1`, `status: "Expired"`, `exp_date` in the future. |
 | `lapsed:lapsed` | `auth: 1`, `status: "Active"`, `exp_date` in the past. |
 | `lifetime:lifetime` | `auth: 1`, `status: "Active"`, `exp_date: null`. |
+| `expiring:expiring` | Plays, then its stream token lapses after 15 s and the stream 403s mid-playback. |
 | `banned:banned` | `auth: 1`, `status: "Banned"`. |
 | `disabled:disabled` | `auth: 1`, `status: "Disabled"`. |
 | `throttled:throttled` | HTTP 200 carrying the bare word `blocked`. Not JSON. |
