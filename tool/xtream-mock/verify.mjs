@@ -4,7 +4,9 @@
  *
  *   node tool/xtream-mock/verify.mjs
  *
- * Starts a panel on its own port, asserts, exits non-zero on the first failure.
+ * Starts a panel on its own port, runs every case, and exits non-zero if any of
+ * them failed.
+ *
  * The load-bearing case is the codec one: it probes every channel through its
  * live HLS playlist over real HTTP and fails unless FFmpeg reports the pair the
  * channel's name claims. A mock whose channel 05 quietly serves AC-3 instead of
@@ -13,6 +15,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHANNELS } from './catalogue.mjs';
@@ -65,12 +68,14 @@ async function json(url) {
  */
 function probe(url) {
     return new Promise((resolve) => {
-        const child = spawn('ffprobe', [
-            '-v', 'error',
-            '-show_entries', 'stream=codec_name',
-            '-of', 'csv=p=0',
-            url,
-        ]);
+        // stderr is discarded rather than piped: nothing drains it here, so a
+        // verbose ffprobe failure would fill the pipe buffer and hang the run
+        // instead of failing it.
+        const child = spawn(
+            'ffprobe',
+            ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', url],
+            { stdio: ['ignore', 'pipe', 'ignore'] },
+        );
 
         let out = '';
         child.stdout.on('data', (chunk) => {
@@ -100,7 +105,20 @@ async function run() {
     check('expired hides behind a future date', Number(expired.exp_date) > now);
     check('lapsed keeps status Active', lapsed.status === 'Active');
     check('lapsed only shows in the date', Number(lapsed.exp_date) < now);
-    check('unknown credentials answer auth 0', (await json(`${API}?username=x&password=y`)).user_info.auth === 0);
+
+    // A lifetime account is the third expiry state, and the only one the
+    // capture corpus proves outright. A date comparison without a null check
+    // reads it as expired, so `Number(null)` being 0 is the trap.
+    const lifetime = (await json(`${API}?username=lifetime&password=lifetime`)).user_info;
+    check('lifetime carries a null exp_date', lifetime.exp_date === null, JSON.stringify(lifetime.exp_date));
+    check('lifetime is otherwise active', lifetime.auth === 1 && lifetime.status === 'Active');
+
+    // The rejected shape is one key. A Dart model with a non-nullable status or
+    // exp_date has to survive it, and padding the shape out here would hide
+    // that until a provider produced it.
+    const rejected = (await json(`${API}?username=x&password=y`)).user_info;
+    check('unknown credentials answer auth 0', rejected.auth === 0);
+    check('the rejected shape carries only auth', Object.keys(rejected).length === 1, Object.keys(rejected).join());
 
     // 3. Throttling has no status code and no JSON field: a client keying on
     //    the status code sees a success here.
@@ -109,19 +127,44 @@ async function run() {
     check('throttled answers HTTP 200', throttled.status === 200, String(throttled.status));
     check('throttled body is not JSON', body.trim() === 'blocked', body.slice(0, 40));
 
-    // 4. A dead account still lists its catalogue and only fails at the stream.
+    // 4. A dead account still lists its catalogue and only fails at the stream,
+    //    and the refusal is HTTP 200 with a short text body rather than a
+    //    status code. This mock's first answer was a 403, which was backwards:
+    //    a client keying on the status code has to see success here and decide
+    //    from the bytes, which is the lesson.
     const stale = await json(`${API}?username=expired&password=expired&action=get_live_streams`);
     check('a dead account still lists channels', Array.isArray(stale) && stale.length === CHANNELS.length);
     const denied = await fetch(`${BASE}/live/expired/expired/10001.m3u8`);
-    check('a dead account cannot stream', denied.status === 403, String(denied.status));
+    const deniedBody = await denied.text();
+    check('a stream refusal is HTTP 200, not a status code', denied.status === 200, String(denied.status));
+    check('a stream refusal names the status in the body', deniedBody.trim() === 'Expired', deniedBody.slice(0, 40));
+    const blockedStream = await fetch(`${BASE}/live/throttled/throttled/10001.m3u8`);
+    check(
+        'a throttled stream answers 200 and blocked',
+        blockedStream.status === 200 && (await blockedStream.text()).trim() === 'blocked',
+    );
+    // The account exists to reproduce a provider that never answers, so the
+    // stream is the one surface it must not answer on.
+    const hung = await fetch(`${BASE}/live/hang/hang/10001.m3u8`, {
+        signal: AbortSignal.timeout(1200),
+    }).catch(() => null);
+    check('a hanging provider never answers a stream', hung === null);
 
-    // 5. The catalogue's own drift.
+    // 5. Both playlist surfaces authenticate before they answer. Unguarded they
+    //    handed the catalogue to a wrong password, so the app showed a working
+    //    provider whose every channel then failed.
+    const stolenM3u = await (await fetch(`${BASE}/get.php?username=nope&password=wrong`)).text();
+    check('get.php refuses unknown credentials', !stolenM3u.includes('EXTINF'), stolenM3u.slice(0, 40));
+    const stolenGuide = await (await fetch(`${BASE}/xmltv.php?username=nope&password=wrong`)).text();
+    check('xmltv.php refuses unknown credentials', !stolenGuide.includes('<channel'), stolenGuide.slice(0, 40));
+
+    // 6. The catalogue's own drift.
     const live = await json(`${API}?username=demo&password=demo&action=get_live_streams`);
     check('category_id is a string', typeof live[0].category_id === 'string');
     check('tv_archive is an integer', typeof live[0].tv_archive === 'number');
     check('one channel has a null epg id', live.some((/** @type {any} */ e) => e.epg_channel_id === null));
 
-    // 6. EPG is base64 in JSON and plain text in XMLTV.
+    // 7. EPG is base64 in JSON and plain text in XMLTV.
     const epg = await json(`${API}?username=demo&password=demo&action=get_short_epg&stream_id=10001&limit=2`);
     const title = Buffer.from(epg.epg_listings[0].title, 'base64').toString('utf8');
     check('EPG titles are base64', title.includes('H.264'), title);
@@ -129,7 +172,29 @@ async function run() {
     check('XMLTV titles are plain text', guide.includes('<title lang="tr">01 H.264'));
     check('XMLTV keeps the offset space', /start="\d{14} \+0300"/.test(guide));
 
-    // 7. The claim the whole tool exists for.
+    // The two EPG surfaces have to agree about the channel with no guide. They
+    // did not: the JSON one returned a full schedule for channel 06 while the
+    // XMLTV one had never heard of it, and the JSON one is read first.
+    const noGuide = await json(`${API}?username=demo&password=demo&action=get_short_epg&stream_id=10006`);
+    check('a channel with no epg id has no listings', noGuide.epg_listings.length === 0);
+    check('and XMLTV agrees', !guide.includes('06 MPEG-2'));
+
+    // The declared segment durations have to match what FFmpeg produced.
+    // Hardcoding 4.000 under-declared the 4.120 s final segment on two of eight
+    // channels, drifting about 27 s an hour and reading as a codec-specific
+    // player bug.
+    const playlist = await (await fetch(`${BASE}/live/demo/demo/10005.m3u8`)).text();
+    const source = readFileSync(join(HERE, 'media', '10005', 'source.m3u8'), 'utf8');
+    const declared = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].map((m) => Number.parseFloat(m[1]));
+    const encoded = [...source.matchAll(/#EXTINF:([\d.]+)/g)].map((m) => Number.parseFloat(m[1]));
+    check(
+        'declared segment durations match the encode',
+        declared.every((d) => encoded.includes(d)),
+        `declared ${declared.join()} against encoded ${[...new Set(encoded)].join()}`,
+    );
+    check('the playlist carries a discontinuity sequence', /#EXT-X-DISCONTINUITY-SEQUENCE:\d+/.test(playlist));
+
+    // 8. The claim the whole tool exists for.
     for (const channel of CHANNELS) {
         const found = await probe(`${BASE}/live/demo/demo/${channel.id}.m3u8`);
         const want = [PROBED_AS[channel.video], PROBED_AS[channel.audio]];
@@ -140,12 +205,12 @@ async function run() {
         );
     }
 
-    // 8. AV1 has no MPEG-TS mapping, and the mock says so rather than serving
+    // 9. AV1 has no MPEG-TS mapping, and the mock says so rather than serving
     //    an empty body the client blames its own player for.
     const av1 = await fetch(`${BASE}/live/demo/demo/10007.ts`);
     check('AV1 refuses .ts with a reason', av1.status === 404 && (await av1.text()).includes('MPEG-TS'));
 
-    // 9. Catch-up: both conventions parse, and a channel without an archive
+    // 10. Catch-up: both conventions parse, and a channel without an archive
     //    fails loudly instead of serving the live edge.
     const shift = await fetch(`${BASE}/timeshift/demo/demo/60/2026-09-09:01-30/10001.ts`);
     check('timeshift echoes the duration', shift.headers.get('x-timeshift-duration') === '60');
@@ -156,7 +221,7 @@ async function run() {
     const noArchive = await fetch(`${BASE}/timeshift/demo/demo/60/2026-09-09:01-30/10003.ts`);
     check('a channel without an archive refuses catch-up', noArchive.status === 404);
 
-    // 10. VOD is where this protocol carries codec metadata.
+    // 11. VOD is where this protocol carries codec metadata.
     const vod = await json(`${API}?username=demo&password=demo&action=get_vod_info&vod_id=20002`);
     check('VOD reports its video codec', vod.info.video.codec_name === 'hevc');
     check('VOD reports its container', vod.movie_data.container_extension === 'mkv');
