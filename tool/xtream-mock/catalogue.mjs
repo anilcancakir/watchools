@@ -19,8 +19,43 @@
 /** Seconds a single HLS segment covers. Fixed so the live window needs no playlist parsing. */
 export const SEGMENT_SECONDS = 4;
 
-/** Segments `encode.mjs` writes per channel. The loop is SEGMENT_COUNT * SEGMENT_SECONDS long. */
-export const SEGMENT_COUNT = 4;
+/** Segments the single encode covers, and therefore the master's length. */
+export const SOURCE_SEGMENTS = 4;
+
+/** Seconds of real encoded content per channel, which is also every VOD sample's duration. */
+export const SOURCE_SECONDS = SOURCE_SEGMENTS * SEGMENT_SECONDS;
+
+/**
+ * How many times the master is looped when it is cut into segments.
+ *
+ * Not a knob. It exists because the segments have to carry **continuous
+ * timestamps**, and looping at the remux is what produces them: FFmpeg's
+ * `-stream_loop` with `-c copy` advances the timestamps across each pass, so
+ * segment 3 ends at 17.381 and segment 4 begins at 17.442.
+ *
+ * Cutting four segments and letting the server serve them cyclically does not
+ * work, and it took the player plugin's tick to see why: the wrap jumps the DTS
+ * sixteen seconds **backwards**, libmpv reports
+ * `mpegts: DTS 127920 < 1564320 out of order`, and its playback clock never
+ * advances again. With a three segment window over a four segment loop, most
+ * start times had the wrap inside the very first window, so channels commonly
+ * froze at `time-pos` 0.08 having never played at all. Every other check
+ * passed, because the bytes were always right and only the timestamps were not.
+ *
+ * Eight passes is two minutes, which is long enough that a measurement never
+ * meets the one remaining wrap, at about 23 MB per channel.
+ */
+export const LOOP_PASSES = 8;
+
+/**
+ * Segments a channel is expected to hold, for the encoder to aim at.
+ *
+ * Nominal because it is not exact: `-hls_time` cuts at keyframes and a loop
+ * pass boundary need not land on one, so channel 05 comes out at 25 rather
+ * than 32. Nothing may key on this at runtime; the server reads each channel
+ * real count out of the playlist FFmpeg wrote.
+ */
+export const NOMINAL_SEGMENT_COUNT = SOURCE_SEGMENTS * LOOP_PASSES;
 
 /**
  * Seconds a stream token stays valid for an ordinary account.

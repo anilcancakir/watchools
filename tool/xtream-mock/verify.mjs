@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNELS, SEGMENT_COUNT, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
+import { CHANNELS, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = 3399;
@@ -187,9 +187,14 @@ async function run() {
     const source = readFileSync(join(HERE, 'media', '10005', 'source.m3u8'), 'utf8');
     const declared = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].map((m) => Number.parseFloat(m[1]));
     const encoded = [...source.matchAll(/#EXTINF:([\d.]+)/g)].map((m) => Number.parseFloat(m[1]));
+    // To a millisecond, not exactly: the playlist declares three decimals, so
+    // an 8.005333 s segment is served as 8.005 and an exact-membership test
+    // fails on a value that is correct. What this has to catch is a declared
+    // duration that does not correspond to any encoded one at all, which is
+    // what the flat SEGMENT_SECONDS did.
     check(
         'declared segment durations match the encode',
-        declared.every((d) => encoded.includes(d)),
+        declared.every((d) => encoded.some((e) => Math.abs(e - d) < 0.001)),
         `declared ${declared.join()} against encoded ${[...new Set(encoded)].join()}`,
     );
     check('the playlist carries a discontinuity sequence', /#EXT-X-DISCONTINUITY-SEQUENCE:\d+/.test(playlist));
@@ -197,8 +202,8 @@ async function run() {
     // Segment URIs carry the absolute sequence rather than the loop index, so a
     // client never sees the same URI twice. They also have to resolve, which is
     // the half a regex on the playlist cannot tell you: the server maps the
-    // sequence back to a file on disk modulo SEGMENT_COUNT, and an off-by-one
-    // there would serve the wrong segment with a 200.
+    // sequence back to a file on disk modulo that channel's own segment count,
+    // and an off-by-one there would serve the wrong segment with a 200.
     const uris = [...playlist.matchAll(/^\/segments\/\d+\/s-(\d+)\.ts$/gm)].map((m) => Number(m[1]));
     check('segment URIs carry the absolute sequence', uris.length === 3, `found ${uris.length}`);
     check(
@@ -210,7 +215,7 @@ async function run() {
     const sliding = await fetch(`${BASE}${slidingUri}`);
     const slidingBytes = Buffer.from(await sliding.arrayBuffer());
     const onDisk = readFileSync(
-        join(HERE, 'media', '10005', `seg-${String(uris[0] % SEGMENT_COUNT).padStart(3, '0')}.ts`),
+        join(HERE, 'media', '10005', `seg-${String(uris[0] % encoded.length).padStart(3, '0')}.ts`),
     );
     check('a sliding URI resolves', sliding.status === 200, `${sliding.status} for ${slidingUri}`);
     check('to the loop position it names', slidingBytes.equals(onDisk), `${slidingBytes.length} bytes`);
