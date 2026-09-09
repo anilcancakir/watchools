@@ -192,8 +192,9 @@ second(s), error=End of file`) and then an `error` line when it gave up.
 
 Three consequences for the interface:
 
-- The ladder reads `demuxer-cache-state` (`fw-bytes`) and `cache-speed`, never
-  `demuxer-cache-duration`.
+- The ladder reads one `demuxer-cache-state` node plus `time-pos` and `pause`,
+  never `demuxer-cache-duration`. See "The ladder" for why `fw-bytes` is the
+  wrong predicate and `cache-speed` is not a second reading.
 - Log messages are a **fault channel**, not diagnostics. Subscribe with
   `mpv_request_log_messages("warn")` and forward them; `terminal=yes` writes the
   same lines to a stdout no release build reads.
@@ -553,16 +554,49 @@ survives a catalogue refresh.
 
 ### The ladder
 
-Trigger on `cache-speed` and `demuxer-cache-state/fw-bytes`, not on
+Read **one** node, `demuxer-cache-state` as `MPV_FORMAT_NODE`. Not
 `demuxer-cache-duration`, which mpv's own docs call "very unreliable, and often
-the property will not be available at all".
+the property will not be available at all", and which the lapsed-token
+measurement showed **freezes** rather than falls. And not `cache-speed`
+alongside it: `input.rst:2483` at v0.41.0 says "This is the same as
+``demuxer-cache-state/raw-input-rate``", so the pair this section used to
+prescribe was one read twice.
+
+The predicate is **`time-pos` not advancing while `pause` is false**, with the
+node's `underrun` and `idle` saying why. Three reasons it beats `fw-bytes`:
+the mini player needs `time-pos` anyway, so it costs no extra field; it is what
+actually stopped in the measured lapse, since `cache-end` and `reader-pts` both
+froze and their difference held at 15.68 s; and `fw-bytes` **cannot** carry the
+signal, because a satisfied cache stops reading by design.
+`demuxer-cache-idle` is "the demuxer cache is filled to the requested amount,
+and is currently not reading more data" (`input.rst:2495`) and
+`--demuxer-hysteresis-secs` makes the demuxer wait until "there is only 10
+seconds of content left" before reading again (`options.rst:4290`). On the
+800 MiB VOD path that is minutes of looking exactly like a stall.
 
 | Tier | Signal | Threshold | Action |
 |---|---|---|---|
-| 0 | `end-file` with reason `ERROR`, or open failure | immediate | switch |
-| 1 | `cache-speed == 0` and not user-paused | 3 s | switch |
-| 2 | `paused-for-cache` continuously | 5 s, user-configurable | switch |
-| 3 | 10 s mean `cache-speed` below the stream bitrate | 10 s | switch |
+| 0 | `end-file` reason in {EOF 0, ERROR 4}, or open failure | immediate | switch |
+| 1 | `time-pos` not advancing and not user-paused | 3 s | switch |
+| 2 | 10 s mean `raw-input-rate` below the stream bitrate | 10 s | switch |
+
+Tier 0 includes **EOF**, which the first version of this table excluded by
+triggering on `ERROR` alone: the measured token lapse ends as `reason=0` when it
+ends at all, so an `ERROR`-only tier 0 misses the fault it exists for. Exclude
+`MPV_END_FILE_REASON_REDIRECT` (5) explicitly, because `client.h:1489` sends it
+for a playlist expansion and then "playback continues with the playlist
+contents": a ladder that treats it as a fault steps on a healthy open. It does
+not fire on the measured `.m3u8` because lavf is probed ahead of mpv's own
+playlist demuxer, but an `#EXTM3U` body without `#EXT-X-` tags is expanded, and
+that shape has not been opened yet.
+
+A `paused-for-cache` tier is **deleted rather than reordered**. The property is
+"whether playback is paused because of waiting for the cache"
+(`input.rst:2598`), `--cache-pause` controls "whether the player should
+automatically pause when the cache runs out of data" (`options.rst:5437`), and
+`MpvEngine` ships `cache-pause: no`, so it can never become true. Dropping the
+option to revive the tier is a product decision, not a tuning one: it changes
+what the viewer sees from artefacts to a freeze and rebuffer.
 
 Four guards: a variant that ran stably for 30 s earns one same-variant retry
 before the ladder moves on, while one that stalled immediately does not; a
