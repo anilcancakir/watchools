@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Without this a sandboxed macOS app cannot make an outbound connection
+	     at all, so libmpv reaches no provider and no mock: the stream request
+	     never leaves the process and the failure looks like a render problem.
+	     The scaffold ships network.server and not network.client. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>
