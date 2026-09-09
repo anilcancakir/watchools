@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNELS, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
+import { CHANNELS, SEGMENT_COUNT, SHORT_TOKEN_SECONDS } from './catalogue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = 3399;
@@ -193,6 +193,27 @@ async function run() {
         `declared ${declared.join()} against encoded ${[...new Set(encoded)].join()}`,
     );
     check('the playlist carries a discontinuity sequence', /#EXT-X-DISCONTINUITY-SEQUENCE:\d+/.test(playlist));
+
+    // Segment URIs carry the absolute sequence rather than the loop index, so a
+    // client never sees the same URI twice. They also have to resolve, which is
+    // the half a regex on the playlist cannot tell you: the server maps the
+    // sequence back to a file on disk modulo SEGMENT_COUNT, and an off-by-one
+    // there would serve the wrong segment with a 200.
+    const uris = [...playlist.matchAll(/^\/segments\/\d+\/s-(\d+)\.ts$/gm)].map((m) => Number(m[1]));
+    check('segment URIs carry the absolute sequence', uris.length === 3, `found ${uris.length}`);
+    check(
+        'and increase by one across the window',
+        uris.length === 3 && uris[1] === uris[0] + 1 && uris[2] === uris[1] + 1,
+        uris.join(),
+    );
+    const slidingUri = playlist.match(/^\/segments\/\d+\/s-\d+\.ts$/m)?.[0] ?? '';
+    const sliding = await fetch(`${BASE}${slidingUri}`);
+    const slidingBytes = Buffer.from(await sliding.arrayBuffer());
+    const onDisk = readFileSync(
+        join(HERE, 'media', '10005', `seg-${String(uris[0] % SEGMENT_COUNT).padStart(3, '0')}.ts`),
+    );
+    check('a sliding URI resolves', sliding.status === 200, `${sliding.status} for ${slidingUri}`);
+    check('to the loop position it names', slidingBytes.equals(onDisk), `${slidingBytes.length} bytes`);
 
     // 8. The claim the whole tool exists for.
     for (const channel of CHANNELS) {

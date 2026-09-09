@@ -412,6 +412,32 @@ function segmentDurations(channel) {
  * window wraps past the last segment a DISCONTINUITY is emitted, because the
  * loop really does reset the timeline and a player told otherwise stalls.
  *
+ * Segment URIs carry the **absolute** sequence number rather than the media
+ * file's index, because that is what a real panel serves and a client that
+ * dedupes by URI would otherwise see the same three segments forever.
+ *
+ * This window is **not** the source of the periodic freeze a libmpv probe sees
+ * against it, which is worth writing down because three plausible explanations
+ * were tried and all three were wrong: repeating URIs, a loop shorter than the
+ * window (SEGMENT_COUNT raised to 16), and a window too small to absorb a late
+ * reload (WINDOW_SEGMENTS raised to 6). None moved the freeze by a second, and
+ * the playlist already answers `Cache-Control: no-store`.
+ *
+ * What settled it was this server's own log rather than another guess. Over one
+ * 90 s run it served **52 playlist reloads and 23 segment fetches whose
+ * sequence numbers are consecutive with no gap and no repeat**, which is
+ * 23 * SEGMENT_SECONDS = 92 s of content in 90 s of wall clock. The client is
+ * reloading aggressively, fetching everything advertised, in order, in real
+ * time. The stream is correct; the freeze is in the probe's playback clock,
+ * which runs `vo=null, ao=null` and therefore has neither a display nor an
+ * audio clock to pace against.
+ *
+ * The consequence for the player work is the part to carry forward:
+ * `demuxer-cache-state/underrun` reads true both in that harness's healthy
+ * freeze and in a real token lapse, so **under a null-output harness it does
+ * not discriminate**. Whether it discriminates with a real video output is
+ * unmeasured, and that measurement belongs in the Flutter app rather than here.
+ *
  * @param {import('./catalogue.mjs').Channel} channel
  * @param {number} now
  * @returns {string}
@@ -445,12 +471,13 @@ function livePlaylist(channel, now) {
     }
 
     for (let offset = 0; offset < WINDOW_SEGMENTS; offset += 1) {
-        const index = (((first + offset) % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
+        const absolute = first + offset;
+        const index = ((absolute % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
         if (index === 0) {
             lines.push('#EXT-X-DISCONTINUITY');
         }
         lines.push(`#EXTINF:${durations[index].toFixed(3)},`);
-        lines.push(`${base}/seg-${String(index).padStart(3, '0')}.${extension}`);
+        lines.push(`${base}/s-${absolute}.${extension}`);
     }
 
     return `${lines.join('\n')}\n`;
@@ -1020,6 +1047,21 @@ const server = createServer((request, response) => {
         return;
     }
 
+    // A sliding-window URI: `s-<absolute sequence>.<ext>` resolves to the loop
+    // position it names. The client never sees the same URI twice, which is what
+    // keeps libmpv following the live edge, while the bytes on disk stay four
+    // segments per channel.
+    const sliding = path.match(/^\/segments\/(\d+)\/s-(\d+)\.(ts|m4s)$/);
+    if (sliding) {
+        const [, channelId, sequence, extension] = sliding;
+        const index = Number(sequence) % SEGMENT_COUNT;
+        const name = `seg-${String(index).padStart(3, '0')}.${extension}`;
+        sendFile(join(MEDIA, channelId, name), request, response);
+        return;
+    }
+
+    // The init segment an fMP4 channel's EXT-X-MAP names, and the raw
+    // `seg-NNN` paths, which `verify.mjs` reaches directly.
     const segment = path.match(/^\/segments\/(\d+)\/(.+)$/);
     if (segment) {
         sendFile(join(MEDIA, segment[1], segment[2]), request, response);
