@@ -161,13 +161,106 @@ class PlayerState {
   bool get hasPicture => videoOutput.isNotEmpty && width > 0 && height > 0;
 }
 
+/// One sample of the counters, arriving twice a second while a core is alive.
+///
+/// A tick rather than property observers, and that is measured rather than
+/// chosen: mpv sends a change event only when a property changes, so a counter
+/// that **freezes** is invisible to an observer, and a frozen counter is exactly
+/// how a lapsed provider token presents. `core-idle` was the candidate fast path
+/// and reads false through an entire lapse, flipping only after the file ends.
+@immutable
+class PlayerTick {
+  /// mpv's `playlist_entry_id` for the load this sample belongs to.
+  ///
+  /// Compare it before acting: a ladder that reopens during a stall otherwise
+  /// treats the previous variant's last samples as the new variant's first.
+  final int session;
+
+  /// mpv's own monotonic clock, in nanoseconds.
+  ///
+  /// A tick delayed because the platform thread was blocked looks identical to
+  /// a stalled stream from here. This is what separates the two, so a late tick
+  /// is reported as a plugin fault rather than folded into the ladder.
+  final int monotonicNs;
+
+  /// Playback position. Null when mpv has none, which includes before the first
+  /// frame.
+  final double? timePos;
+
+  /// Whether the user paused. Every stall threshold is gated on this, because a
+  /// paused stream stops advancing by design.
+  final bool paused;
+
+  /// mpv's `core-idle`. Measured useless as a stall signal and carried anyway,
+  /// because it is the one flag that distinguishes "nothing loaded" from
+  /// "loaded and stuck".
+  final bool coreIdle;
+
+  /// Bytes buffered ahead of the decoder.
+  ///
+  /// **Not a stall predicate.** On a healthy continuous stream it sits at a
+  /// steady 80 KB rather than growing, so "not advancing" is its normal state.
+  final int? forwardBytes;
+
+  /// Input rate in bytes per second, mpv's `raw-input-rate`. The same number
+  /// `cache-speed` reports.
+  final int? inputRate;
+
+  /// Whether the reader thread could not satisfy a decoder request.
+  ///
+  /// Null when mpv did not report it. Null means unknown, never healthy: the
+  /// field sits under mpv's "might be changed or removed" heading, so a default
+  /// of false would claim health the core never asserted.
+  final bool? underrun;
+
+  /// Whether the demuxer has stopped reading because the cache is full. A
+  /// healthy satisfied cache sets this, so it explains a quiet stream rather
+  /// than condemning one.
+  final bool? demuxerIdle;
+
+  const PlayerTick({
+    required this.session,
+    required this.monotonicNs,
+    required this.timePos,
+    required this.paused,
+    required this.coreIdle,
+    required this.forwardBytes,
+    required this.inputRate,
+    required this.underrun,
+    required this.demuxerIdle,
+  });
+
+  factory PlayerTick.fromNative(Map<Object?, Object?> raw) {
+    final Object? position = raw['timePos'];
+
+    return PlayerTick(
+      session: raw['session'] as int? ?? 0,
+      monotonicNs: raw['monotonicNs'] as int? ?? 0,
+      timePos: position is num ? position.toDouble() : null,
+      paused: raw['paused'] == true,
+      coreIdle: raw['coreIdle'] == true,
+      forwardBytes: raw['forwardBytes'] as int?,
+      inputRate: raw['inputRate'] as int?,
+      underrun: raw['underrun'] as bool?,
+      demuxerIdle: raw['demuxerIdle'] as bool?,
+    );
+  }
+}
+
 /// What mpv reported, over [WatchoolsPlayer.events].
 @immutable
 class PlayerEvent {
-  /// One of `endFile`, `videoReconfig`, `log` or `eventsLost`. A name the native
-  /// side chose rather than an enum, because the set will grow with the variant
-  /// ladder and an unknown name has to survive the trip.
+  /// One of `tick`, `endFile`, `videoReconfig`, `log` or `eventsLost`. A name
+  /// the native side chose rather than an enum, because the set will grow with
+  /// the variant ladder and an unknown name has to survive the trip.
   final String name;
+
+  /// mpv's `playlist_entry_id` for the load this event belongs to, stamped on
+  /// every event so a reader can tell which load it is about.
+  final int session;
+
+  /// The counters, present only on `tick`.
+  final PlayerTick? tick;
 
   /// mpv's `end-file` reason, present only on `endFile`.
   ///
@@ -189,6 +282,8 @@ class PlayerEvent {
 
   const PlayerEvent({
     required this.name,
+    required this.session,
+    this.tick,
     this.reason,
     this.error,
     this.text,
@@ -196,8 +291,12 @@ class PlayerEvent {
   });
 
   factory PlayerEvent.fromNative(Map<Object?, Object?> raw) {
+    final String name = raw['event'] as String? ?? 'unknown';
+
     return PlayerEvent(
-      name: raw['event'] as String? ?? 'unknown',
+      name: name,
+      session: raw['session'] as int? ?? 0,
+      tick: name == 'tick' ? PlayerTick.fromNative(raw) : null,
       reason: raw['reason'] as int?,
       error: raw['error'] as int?,
       text: raw['text'] as String?,

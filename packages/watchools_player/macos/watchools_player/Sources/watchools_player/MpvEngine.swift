@@ -208,38 +208,95 @@ final class MpvEngine {
 ///
 /// mpv's client API has one mechanism for this: `mpv_set_wakeup_callback` fires
 /// on an arbitrary internal thread and forbids calling any mpv function from
-/// inside it, so the callback only schedules a drain. The drain runs on the main
-/// queue, which is where a `FlutterEventSink` has to be delivered from anyway,
-/// and `mpv_wait_event` with a zero timeout returns immediately, so it costs a
-/// dictionary per queued event and nothing when the queue is empty. This is the
-/// shape mpv's own macOS client uses.
+/// inside it, so the callback only schedules work.
+///
+/// **Every mpv call this class makes happens on `sampler`, one serial queue.**
+/// That is not tidiness. `mpv_wait_event` may only be called from one thread,
+/// the synchronous property reads are not marked "Safe to be called from mpv
+/// render API threads" in `client.h` while the `_async` variants are, and
+/// `handle` and `session` would otherwise be written from main and read from a
+/// timer. Confining all three to one queue settles the thread rule, keeps the
+/// blocking reads off the thread the video output presents on, and removes the
+/// race, in one decision. Only the sink delivery hops to main, because that is
+/// where a `FlutterEventSink` has to be called from.
 final class MpvEventPump {
-    /// Set by the plugin from the event channel's `onListen`.
+    /// How often the counters go out. Fast enough for a three second stall
+    /// threshold to have six samples behind it, slow enough to be two channel
+    /// messages a second.
+    private static let tickInterval = DispatchTimeInterval.milliseconds(500)
+
+    /// Set by the plugin from the event channel's `onListen`, and only ever
+    /// touched on the main queue: the sampler builds a payload and hands it over
+    /// rather than reading this itself.
     var onEvent: (([String: Any]) -> Void)?
 
     private var handle: OpaquePointer?
+    private var ticker: DispatchSourceTimer?
+
+    /// Where the synchronous property reads happen, off the thread the video
+    /// output presents on.
+    private let sampler = DispatchQueue(label: "com.watchools.player.sampler")
+
+    /// mpv's `playlist_entry_id` for the file currently loading or playing.
+    ///
+    /// Stamped on every event so a reader can tell which load it is about. A
+    /// ladder that reopens during a stall otherwise receives the previous
+    /// variant's `END_FILE` after the new open and steps again immediately,
+    /// which walks it to the bottom of the ladder on one fault.
+    private var session: Int64 = 0
 
     func attach(handle: OpaquePointer) {
-        self.handle = handle
+        sampler.async { self.handle = handle }
         mpv_set_wakeup_callback(
             handle,
             { context in
                 guard let context else { return }
                 let pump = Unmanaged<MpvEventPump>.fromOpaque(context).takeUnretainedValue()
-                DispatchQueue.main.async { pump.drain() }
+                pump.sampler.async { pump.drain() }
             },
             Unmanaged.passUnretained(self).toOpaque()
         )
+
+        // A timer rather than property observers, and that is measured rather
+        // than chosen. mpv sends a change event "only if the property value
+        // changes" (`client.h`), so a counter that freezes is invisible to an
+        // observer, and a frozen counter is exactly how a lapsed provider token
+        // presents. `core-idle` was the candidate fast path and reads `no`
+        // through an entire lapse, flipping only after `END_FILE`, so there is
+        // nothing to subscribe to. The tick is the detector.
+        //
+        // On its own queue, not the main one, and that is load-bearing. The
+        // first version ticked on the main queue for the convenience of
+        // delivering straight to a `FlutterEventSink`, and playback froze at
+        // `time-pos` 0.08 for the entire run: 95 ticks, buffer full, `underrun`
+        // false, `demuxerIdle` true. Only the `_async` property calls and
+        // `mpv_get_time_ns` carry "Safe to be called from mpv render API
+        // threads" in `client.h`; the synchronous read this tick makes does
+        // not, and twice a second on the thread the video output needs is
+        // enough to starve it. The payload hops to main for the sink instead.
+        let timer = DispatchSource.makeTimerSource(queue: sampler)
+        timer.schedule(deadline: .now() + Self.tickInterval, repeating: Self.tickInterval)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        timer.resume()
+        ticker = timer
     }
 
+    /// Stops sampling and forgets the handle, before the caller destroys it.
+    ///
+    /// Synchronous on the sampler on purpose: it has to return with no drain or
+    /// tick in flight, because the next thing the caller does is
+    /// `mpv_terminate_destroy`. Safe from main because the sampler only ever
+    /// hops to main with `async`.
     func detach() {
-        if let handle {
-            mpv_set_wakeup_callback(handle, nil, nil)
+        ticker?.cancel()
+        ticker = nil
+
+        sampler.sync {
+            if let handle {
+                mpv_set_wakeup_callback(handle, nil, nil)
+            }
+            handle = nil
         }
-        // Clearing this before the caller destroys the core is what makes a
-        // drain already queued on the main thread a no-op instead of a use
-        // after free.
-        handle = nil
     }
 
     /// Reads every queued event, then returns.
@@ -253,10 +310,117 @@ final class MpvEventPump {
         while true {
             guard let event = mpv_wait_event(handle, 0) else { return }
             if event.pointee.event_id == MPV_EVENT_NONE { return }
-            if let payload = Self.describe(event) {
-                onEvent?(payload)
+
+            // Before `describe`, so the event that opens a session is already
+            // stamped with it rather than with the previous one.
+            if event.pointee.event_id == MPV_EVENT_START_FILE,
+               let data = UnsafeMutablePointer<mpv_event_start_file>(OpaquePointer(event.pointee.data)) {
+                session = data.pointee.playlist_entry_id
+            }
+
+            if var payload = Self.describe(event) {
+                payload["session"] = session
+                emit(payload)
             }
         }
+    }
+
+    /// Hands a payload to the sink on the main queue.
+    ///
+    /// `async`, never `sync`: `detach` blocks the caller's thread on the sampler
+    /// and that caller is usually main, so a `sync` here would deadlock the two
+    /// against each other.
+    private func emit(_ payload: [String: Any]) {
+        DispatchQueue.main.async { self.onEvent?(payload) }
+    }
+
+    /// One sample of everything the stall detector and the mini player need.
+    ///
+    /// No thresholds and no verdict: Dart owns the policy, because the
+    /// thresholds are user-exposed settings and because CI builds no native
+    /// target, so a decision made here would never be exercised by an
+    /// automated run on any platform.
+    private func tick() {
+        guard let handle else { return }
+
+        var payload: [String: Any] = [
+            "event": "tick",
+            "session": session,
+            // mpv's own monotonic clock. A tick that arrives late because the
+            // platform thread was blocked in a synchronous mpv call looks
+            // exactly like a stalled stream from Dart, and this is what tells
+            // the two apart.
+            "monotonicNs": mpv_get_time_ns(handle),
+        ]
+
+        for (key, name) in [("timePos", "time-pos"), ("playbackTime", "playback-time")] {
+            var value = 0.0
+            if mpv_get_property(handle, name, MPV_FORMAT_DOUBLE, &value) >= 0 {
+                payload[key] = value
+            }
+        }
+
+        for (key, name) in [("paused", "pause"), ("coreIdle", "core-idle")] {
+            var value: Int32 = 0
+            if mpv_get_property(handle, name, MPV_FORMAT_FLAG, &value) >= 0 {
+                payload[key] = value == 1
+            }
+        }
+
+        payload.merge(Self.cacheState(handle)) { current, _ in current }
+        emit(payload)
+    }
+
+    /// Reads `demuxer-cache-state` as one node.
+    ///
+    /// One read rather than several properties: `cache-speed` "is the same as
+    /// `demuxer-cache-state/raw-input-rate`" per mpv's manual, and
+    /// `demuxer-cache-duration` is in here as `cache-duration` too, so reading
+    /// them separately would be the same bytes fetched two and three times.
+    ///
+    /// `underrun`, `idle` and `eof` sit under the manual's "Other fields (might
+    /// be changed or removed in the future)" heading, so a missing key is left
+    /// absent rather than defaulted to false: absent means unknown, and false
+    /// would claim the stream is healthy.
+    private static func cacheState(_ handle: OpaquePointer) -> [String: Any] {
+        var node = mpv_node()
+        guard mpv_get_property(handle, "demuxer-cache-state", MPV_FORMAT_NODE, &node) >= 0 else {
+            return [:]
+        }
+        defer { mpv_free_node_contents(&node) }
+
+        guard node.format == MPV_FORMAT_NODE_MAP, let list = node.u.list else {
+            return [:]
+        }
+
+        let wanted = [
+            "fw-bytes": "forwardBytes",
+            "raw-input-rate": "inputRate",
+            "cache-end": "cacheEnd",
+            "reader-pts": "readerPts",
+            "underrun": "underrun",
+            "idle": "demuxerIdle",
+            "eof": "demuxerEof",
+        ]
+
+        var found: [String: Any] = [:]
+        for i in 0..<Int(list.pointee.num) {
+            guard let raw = list.pointee.keys?[i].map({ String(cString: $0) }),
+                  let key = wanted[raw]
+            else {
+                continue
+            }
+
+            let value = list.pointee.values![i]
+            switch value.format {
+            case MPV_FORMAT_INT64: found[key] = value.u.int64
+            case MPV_FORMAT_DOUBLE: found[key] = value.u.double_
+            case MPV_FORMAT_FLAG: found[key] = value.u.flag == 1
+            default: break
+            }
+        }
+
+        return found
     }
 
     /// The three events worth forwarding, flattened for the method channel.
