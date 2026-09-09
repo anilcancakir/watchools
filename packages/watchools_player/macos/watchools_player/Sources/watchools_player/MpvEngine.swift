@@ -201,6 +201,19 @@ final class MpvEngine {
         events.detach()
         mpv_terminate_destroy(handle)
     }
+
+    /// Pauses or resumes playback.
+    ///
+    /// The single command surface this spike exposes past `start` and `stop`:
+    /// no seek, no volume, no speed, no track selection, because the
+    /// `PlaybackEngine` this class is a step toward promises none of them yet.
+    /// The actual write happens on `events`' own serial queue, the same one
+    /// every other mpv call this plugin makes is confined to.
+    ///
+    /// - Returns: nil on success, or a message describing what failed.
+    func setPaused(_ paused: Bool) -> String? {
+        events.setPaused(paused)
+    }
 }
 
 /// Turns mpv's event queue into a callback, so the Dart side reacts rather than
@@ -296,6 +309,31 @@ final class MpvEventPump {
                 mpv_set_wakeup_callback(handle, nil, nil)
             }
             handle = nil
+        }
+    }
+
+    /// Writes mpv's `pause` property, the first property write this plugin has
+    /// ever made; every prior call on `handle` has been a read.
+    ///
+    /// `mpv_set_property_string` rather than the `MPV_FORMAT_FLAG` form: every
+    /// other write in this file (`start()`'s options) is already a string, and
+    /// `pause` accepts `yes`/`no` the same way, so this stays consistent
+    /// instead of introducing the only flag-typed set call in the plugin.
+    ///
+    /// `sync`, not `async`: the method channel's `FlutterResult` has to reflect
+    /// whether the write actually reached mpv, which means the caller blocks
+    /// on `sampler` until it has, the same shape `detach()` uses to return only
+    /// after mpv work completes.
+    ///
+    /// - Returns: nil on success, or a message when no core is attached, or
+    ///   when mpv itself refuses the write.
+    func setPaused(_ paused: Bool) -> String? {
+        sampler.sync {
+            guard let handle else {
+                return "no core is running, start one first"
+            }
+            let status = mpv_set_property_string(handle, "pause", paused ? "yes" : "no")
+            return status < 0 ? "mpv refused the pause write" : nil
         }
     }
 

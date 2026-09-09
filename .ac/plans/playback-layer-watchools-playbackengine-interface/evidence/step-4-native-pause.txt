@@ -1,0 +1,42 @@
+Step 4: Give the plugin a pause it can actually perform
+Command: cd packages/watchools_player && flutter test
+
+00:00 +0: loading .../stall_detector_test.dart
+00:00 +0: an advancing position is playing
+00:00 +1: a frozen position with a full buffer is not presenting, never a stall
+00:00 +2: a legitimate live starvation stays under the grace and recovers
+00:00 +3: a freeze past the grace is a stall
+00:00 +4: an unknown underrun is not treated as healthy
+00:00 +5: a pause is not a stall, and resuming does not carry the freeze
+00:00 +6: a session change resets the freeze
+00:00 +7: a session with no position yet is idle rather than stalled
+00:00 +8: two consumers both receive every event
+00:00 +9: an end on a live stream is a clean EOF, which is a fault
+00:00 +10: a dropped-event gap is distinguishable from quiet
+00:00 +11: a tick carries the counters and its session
+00:00 +12: an absent cache field reads as unknown, never as healthy
+00:00 +13: a non-tick event carries its session but no counters
+00:00 +14: an unknown event name survives the trip
+00:00 +15: setPaused sends the flag as-is on the method channel
+00:00 +16: All tests passed!
+
+Command: cd packages/watchools_player && flutter analyze --fatal-infos --fatal-warnings
+Analyzing watchools_player...
+No issues found! (ran in 5.0s)
+
+Command (repo root): flutter analyze --fatal-infos --fatal-warnings
+Analyzing player-reconnect...
+No issues found! (ran in 4.3s)
+
+Command: grep -c 'mpv_set_property' MpvEngine.swift
+2 (one call site in MpvEventPump.setPaused, one mention in its doc comment)
+
+Command: grep -qE 'mpv_(command|set_property)[^)]*"(seek|volume|speed|aid|sid)"' MpvEngine.swift
+exit code: 1 (no match, guard satisfied)
+
+Swift side (no execution harness on this machine; verified by reading and by
+the package/app both analyzing clean):
+- MpvEngine.swift: MpvEventPump.setPaused(_:) writes mpv_set_property_string(handle, "pause", "yes"/"no")
+  on `sampler.sync`, guarding a nil handle with a refusal string. MpvEngine.setPaused(_:) forwards to it.
+- WatchoolsPlayerPlugin.swift: new "setPaused" case reads call.arguments as Bool, turns a refusal string
+  into a FlutterError(code: "mpv", ...), and a non-Bool argument into FlutterError(code: "bad-args", ...).

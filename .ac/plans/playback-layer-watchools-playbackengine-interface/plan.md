@@ -312,7 +312,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 2
 
-- [ ] **Step 4**: Give the plugin a pause it can actually perform
+- [x] **Step 4**: Give the plugin a pause it can actually perform
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-none: a small Swift addition beside an existing read, but it crosses the method-channel boundary in both directions and it is the first write this plugin has ever performed against a live core.
@@ -338,7 +338,7 @@ the segment after `player-reconnect/`.
         - Change what the tick reads or how often it fires
         - Remove or alter `captureSelf`. It is a compositing-proof spike affordance and it stays on the plugin untouched; the app-side engine simply will not reach it
 
-- [ ] **Step 5**: Define the PlaybackEngine contract, and a fake that satisfies it
+- [x] **Step 5**: Define the PlaybackEngine contract, and a fake that satisfies it
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-1-cross-layer: this is the contract `CLAUDE.md` requires from the first playback screen because six implementations are coming and retrofitting it means rewriting every screen that touches playback; three of the six (hls.js, Tizen AVPlay, tvOS) cannot even be prototyped on this machine, so the shape has to be right from reasoning rather than from iteration.

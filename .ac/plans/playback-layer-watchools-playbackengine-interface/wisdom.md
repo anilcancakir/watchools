@@ -43,3 +43,47 @@
    than working around the guard. Re-spawning could not have fixed it: the gap was in the plan. The
    criterion's substance was met by a stronger instrument anyway, `.dart_tool/package_config.json`
    naming both new packages, which is what wave 2's imports actually resolve through.
+
+## Wave 2
+
+1. **No Swift in this repository is ever compiled by CI.** `.github/workflows/ci.yml:23` and `:150`
+   both run `ubuntu-latest` and there is no `flutter build macos` step anywhere, so the plugin's
+   Swift is checked by reading and by nothing else. Step 4's whole deliverable is Swift, and it is
+   the first `mpv_set_property` this plugin has ever made, so the orchestrator ran
+   `flutter build macos --debug` by hand: exit 0, `Built build/macos/Build/Products/Debug/Watchools.app`.
+   That is what proved `sampler.sync`'s multi-statement closure return type, the `guard let handle
+   else` shorthand and the `FlutterError` mapping actually type-check. Any future step that writes
+   Swift needs the same manual build, because a green CI says nothing about it.
+
+2. **A subagent's transcript going idle is not a subagent finishing.** A monitor keyed to
+   "transcript untouched for three minutes" fired while step 5 had written nothing and had not
+   reported, because a long single tool call appends nothing until it returns. The transcript then
+   grew from 412 KB to 454 KB. Liveness needs the file's SIZE over two samples, not its mtime, and
+   completion needs the agent's own notification. Reading the tool-call names out of the transcript
+   (`grep -o '"name":"[A-Za-z_]*"' | sort | uniq -c`) is a cheap, context-safe read of what a worker
+   is actually doing.
+
+3. **`.gitignore`'s `.swiftpm/` does not match what Xcode writes.** A macOS build leaves
+   `macos/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` and
+   `macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved` untracked, because the ignore
+   rule at `.gitignore:12` has a leading dot and these paths do not. Left untracked and uncommitted
+   here, since `.gitignore` is outside this plan's scope, but the next macOS build will surface them
+   again.
+
+4. **The best decision in the interface was to not create a boundary.** `PlaybackTick` is a
+   `typedef` alias for the plugin's `PlayerTick` rather than a parallel class, and the reasoning is
+   wave 1's lesson applied before the fact: a parallel class would need two field-for-field mappings
+   (one at the plugin edge, one back to feed `StallDetector`), and a field forgotten in either does
+   **not** fail loudly, because `underrun: null` means unknown-and-never-healthy, so a dropped field
+   degrades into a fault verdict on a healthy stream. The cost is real and written down (a field
+   added to `PlayerTick` is a field added to the interface) along with the exit condition: the day a
+   second implementation cannot fill one of the nine, the alias becomes a class and the mapping is
+   written once. Compare wave 1, where the boundary DID exist and did leak.
+
+5. **A fake must not invent a verdict.** `FakePlaybackEngine.health` moves only when a tick is read,
+   so `pause()` changes nothing until a tick arrives carrying `paused`, exactly as mpv behaves, and
+   the fake feeds a real `StallDetector` rather than answering a verdict directly. Its own doc says
+   why: "A fake that flipped its own state on a command would let a consumer's test pass against
+   behaviour no real engine has", and asserting a verdict "would test this class and nothing else".
+   That is the check-that-cannot-fail discipline applied to a test double, which is where it is
+   easiest to forget.
