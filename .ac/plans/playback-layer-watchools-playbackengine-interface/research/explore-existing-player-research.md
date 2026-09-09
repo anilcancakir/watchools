@@ -37,9 +37,19 @@ subscription (one account, 2,976 channels, 38,247 titles) on the macOS 26.5 SDK.
 
 | Scenario | `time-pos` | `underrun` | `demuxerIdle` | `fw-bytes` | Recovers |
 |---|---|---|---|---|---|
-| Display idle or screensaver | frozen | false | - | grows to cap | on wake |
+| Display idle or screensaver | frozen | **false** | **true** | grows to cap | on wake |
 | Live window starvation | frozen | **true** | false | 0 | ~8 s |
 | Lapsed token | frozen | **true** | false | 0 | **never** |
+
+**Corrected during wave 2, and the cell that was wrong was load-bearing.** This table first
+reproduced `demuxerIdle` as `-` for the idle-display row where the primary measurement
+(`.ac/research/player-layer.md:587`) reads **true**. That is not a cosmetic transcription slip:
+`stall_detector.dart:126` returns `notPresenting` only on `underrun == false && demuxerIdle == true`,
+so a scripted sequence built from the `-` carries `demuxerIdle: null`, falls through to the freeze
+accumulator, and is classified **`stalled`** after the grace. A ladder reading that verdict would
+switch variants on a display that only needs waking, which is the exact misdiagnosis this project
+made once and retracted. Step 5's worker scripted from the primary table instead and confirmed the
+detector matches the measurement; prefer `player-layer.md` over this file wherever they disagree.
 
 **Starvation and a lapsed token present identically.** They differ only in whether they recover, so
 no instantaneous reading can separate them and only elapsed time can. That is the measured
