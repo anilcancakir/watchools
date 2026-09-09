@@ -1,0 +1,28 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_json_test.dart
+00:00 +0: readInt reads a bare integer
+00:00 +1: readInt reads a quoted integer
+00:00 +2: readInt reads a fractional num without an "as int" throw
+00:00 +3: readInt returns null on a missing key
+00:00 +4: readInt returns null on an unparsable value
+00:00 +5: readNullableString reads a string
+00:00 +6: readNullableString reads a null as null
+00:00 +7: readNullableString reads a missing key as null
+00:00 +8: readBool reads a bare 1 as true
+00:00 +9: readBool reads a bare 0 as false
+00:00 +10: readBool reads a quoted 1 as true
+00:00 +11: readBool returns null on a missing key
+00:00 +12: readDouble reads a quoted rating
+00:00 +13: readDouble reads a bare rating_5based
+00:00 +14: readDouble returns null on a missing key
+00:00 +15: readExpiryEpoch reads a missing key as null (no expiry)
+00:00 +16: readExpiryEpoch reads a quoted zero as null (no expiry)
+00:00 +17: readExpiryEpoch reads a quoted negative as null (no expiry)
+00:00 +18: readExpiryEpoch reads an unparsable value as null (no expiry)
+00:00 +19: readExpiryEpoch reads a real quoted epoch
+00:00 +20: readBase64Text decodes a base64 title
+00:00 +21: readBase64Text falls back to the raw string when it is not base64
+00:00 +22: readBase64Text returns null on a missing key
+00:00 +23: decodeBody passes an already-decoded map through
+00:00 +24: decodeBody decodes a raw JSON string
+00:00 +25: decodeBody returns null on an unreadable body
+00:00 +26: All tests passed!
