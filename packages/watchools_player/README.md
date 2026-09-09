@@ -59,6 +59,39 @@ Flutter's paint loop.
   3.47 has Swift Package Manager on by default and this repository is already
   migrated, so the dependency is three lines in `Package.swift`.
 
+## The option set, verified rather than assumed
+
+Three things in `MpvEngine` were written from the research and then checked,
+because `--stream-lavf-o` "silently ignores" what it does not understand and
+mpv's own manual recommends a different API for values containing commas.
+
+- **The escaped comma works.** `reconnect_on_http_error=4xx\,5xx` sets cleanly
+  and reads back with the escape intact. A bare comma is *rejected* rather than
+  silently split, which is louder than the docs imply. And
+  `stream-lavf-o-append`, which the manual recommends for values that must not
+  be interpreted, does not exist as a settable option name through
+  `mpv_set_option_string` at all, so the escaped form is the right route here.
+- **`800MiB` is accepted** and reads back as `838860800`, exactly 800 MiB.
+- **`cache-pause=no` with `cache-pause-wait=0` is not a contradiction.** Both
+  set, and the wait is simply inert while pausing is off, which is the intent.
+
+And the one that matters most, tested end to end against the mock's `expiring`
+account, which reproduces the real panel's 509 after fifteen seconds:
+
+| Run | Outcome |
+|---|---|
+| without `reconnect_on_http_error` | played 3.5 s, then `end-file reason=0` |
+| with it | **still playing past the 40 s deadline** |
+
+So the flag is the difference between playback ending when a stream token lapses
+and surviving it. mpv's own `reconnect=1` default does not save it; the
+`on_http_error` part does.
+
+Note what mpv calls it: **`reason=0`, which is EOF, not an error.** A token lapse
+arrives as a clean end of file, so a client watching for error codes sees a
+normal finish. That is a fourth silent shape alongside the ones already in
+`.ac/research/player-layer.md`.
+
 ## What is deliberately absent
 
 No `PlaybackEngine`. That interface belongs in Dart with buffer, live offset,
