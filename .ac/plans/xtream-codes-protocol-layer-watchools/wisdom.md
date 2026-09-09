@@ -97,6 +97,30 @@
     rejects, so running the generator breaks step 14's format gate until the file is re-formatted;
     the content is identical once it is.
 
+## User decisions taken during execution
+
+**The clock, asked and answered at the wave 4 boundary.** Real EPG and the app's default clock
+disagree by construction. `GuideClock.minute` is minutes since the **schedule's** midnight and the
+default is `FixedGuideClock` at 20:12 (minute 1212), a fixture-relative fiction, while
+`Programme.fromXtream` computes its minutes from a real reference midnight. A provider programme
+airing at 14:30 is minute 870 against a clock reporting 1212, so `ChannelStatus` reads `idle` for
+every channel actually on air and the grid's now line sits at 20:12 over nothing. `CLAUDE.md` says
+the fixed clock "stays the default until real EPG arrives", and step 8 is that arrival.
+
+Chosen: **a real anchored clock on the provider path, `FixedGuideClock` on the fixture path.**
+`TickingGuideClock(anchor: now.difference(localMidnight).inMinutes)` with the same midnight fed to
+`Programme.fromXtream`, so both halves of the unit share one frame. No new clock code: the ticking
+clock was already written, already tested against virtual time, and already takes that anchor.
+
+**The follow-up this creates, deliberately not fixed here.** A clock that moves makes
+`GuideController.windowStart` teleport: it advances thirty minutes at every half-hour boundary, so
+the grid shifts 180 pixels and the now line jumps back from 354 to 180 in one frame, possibly under
+a viewer mid-scroll. `CLAUDE.md` records it as latent "only because the default clock does not
+move", and it is no longer latent on the provider path. The cheap answer it names is a sticky
+window: hold the current `windowStart` and advance it when `now` nears the far edge. Out of scope
+for this plan, and it belongs in the same change as anything else that touches the grid's scroll
+behaviour.
+
 ## Wave 3
 
 11. **[REMEDIATION] Neither `Channel` nor `TitleItem` carried a provider identifier, and the plan
@@ -140,3 +164,40 @@
     Measured by preparing N placeholders. That is why the store needs no chunking at all: one row
     per `execute` binds 9 or 15 variables, so the cap is unreachable and there is no row count to
     guess, which removes the exact temptation the plan's `Must NOT` was written to guard.
+
+## Wave 4
+
+16. **[REMEDIATION] `boot()` awaiting the network refresh would have held a blank window open for
+    the whole catalogue fetch.** `AppServiceProvider.boot()` runs inside `Magic.init()`, which
+    `main()` awaits before `runApp()`, so anything awaited there delays the first frame by its own
+    duration. `start()` as written did the vault read, the cache restore **and** `await refresh()`,
+    which is a handshake plus 2,976 channels plus 38,247 titles plus up to twenty sequential EPG
+    round trips on an account whose measured `max_connections` is 1. The suite could not see it:
+    the test vault is empty at boot, so `start()` returned after one read. Split into an awaited
+    local `start()` and an unawaited `refresh()`, which is also what the cold-start cache exists
+    for. **Thirteen tests went red on the split**, which is the proof the behaviour really changed
+    rather than the shape.
+
+17. **The playback gate's own test became unfalsifiable in the process, for a moment.** It asserted
+    `assertSentCount(0)` after `await session.start()`, relying on `start()` triggering the refresh
+    the gate then blocked. Once `start()` stopped refreshing, nothing tried to send and the
+    assertion passed for the wrong reason. It now calls `refresh()` explicitly, with a comment
+    saying why. The general shape: a gate test that depends on an implicit trigger silently retires
+    the moment that trigger moves.
+
+18. **[REMEDIATION] The plan's own locked D4 decision put the series list in v1 and no step
+    implemented it.** D4 says "In: the `get_series` list (so `/baslik/:id` knows both ID spaces from
+    the start, the one omission the oracle says costs an interface change later)", but step 8's
+    Description only names the VOD catalogue and my briefing listed `seriesCategories()` and
+    `series()` among the client's methods without ever telling the worker to call them. The worker
+    correctly reported that as a briefing gap rather than inventing scope. Added a second pass over
+    the series space, with a test proving a movie `stream_id` 500 and a series `series_id` 500 stay
+    two distinct titles with independent favourites, which is the collision the oracle said a
+    movies-only v1 would cost a store migration to undo later.
+
+19. **A value type with no `copyWith` makes every field addition a liability twice over.**
+    `TitleItem` has only `toggleFavourite`, so the session had to reconstruct the whole object
+    through its public constructor to change `progress`. That is now the third place (with
+    `Channel.toggleFavourite` and `TitleItem.toggleFavourite`) where adding a field and forgetting
+    one line produces a valid object with silently dropped state. Worth a real `copyWith` on both
+    types the next time either is touched.

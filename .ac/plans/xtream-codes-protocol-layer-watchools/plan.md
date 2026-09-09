@@ -365,7 +365,7 @@ repo-relative from the segment after `player-reconnect/`.
 
 ### Wave 4
 
-- [ ] **Step 8**: Own the session, the classification and the connection gate
+- [x] **Step 8**: Own the session, the classification and the connection gate
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-none: it is the only object holding both the credentials and the last handshake, so every wrong answer it gives is a plausible one, and it is where the unmeasured connection-slot assumption is enforced.

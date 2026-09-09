@@ -1,0 +1,16 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/provider/provider_session_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: start(), with no stored credentials reports none rather than throwing
+00:00 +1: classification, from the handshake alone statusCode 0 reports unreachable
+00:00 +2: classification, from the handshake alone rejected credentials report expired
+00:00 +3: classification, from the handshake alone a lapsed account reports expired even though the catalogue lists parse fine
+00:00 +4: classification, from the handshake alone a healthy handshake clears a previously reported fault
+00:00 +5: classification, from the handshake alone a denial on an account already known active and at its connection limit reports evicted
+00:00 +6: classification, from the handshake alone a denial on an account already known active and below its connection limit reports throttled
+00:00 +7: refresh(), gated on playback is a no-op while playing, sending no request at all
+00:00 +8: the short-EPG merge a channel with an epg_channel_id gains a schedule; one with none is never requested
+00:00 +9: the short-EPG merge the bound is respected: only the first epgFetchLimit channels are ever considered
+00:00 +10: user state, surviving a refresh a favourite set before a refresh is still set after it
+00:00 +11: user state, surviving a refresh a title favourite and progress survive a refresh through the store
+00:00 +12: (tearDownAll)
+00:00 +12: All tests passed!
