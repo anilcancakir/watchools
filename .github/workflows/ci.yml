@@ -100,6 +100,10 @@ jobs:
             # The root format step covers lib and test only, so without this a
             # package's own Dart is formatted by nothing.
             (cd "$package" && dart format --output=none --set-exit-if-changed lib example/lib)
+            if [ -d "$package/test" ]; then
+              (cd "$package" && dart format --output=none --set-exit-if-changed test)
+              (cd "$package" && flutter test)
+            fi
             echo "::endgroup::"
           done
 
