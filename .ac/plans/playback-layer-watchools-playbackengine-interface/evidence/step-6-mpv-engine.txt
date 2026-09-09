@@ -1,0 +1,53 @@
+Step 6: PlaybackEngine over libmpv, with every native line redacted.
+Worktree: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect
+
+$ flutter test test/app/playback/mpv_playback_engine_test.dart
+00:00 +0: loading test/app/playback/mpv_playback_engine_test.dart
+00:00 +0: the contract, over the plugin is a PlaybackEngine and describes no session before a load
+00:00 +1: the contract, over the plugin a load before a surface fails loudly rather than sending a call with no native peer
+00:00 +2: the contract, over the plugin a load stops whatever core is alive before opening the next one
+00:00 +3: the contract, over the plugin pause and resume are one native call with two arguments
+00:00 +4: redaction, the single filter a log line naming the stream URL loses both secrets and reaches no consumer
+00:00 +5: redaction, the single filter an error line is reported at error rather than downgraded to debug
+00:00 +6: redaction, the single filter a platform failure naming the URL arrives redacted
+00:00 +7: one upstream subscription, fanned out two consumers of the engine stream both receive every tick
+00:00 +8: one upstream subscription, fanned out dispose stops the core and cancels the subscription, so a later event reaches nobody
+00:00 +9: the session stamp, which the transport cannot supply each load raises the stamp, though the transport reuses playlist_entry_id 1
+00:00 +10: the session stamp, which the transport cannot supply every counter survives the re-stamp
+00:00 +11: health, from the detector and nowhere else is idle between a load and its first tick, and playing once one advances
+00:00 +12: health, from the detector and nowhere else a frozen position past the grace is a stall
+00:00 +13: health, from the detector and nowhere else a tick arriving after stop reaches nobody and revives no verdict
+00:00 +14: All tests passed!
+
+$ flutter test test/app/playback/
+00:00 +33: All tests passed!          # 19 fake + 14 mpv
+
+$ flutter analyze --fatal-infos --fatal-warnings
+No issues found! (ran in 5.5s)
+
+$ flutter test
+00:08 +426 ~1: All tests passed!      # was 412 pass / 1 skip before this step
+
+$ dart format lib test
+Formatted 2 files (0 changed)
+
+Mutation checks, run to prove two assertions can actually fail
+(the "a guard that matches its own explanation cannot fail" lesson).
+
+1. Deleted `await _upstream.cancel();` from dispose():
+   FAIL - dispose stops the core and cancels the subscription, so a later event reaches nobody
+   FAIL - a log line naming the stream URL loses both secrets and reaches no consumer
+   FAIL - an error line is reported at error rather than downgraded to debug
+   The first run of this mutation PASSED the dispose test, because a tick after
+   dispose is refused by the closed session as well as by the cancelled
+   subscription. The test now pushes a log line too, which nothing but the
+   subscription gates, and that is the assertion that fails.
+
+2. Forwarded the transport's tick instead of re-stamping it:
+   FAIL - each load raises the stamp, though the transport reuses playlist_entry_id 1
+     Expected: [1, 2]
+       Actual: [1, 1]
+
+Not exercised by any of the above, and not claimed: the Swift half. CI runs
+ubuntu-latest only and `flutter test` executes no native code, so every native
+line cited in the doc blocks is read from source rather than run.

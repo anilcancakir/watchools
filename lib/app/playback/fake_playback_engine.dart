@@ -42,7 +42,8 @@ enum FakePlaybackCommand { attach, load, pause, resume, stop, dispose }
 /// await engine.attach(const PlaybackSurface(platformViewId: 0));
 /// await engine.load(Uri.parse('http://panel.example/live/u/p/1.ts'));
 ///
-/// engine.emit(PlaybackTick(session: 1, monotonicNs: 0, timePos: 10, ...));
+/// // Nine required fields, of which four decide the verdict.
+/// engine.emit(PlaybackTick(session: 1, monotonicNs: 0, timePos: 10.0, paused: false, /* ... */));
 /// ```
 class FakePlaybackEngine implements PlaybackEngine {
   final List<FakePlaybackCommand> _commands = <FakePlaybackCommand>[];

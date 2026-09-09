@@ -367,7 +367,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 3
 
-- [ ] **Step 6**: Implement the contract over libmpv, and redact everything the native side says
+- [x] **Step 6**: Implement the contract over libmpv, and redact everything the native side says
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: this is the boundary every string from the native side crosses, and the verified leak is that an mpv log line carries the provider password in a URL; after this step, which strings reach the app and in what form is decided here and nowhere else.
@@ -392,7 +392,7 @@ the segment after `player-reconnect/`.
         - Import `XtreamCredentials` here; take a redactor function instead
         - Rely on any native signal for teardown
 
-- [ ] **Step 7**: Hold the display awake while a core is alive
+- [x] **Step 7**: Hold the display awake while a core is alive
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: a small dependency and two calls, but the reason it exists is a measurement that was once misdiagnosed, so the doc block carries more than the code does.

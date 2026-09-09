@@ -87,3 +87,48 @@
    behaviour no real engine has", and asserting a verdict "would test this class and nothing else".
    That is the check-that-cannot-fail discipline applied to a test double, which is where it is
    easiest to forget.
+
+## Wave 3
+
+1. **The transport's session stamp repeats, and forwarding it would have been worse than useless.**
+   `PlayerTick.session` is mpv's `playlist_entry_id`, and `MpvEngine.start` calls `mpv_create` per
+   load while refusing a second while a core is alive (`MpvEngine.swift:84`, `:88`), so every load
+   runs on a fresh core whose first entry id is 1 again. `StallDetector` resets its anchor on a stamp
+   change, so a new channel starting at position 0 after one that reached 300 would read as a
+   position going backwards **inside one session**: a freeze verdict on a healthy stream. The engine
+   stamps its own `_generation`, which the interface's first promise explicitly permits. Step 5 left
+   this as an unverified assumption and said so; step 6 settled it from source rather than inheriting
+   it.
+
+2. **[REMEDIATION] Do not touch a file a worker still owns.** Mid-run I edited
+   `mpv_playback_engine.dart` to fix a `prefer_initializing_formals` info while step 6 was still
+   working. The worker overwrote my edit, my scoped analyze and my full analyze then measured two
+   different trees, and I briefly concluded from that that a private initializing formal was illegal
+   as a named parameter. It is not: Dart spells `required this._redact` as `redact:` at the call
+   site, which is what the worker independently worked out and documented. The worker also noticed
+   the interference and reported it. Same rule for the test suite: a `flutter test` of mine collided
+   with the worker's and both lost the startup lock. **A running worker owns its Files and the
+   `flutter` lock; wait for the report.**
+
+3. **magic's log facade silently downgrades an unknown level.** `ConsoleLoggerDriver.log` scores
+   `_levels[level] ?? 7` (`~/Code/fluttersdk/magic/lib/src/logging/drivers/console_logger_driver.dart:42`),
+   so `Log.log('warn', ...)` is filed as debug and printed through `_logger.d`. mpv spells its levels
+   `fatal`, `error` and `warn`, so forwarding mpv's own spelling would file every FFmpeg reconnect
+   warning below the level a release build prints, and that warning is the **only** signal a
+   subscription token is lapsing. Worked around in app code by mapping to `Log.error` / `Log.warning`;
+   the fix in the sibling is Laravel's, which throws on a level outside RFC 5424 rather than
+   downgrading it, because a silent severity downgrade on a fault channel is the one direction that
+   hides a fault.
+
+4. **A test can pass under the mutation it was written to catch.** Step 6's first dispose test pushed
+   a tick after `dispose()` and asserted nobody received it, which passed with `_upstream.cancel()`
+   deleted, because a closed session refuses the tick on its own. It now pushes a **log line**, which
+   only the subscription gates. The worker found this by deleting the line and re-running rather than
+   by reading. Step 7 then did the same for each wakelock release. Mutation-checking a new test is
+   cheap and it is the only thing that distinguishes an assertion from a guarantee.
+
+5. **An out-of-scope doc edit landed in `fake_playback_engine.dart`** during wave 3, in a file no
+   wave-3 step declared and which neither worker reported. Three lines, comment only: the example's
+   `timePos: 10` became `10.0` with a note that nine fields are required. Kept rather than reverted,
+   because the original example was a sketch containing `...` and the new one is more accurate, but
+   it is recorded here because the attribution check is what found it and nothing else would have.
