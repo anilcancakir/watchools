@@ -58,6 +58,8 @@ class _SpikeScreenState extends State<SpikeScreen> {
   PlayerEvent? _lastEnd;
   final List<Map<String, Object?>> _seen = <Map<String, Object?>>[];
   final List<Map<String, Object?>> _ticks = <Map<String, Object?>>[];
+  final StallDetector _detector = StallDetector();
+  PlaybackHealth _health = PlaybackHealth.idle;
   Timer? _poll;
   StreamSubscription<PlayerEvent>? _events;
   int? _viewId;
@@ -72,6 +74,13 @@ class _SpikeScreenState extends State<SpikeScreen> {
     _events = WatchoolsPlayer.events.listen((PlayerEvent event) {
       final PlayerTick? tick = event.tick;
       if (tick != null) {
+        // The detector runs against the same live ticks it was written from,
+        // so its verdict is recorded beside the raw counters rather than
+        // trusted from the unit tests alone.
+        final PlaybackHealth health = _detector.read(tick);
+        if (health != _health) {
+          setState(() => _health = health);
+        }
         // Written separately from the rest, because this is the measurement
         // the headless harness could not take: it ran `vo=null, ao=null`, so a
         // healthy stream froze in it. Here `gpu-next` is running, and these
@@ -86,6 +95,8 @@ class _SpikeScreenState extends State<SpikeScreen> {
           'inputRate': tick.inputRate,
           'underrun': tick.underrun,
           'demuxerIdle': tick.demuxerIdle,
+          'health': health.name,
+          'frozenForMs': _detector.frozenFor.inMilliseconds,
         });
         _write('watchools_player_ticks.json', <String, Object?>{
           'ticks': _ticks,
@@ -271,7 +282,8 @@ class _SpikeScreenState extends State<SpikeScreen> {
     if (end != null) return 'ended  reason=${end.reason}  error=${end.error}';
     if (state == null) return 'idle';
 
-    return 'vo=${state.videoOutput.isEmpty ? "none" : state.videoOutput}  '
+    return 'health=${_health.name}  '
+        'vo=${state.videoOutput.isEmpty ? "none" : state.videoOutput}  '
         '${state.width}x${state.height}  '
         'picture=${state.hasPicture ? "YES" : "no"}  '
         'cache=${state.cacheSeconds?.toStringAsFixed(1) ?? "-"}s';
