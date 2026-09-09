@@ -197,35 +197,109 @@ inserts as visual group headers (`✦●✦ HEVC ✦●✦`), and one entry type
 `stream_type: live` whose `direct_source` is an `.mkv` on a different host, so a
 "channel" that is really a file in a container AVFoundation cannot open.
 
+## Step 2 is done, and it corrected its own instructions
+
+Measured on an M1 Pro, macOS 26.5, MPVKit 1.0.0 through SPM, in a standalone
+Swift executable with no Flutter, playing `tool/xtream-mock`'s H.264 channel and
+then the real provider's HEVC one.
+
+**libmpv renders into a caller-provided `CAMetalLayer`.** `wid` accepted,
+`current-vo: gpu-next`, and `screenshot-raw` returns a 1280x720 `bgr0` frame
+(640x360 at `contentsScale` 2.0, so the Retina scaling is right) with 100%
+non-black coverage, 18.9% of pixels differing between two frames 0.6 s apart,
+and the `testsrc2` timecode legible and the right way up. The compositor agrees
+independently: `CGWindowListCreateImage` of the same window twice shows tens of
+thousands of changed bytes with video and, in a control run with nothing loaded,
+**zero**.
+
+On the real provider's HEVC channel, the one AVFoundation reduces to audio:
+1920x1080 decoded, 50 fps, zero dropped frames, and mpv followed the panel's
+302 to the other host by itself.
+
+Three corrections the run forced:
+
+- **The context is `moltenvk`, not `macvk`, on every Apple target.** Upstream
+  mpv reads `WinID` in exactly four files (`android_common.c`,
+  `vo_mediacodec_embed.c`, `w32_common.c`, `x11_common.c`) and no macOS file
+  among them, and `--wid`'s own documentation covers X11, win32 and Android and
+  never mentions macOS. `wid` works here only because MPVKit carries
+  `0001-player-add-moltenvk-context.patch`, whose context does
+  `p->layer = (__bridge CAMetalLayer *)(intptr_t)ctx->vo->opts->WinID;` and
+  registers ahead of upstream's `ra_ctx_vulkan_mac`.
+- **Only the image encoders are missing.** MPVKit's FFmpeg is
+  `--disable-encoders` plus an allowlist covering `aac`, `alac`, `flac`, `pcm*`,
+  `h264_videotoolbox`, `hevc_videotoolbox` and `prores`, and the muxers include
+  `matroska`, `mp4`, `mov`, `mpegts` and `webm`. So `screenshot-to-file` fails
+  ("Could not open libavcodec encoder for saving images") while
+  `--stream-record` works and `screenshot-raw` gives thumbnails through
+  `CGImageDestination` with no FFmpeg encoder at all.
+- **`estimated-display-fps` is a display-sync property, not a health signal.**
+  It is `M_PROPERTY_UNAVAILABLE` unless a frame was display-synced, and
+  `--video-sync=audio` is the default, so it reads unavailable on a stock
+  desktop mpv too. Do not treat 0 as a fault. The related gap is real though:
+  the patched context answers every VOCTRL with `VO_NOTIMPL`, so there is no
+  nominal display fps either, and `--video-sync=display-resample` would need
+  `--display-fps-override` fed from `NSScreen.maximumFramesPerSecond`.
+
+**The one real debt, measured.** Resizing the layer mid-playback from 640x360 to
+960x540 leaves mpv on the old swapchain: `drawableSize` becomes 1920x1080 while
+`dwidth`/`dheight` stay 640x360, `osd-dimensions` stays 1280x720, and
+`screenshot-raw` still returns 1280x720. Because `moltenvk_control` returns
+`VO_NOTIMPL`, no `VO_EVENT_RESIZE` ever reaches `vo_gpu_next`, and only
+`moltenvk_reconfig` reads `drawableSize`, on a video reconfig rather than a
+layout change. Forcing a reconfig from the client API (`vf toggle null`) does
+not pick it up either. In Flutter this bites constantly, because the platform
+view's frame is set on every present.
+
+The fix is a small patch we author and carry: have `moltenvk_control` handle
+`VOCTRL_CHECK_EVENTS` by comparing `layer.drawableSize` against the swapchain,
+call `ra_vk_ctx_resize`, and return `VO_EVENT_RESIZE`. We are already vendoring
+a patched build, so this is a named dependency rather than a surprise, and it is
+worth offering upstream to MPVKit.
+
 ## The plan
 
 1. **One hour, before any Dart.** Point libmpv at the provider's five worst
    shapes: an extensionless live endpoint, a `.ts` live endpoint, an `.m3u8`
    master carrying `#EXT-X-MEDIA:TYPE=SUBTITLES`, an `.mkv` VOD and an `.avi`
-   VOD, each with a player User-Agent. FFmpeg reads all the sampled ones
-   already, which is good evidence but not the same thing. If any fails the rest
-   of this document changes.
-2. **One day.** The smallest macOS plugin: an `NSView` whose `makeBackingLayer`
-   returns a `CAMetalLayer`, its pointer into
-   `mpv_set_option(mpv, "wid", ...)`, with `vo=gpu-next`, `gpu-api=vulkan`,
-   `gpu-context=macvk`, `hwdec=videotoolbox`. A frame on screen closes the
-   render-bridge question. This is the one load-bearing thing nobody has done in
-   Flutter, so it is where the plan can still fail.
-3. **One day, the highest-information day.** The same on the tvOS simulator with
-   `gpu-context=moltenvk` under `flutter-tvos`. Note that `moltenvk` is not
-   upstream mpv: it comes from MPVKit's own
-   `0001-player-add-moltenvk-context.patch`, so we inherit a patch as a named
-   dependency. Upstream has `ra_ctx_vulkan_mac` for macOS and nothing for
-   iOS or tvOS.
+   VOD, each with a player User-Agent. The HEVC live case is already done and
+   passed.
+2. ~~The smallest macOS plugin~~ **Done, see above.** What remains of it is the
+   Flutter half: the same `CAMetalLayer` inside an `AppKitView` rather than a
+   plain `NSWindow`. The engine hands a factory a real `NSView` and forces only
+   `wantsLayer`
+   (`FlutterPlatformViewController.mm`: "Flutter compositing requires
+   CALayer-backed platform views"), composites it through Core Animation, and
+   `video_player_avfoundation`'s 25-line `FVPNativeVideoView.m` is first-party
+   precedent for an externally drawn layer. Set `contentsScale` and
+   `drawableSize` in `layout` and `viewDidChangeBackingProperties`, because
+   Flutter sets the view's frame on every present and never sets the scale.
+   Keep every control in Flutter above the view: mouse events reach the view but
+   Flutter's gesture arena does not hand gestures over on macOS.
+3. **One day, the highest-information day.** The same on the tvOS simulator
+   under `flutter-tvos`, same `moltenvk` context.
 4. `ffigen` over the four headers, then `PlaybackEngine` with buffer, live
    offset, position, telemetry and fault as members rather than an options bag.
-   Do not put `video_player_platform_interface` in the middle.
+   Include `mpv_command_node` from the first cut, because `screenshot-raw`
+   returns a node. Do not put `video_player_platform_interface` in the middle.
 5. The byte source through `mpv_stream_cb_add_ro`: resolver, User-Agent,
    concurrency gated on the handshake's budget.
 6. Measure zap from `loadfile` to the first `MPV_EVENT_VIDEO_RECONFIG` using
    `mpv_get_time_ns`, over ten channels, against the defaults. Do not build
    parallel fetching, and do not plan on a pre-warmed second handle.
-7. Settle the LGPL question against the static-archive finding above.
+7. Settle the LGPL question against the static-archive finding above. It arrives
+   at first submission rather than after, because Flutter's generated Swift
+   package is `libraryType: static`, so mpv's objects land inside Runner.
+
+**Swift Package Manager needs no decision.** It is `enabledByDefault: true` on
+stable, this project is already migrated (`FlutterGeneratedPluginSwiftPackage`
+appears ten times in `macos/Runner.xcodeproj/project.pbxproj`) and there is no
+`macos/Podfile` at all. Take MPVKit in the plugin's own `Package.swift` and add
+no Podfile. One cost to know: MPVKit declares 38 binary targets and SPM fetches
+them all, including the GPL variants, which is 1.7 GB of artifacts per machine.
+Invisible to CI, which runs on `ubuntu-latest` and never builds macOS, and worth
+replacing with our own `Package.swift` naming only the LGPL targets we link the
+day a macOS build job exists.
 
 ## What the fallback is
 
@@ -252,9 +326,12 @@ Not as a codec path. As four capabilities libmpv cannot have:
   `CMSampleBuffer` bridge, which media_kit has attempted twice and not landed.
 - **DRM**, which libmpv has no path to at all.
 - **A mini player off one decoder.** One `AVPlayer` can back several
-  `AVPlayerLayer`s. mpv allows one render context per core (`render.h:551`),
-  though on the `wid` path no render context is created, so whether the limit
-  binds is a question step 2 answers rather than a settled fact.
+  `AVPlayerLayer`s. mpv allows one render context per core (`render.h:551`), but
+  step 2 showed the `wid` path creates no `mpv_render_context` at all, so that
+  limit does not bind here. What binds instead is one `CAMetalLayer` per mpv
+  core: a second view onto the same stream still needs a second core, and
+  therefore a second connection, which `max_connections=1` forbids on this
+  account. A mini player showing the *same* stream has to reuse the one layer.
 
 Select it by capability, never by sniffing an extension: the measurements above
 are exactly the story of a URL that does not say what it contains.
