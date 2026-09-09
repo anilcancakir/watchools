@@ -23,6 +23,24 @@ export const SEGMENT_SECONDS = 4;
 export const SEGMENT_COUNT = 4;
 
 /**
+ * Seconds a stream token stays valid for an ordinary account.
+ *
+ * The real panel this mock is modelled on is a load balancer: the API host
+ * answers `302` to a tokenised path on another host, and the token lapsed
+ * within about forty minutes when one was reused. Five minutes here is the same
+ * shape at a length a test can wait for.
+ */
+export const TOKEN_SECONDS = 300;
+
+/**
+ * Token lifetime for the `expiring` account, short enough that a token lapses
+ * inside one playback session. That is the case FFmpeg's defaults get wrong:
+ * mpv sets `reconnect=1` but leaves `reconnect_on_http_error` empty, so a 403
+ * mid-stream ends playback instead of reconnecting.
+ */
+export const SHORT_TOKEN_SECONDS = 15;
+
+/**
  * What a panel does when the credentials are not the happy path.
  *
  * The three product faults do not map one to one onto three wire shapes. An
@@ -32,7 +50,7 @@ export const SEGMENT_COUNT = 4;
  * is the more interesting half of it because a provider that accepts the
  * connection and never answers is what actually strands a client.
  *
- * @typedef {'active' | 'lifetime' | 'status' | 'lapsed' | 'blocked' | 'hang' | 'rejected'} AccountKind
+ * @typedef {'active' | 'lifetime' | 'expiring' | 'status' | 'lapsed' | 'blocked' | 'hang' | 'rejected'} AccountKind
  */
 
 /**
@@ -60,6 +78,10 @@ export const ACCOUNTS = {
     'lifetime:lifetime': {
         kind: 'lifetime',
         note: 'auth 1, status Active, exp_date null. A date comparison without a null check calls this expired.',
+    },
+    'expiring:expiring': {
+        kind: 'expiring',
+        note: 'Plays, but its stream token lapses after SHORT_TOKEN_SECONDS and the stream then 403s mid-playback.',
     },
     'banned:banned': {
         kind: 'status',

@@ -17,7 +17,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -26,6 +26,8 @@ import {
     LIVE_CATEGORIES,
     SEGMENT_COUNT,
     SEGMENT_SECONDS,
+    SHORT_TOKEN_SECONDS,
+    TOKEN_SECONDS,
     UNKNOWN_ACCOUNT,
     VOD_CATEGORIES,
     VOD_ITEMS,
@@ -47,7 +49,10 @@ const WINDOW_SEGMENTS = 3;
 
 /** @type {Record<string, string>} */
 const CONTENT_TYPES = {
-    m3u8: 'application/vnd.apple.mpegurl',
+    // The real panel sends `application/x-mpegURL`, not the Apple spelling.
+    // Both are in the wild and a client should accept either, so the fixture
+    // sends the one a real panel sent.
+    m3u8: 'application/x-mpegURL',
     ts: 'video/mp2t',
     m4s: 'video/iso.segment',
     mp4: 'video/mp4',
@@ -64,6 +69,58 @@ const CONTENT_TYPES = {
  */
 function resolveAccount(username, password) {
     return ACCOUNTS[`${username}:${password}`] ?? UNKNOWN_ACCOUNT;
+}
+
+/**
+ * Mints an opaque stream token, the way the real panel's load balancer does.
+ *
+ * Not signed and not secret: this is a fixture, and the only property that
+ * matters is that it is opaque to the client and that it expires. Base64url so
+ * it survives a URL path, which is where the real one lives.
+ *
+ * @param {string} username
+ * @param {string} password
+ * @param {number} now
+ * @returns {string}
+ */
+function mintToken(username, password, now) {
+    const account = resolveAccount(username, password);
+    const ttl = account.kind === 'expiring' ? SHORT_TOKEN_SECONDS : TOKEN_SECONDS;
+
+    return Buffer.from(`${username}:${password}:${now + ttl}`, 'utf8').toString('base64url');
+}
+
+/**
+ * @typedef {object} TokenState
+ * @property {string} username
+ * @property {string} password
+ * @property {boolean} expired
+ */
+
+/**
+ * Reads a stream token back. A token that does not decode is treated as expired
+ * rather than as a distinct case, because from the client's side both mean the
+ * same thing: go back to the API and get a fresh URL.
+ *
+ * @param {string} token
+ * @param {number} now
+ * @returns {TokenState|null} Null when the token is not ours at all.
+ */
+function readToken(token, now) {
+    let decoded = '';
+    try {
+        decoded = Buffer.from(token, 'base64url').toString('utf8');
+    } catch {
+        return null;
+    }
+
+    const parts = decoded.split(':');
+    if (parts.length !== 3) return null;
+
+    const expiry = Number(parts[2]);
+    if (!Number.isFinite(expiry)) return null;
+
+    return { username: parts[0], password: parts[1], expired: now >= expiry };
 }
 
 /**
@@ -443,12 +500,35 @@ function streamEndless(file, response) {
 }
 
 /**
- * Serves a file from the media tree.
+ * Serves a file from the media tree, with byte ranges.
+ *
+ * Ranges are not a nicety here, they are the surface that decides seeking,
+ * resume and any form of download, and this fixture answered every request with
+ * a chunked 200 until it was measured against the real panel. Two engines read
+ * that as an unseekable stream for different reasons:
+ *
+ * - FFmpeg (so mpv, libmpv, media_kit) learns seekability from `Accept-Ranges`
+ *   prefix-matching `bytes`, or from any `Content-Range`. With neither, and with
+ *   `Transfer-Encoding: chunked`, it sets the file size to unknown and treats a
+ *   3 GB movie like a live stream.
+ * - Media3 never reads `Accept-Ranges` at all and decides from the status code:
+ *   on a 200 it skips forward to the requested offset by discarding bytes. On
+ *   the real 3.44 GB film a mid-point seek downloads and throws away 1.7 GB.
+ *
+ * So a developer who tested seeking against the old fixture would have seen it
+ * fail and gone looking for a problem the provider does not have.
+ *
+ * `Accept-Ranges` deliberately carries the real panel's non-standard
+ * `0-<total>` spelling rather than `bytes`. FFmpeg's prefix match fails on it
+ * and falls back to `Content-Range`, which is what really happens in the wild,
+ * and a hand-rolled Dart check of the shape `headers['accept-ranges'] == 'bytes'`
+ * is exactly the code somebody writes.
  *
  * @param {string} file
+ * @param {import('node:http').IncomingMessage} request
  * @param {import('node:http').ServerResponse} response
  */
-function sendFile(file, response) {
+function sendFile(file, request, response) {
     if (!existsSync(file)) {
         response.writeHead(404, { 'Content-Type': 'text/plain' });
         response.end(`Not generated: ${file}\nRun: node tool/xtream-mock/encode.mjs\n`);
@@ -456,11 +536,48 @@ function sendFile(file, response) {
     }
 
     const extension = file.split('.').pop() ?? '';
-    response.writeHead(200, {
-        'Content-Type': CONTENT_TYPES[extension] ?? 'application/octet-stream',
+    const type = CONTENT_TYPES[extension] ?? 'application/octet-stream';
+    const total = statSync(file).size;
+    const range = request.headers.range;
+
+    if (!range) {
+        response.writeHead(200, {
+            'Content-Type': type,
+            'Content-Length': String(total),
+            'Accept-Ranges': `0-${total}`,
+            'Cache-Control': 'no-store',
+        });
+        createReadStream(file).pipe(response);
+        return;
+    }
+
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match) {
+        response.writeHead(416, { 'Content-Range': `bytes */${total}` });
+        response.end();
+        return;
+    }
+
+    // An open-ended `bytes=N-` asks for the tail; a `bytes=-N` asks for the last
+    // N bytes, which is how a client reads an MP4's trailing `moov` atom.
+    const hasStart = match[1] !== '';
+    const start = hasStart ? Number(match[1]) : Math.max(0, total - Number(match[2] || 0));
+    const end = hasStart ? Math.min(total - 1, Number(match[2] || total - 1)) : total - 1;
+
+    if (!Number.isFinite(start) || start >= total || end < start) {
+        response.writeHead(416, { 'Content-Range': `bytes */${total}` });
+        response.end();
+        return;
+    }
+
+    response.writeHead(206, {
+        'Content-Type': type,
+        'Content-Length': String(end - start + 1),
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': `0-${total}`,
         'Cache-Control': 'no-store',
     });
-    response.end(readFileSync(file));
+    createReadStream(file, { start, end }).pipe(response);
 }
 
 /**
@@ -614,7 +731,9 @@ function handleFault(account, response) {
  * @returns {boolean} True when the request has been refused and must not continue.
  */
 function refuseStream(account, response) {
-    if (account.kind === 'active' || account.kind === 'lifetime') {
+    // `expiring` is a playable account: its fault arrives later, when the
+    // stream token it was given lapses.
+    if (account.kind === 'active' || account.kind === 'lifetime' || account.kind === 'expiring') {
         return false;
     }
 
@@ -669,6 +788,61 @@ function answerTimeshift(account, channelId, duration, start, response) {
     streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
 }
 
+/**
+ * Serves the media itself, once a request has been through the redirect and its
+ * token has been accepted. Reached only from the tokenised path, so nothing
+ * here has to think about credentials or expiry.
+ *
+ * @param {string} kind `live`, `movie` or `series`.
+ * @param {string} file
+ * @param {number} now
+ * @param {import('node:http').IncomingMessage} request
+ * @param {import('node:http').ServerResponse} response
+ */
+function serveStream(kind, file, now, request, response) {
+    if (kind === 'movie') {
+        const item = VOD_ITEMS.find((v) => file.startsWith(String(v.id)));
+        if (!item) {
+            response.writeHead(404, { 'Content-Type': 'text/plain' });
+            response.end('No such movie\n');
+            return;
+        }
+        sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), request, response);
+        return;
+    }
+
+    // Everything below is live: either the channel's playlist or its
+    // progressive stream. Segments are served from /segments/<id>/.
+    const channel = CHANNELS.find((c) => String(c.id) === file.split('.')[0]);
+
+    if (!channel) {
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end('No such channel\n');
+        return;
+    }
+
+    const extension = file.split('.').pop() ?? '';
+    if (!channel.formats.includes(extension)) {
+        // AV1 has no MPEG-TS mapping, so channel 07 genuinely cannot serve a
+        // `.ts`. Saying so beats an empty body a client reads as a decode
+        // failure in its own player.
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end(
+            `${channel.name} serves ${channel.formats.join(', ')} only.\n` +
+                `AV1 has no MPEG-TS mapping; use the .m3u8 form.\n`,
+        );
+        return;
+    }
+
+    if (extension === 'm3u8') {
+        response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'], 'Cache-Control': 'no-store' });
+        response.end(livePlaylist(channel, now));
+        return;
+    }
+
+    streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
+}
+
 const server = createServer((request, response) => {
     const host = request.headers.host ?? `${HOST}:${PORT}`;
     const url = new URL(request.url ?? '/', `http://${host}`);
@@ -719,7 +893,7 @@ const server = createServer((request, response) => {
             }
 
             if (path === '/get.php') {
-                response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+                response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'] });
                 response.end(
                     m3uPlaylist(username, password, host, query.get('type') ?? 'm3u_plus', query.get('output') ?? 'ts'),
                 );
@@ -756,7 +930,63 @@ const server = createServer((request, response) => {
         return;
     }
 
+    // The tokenised path a redirect lands on. Everything past the redirect
+    // reaches the stream handler through here, so token expiry is checked once.
+    const played = path.match(/^\/(live|movie|series)\/play\/([^/]+)\/(.+)$/);
+    if (played) {
+        const [, kind, token, file] = played;
+        const state = readToken(token, now);
+
+        if (!state) {
+            response.writeHead(404, { 'Content-Type': 'text/plain' });
+            response.end('Not a stream token\n');
+            return;
+        }
+
+        // A lapsed token answers **509 with an empty body**, measured against
+        // the real panel: an expired token and a token minted a minute later
+        // were requested seconds apart on the same channel and answered 509 and
+        // 200 respectively, so this is the expiry response rather than a
+        // bandwidth or connection condition.
+        //
+        // 509 is the interesting part. It is non-standard (Apache and cPanel
+        // use it for "Bandwidth Limit Exceeded"), it is a 5xx, and nothing in
+        // an ordinary error taxonomy maps it to "your URL is stale, ask the API
+        // for a new one", which is the only action that helps. A client reading
+        // it as a server error retries the same dead token forever. There is no
+        // body to sniff either, unlike the `blocked` case.
+        //
+        // It also interacts with the reconnect flag: `5xx` in
+        // `reconnect_on_http_error` covers 509, so FFmpeg will retry, and every
+        // retry fails identically until the client re-resolves.
+        if (state.expired) {
+            console.log(`  token expired for ${kind}/${file}`);
+            response.writeHead(509, {
+                'Content-Type': 'text/html; charset=UTF-8',
+                Connection: 'close',
+                'Access-Control-Allow-Origin': '*',
+            });
+            response.end('');
+            return;
+        }
+
+        // The streaming host checks the account again rather than trusting the
+        // token, because a subscription can lapse between the redirect and the
+        // play, and because the token is not signed. A real load balancer does
+        // the same for the same reason.
+        if (refuseStream(resolveAccount(state.username, state.password), response)) {
+            return;
+        }
+
+        serveStream(kind, file, now, request, response);
+        return;
+    }
+
     // Stream URLs: /live/:user/:pass/:file, /movie/..., /series/...
+    // The real panel is a load balancer and never serves from here: it answers
+    // 302 to a tokenised path, with `text/html` on the redirect itself. Without
+    // that hop nothing in this repository exercises redirect handling, token
+    // expiry, or a client that follows a redirect to a different origin.
     const stream = path.match(/^\/(live|movie|series)\/([^/]+)\/([^/]+)\/(.+)$/);
     if (stream) {
         const [, kind, username, password, file] = stream;
@@ -764,58 +994,35 @@ const server = createServer((request, response) => {
 
         // A dead subscription still lists its catalogue on a real panel and
         // only fails at the stream. Reproducing that is the point: it is the
-        // shape where the app looks healthy and nothing plays.
+        // shape where the app looks healthy and nothing plays. Checked before
+        // the redirect, because a real panel refuses at the first hop.
         if (refuseStream(account, response)) {
             return;
         }
 
-        if (kind === 'movie') {
-            const item = VOD_ITEMS.find((v) => file.startsWith(String(v.id)));
-            if (!item) {
-                response.writeHead(404, { 'Content-Type': 'text/plain' });
-                response.end('No such movie\n');
-                return;
-            }
-            sendFile(join(MEDIA, String(item.id), `movie.${item.ext}`), response);
-            return;
-        }
-
-        // Everything below is live: either the channel's playlist or its
-        // progressive stream. Segments are served from /segments/<id>/.
-        const channel = CHANNELS.find((c) => String(c.id) === file.split('.')[0]);
-
-        if (!channel) {
-            response.writeHead(404, { 'Content-Type': 'text/plain' });
-            response.end('No such channel\n');
-            return;
-        }
-
-        const extension = file.split('.').pop() ?? '';
-        if (!channel.formats.includes(extension)) {
-            // AV1 has no MPEG-TS mapping, so channel 07 genuinely cannot serve
-            // a `.ts`. Saying so beats an empty body a client reads as a decode
-            // failure in its own player.
-            response.writeHead(404, { 'Content-Type': 'text/plain' });
-            response.end(
-                `${channel.name} serves ${channel.formats.join(', ')} only.\n` +
-                    `AV1 has no MPEG-TS mapping; use the .m3u8 form.\n`,
-            );
-            return;
-        }
-
-        if (extension === 'm3u8') {
-            response.writeHead(200, { 'Content-Type': CONTENT_TYPES['m3u8'], 'Cache-Control': 'no-store' });
-            response.end(livePlaylist(channel, now));
-            return;
-        }
-
-        streamEndless(join(MEDIA, String(channel.id), 'raw.ts'), response);
+        const token = mintToken(username, password, now);
+        response.writeHead(302, {
+            // `text/html` on the redirect is what the real panel sends, and it
+            // is worth reproducing: a client that sniffs the content type of
+            // the first response rather than the last sees HTML where it
+            // expected a playlist.
+            'Content-Type': 'text/html; charset=UTF-8',
+            Location: `http://${host}/${kind}/play/${token}/${file}`,
+            // Deliberately no `Cache-Control`, matching the real panel, and the
+            // omission is not cosmetic. FFmpeg caches redirects keyed on
+            // `Expires` and `Cache-Control`, and a `no-store` here would force
+            // every entry to be skipped, making the fixture immune to
+            // stale-redirect reuse for a reason the panel does not share.
+            'Access-Control-Allow-Origin': '*',
+            Connection: 'close',
+        });
+        response.end('');
         return;
     }
 
     const segment = path.match(/^\/segments\/(\d+)\/(.+)$/);
     if (segment) {
-        sendFile(join(MEDIA, segment[1], segment[2]), response);
+        sendFile(join(MEDIA, segment[1], segment[2]), request, response);
         return;
     }
 
