@@ -536,3 +536,45 @@ channels sends a viewer to the wrong programme, which is more visible than a
 freeze. Require an identity match or an exact in-category residue match for
 automatic folding, never a similarity score alone, and let the user split a
 group.
+
+### The decisions, and one that overturned part of this plan
+
+Settled with the owner on 2026-09-09:
+
+- **Fold the variants into one channel** with a quality ladder, rather than
+  trusting iptv-org's identity split. Measurement vindicates the call, and see
+  below for why.
+- **Variant order is a fixed user-editable list, with a bandwidth step-down.**
+  Most compatible first, and drop a rung if the read rate falls under the stream
+  bitrate. On this account the step-down never fires, and that is fine: it is
+  there for a user who is actually constrained.
+- **All three stall thresholds are user-exposed**, not just tier 2. Clamp them
+  to sane floors in code rather than trusting the input, because a threshold set
+  to a second produces a player that switches variants continuously.
+- **The seam is the held frame plus an overlay naming the variant being tried.**
+  Not black, not a spinner: nothing clears the `CAMetalLayer`, so the last frame
+  stays, and a freeze with an explanation reads as waiting while a black screen
+  reads as broken.
+
+**The channel names lie about quality, and that invalidates a step above.** The
+grouping plan says to extract quality from the name and use it as the preference
+key. Probed:
+
+| Variant | Video | Audio |
+|---|---|---|
+| `TRT 1 RAW` | h264 Main, 1920x1080 | HE-AAC stereo |
+| `↺TRT 1 HEVC` | hevc Main, 1920x1080 | AAC LC **mono** |
+| `TRT 1 4K` | hevc **Main 10**, 1920x1080, 50 fps | **mp2** stereo |
+
+`TRT 1 4K` is 1080p. Every variant is 1080p. So the name's quality token is a
+hint and never evidence: the preference key has to come from the probed stream,
+or from a fixed codec preference, and a "4K" label must not promote a variant
+above another. It does confirm the fold, since all three really are encodings of
+one 1080p channel and iptv-org's separate `TRT4K.tr` is a different thing from
+this provider's mislabelled entry.
+
+Two smaller notes from the same probe. `Main 10` is 10-bit HEVC, a different
+hardware decode path worth watching on weaker targets. And the audio differs
+across variants (mono AAC, stereo HE-AAC, stereo MP2), so a variant switch
+changes the audio layout mid-channel and the engine has to reapply the track
+preference after every `loadfile`.
