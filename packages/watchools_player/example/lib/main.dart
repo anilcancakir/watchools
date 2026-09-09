@@ -57,6 +57,7 @@ class _SpikeScreenState extends State<SpikeScreen> {
   String? _error;
   PlayerEvent? _lastEnd;
   final List<Map<String, Object?>> _seen = <Map<String, Object?>>[];
+  final List<Map<String, Object?>> _ticks = <Map<String, Object?>>[];
   Timer? _poll;
   StreamSubscription<PlayerEvent>? _events;
   int? _viewId;
@@ -69,10 +70,35 @@ class _SpikeScreenState extends State<SpikeScreen> {
     // shape; only an event carries the reason a stream ended, and a lapsed
     // provider token ends it as a clean EOF that a later poll cannot see.
     _events = WatchoolsPlayer.events.listen((PlayerEvent event) {
-      // Every event, not only the end: whether a fault produces any event at
-      // all is the question, so an unrecorded event would answer it wrongly.
+      final PlayerTick? tick = event.tick;
+      if (tick != null) {
+        // Written separately from the rest, because this is the measurement
+        // the headless harness could not take: it ran `vo=null, ao=null`, so a
+        // healthy stream froze in it. Here `gpu-next` is running, and these
+        // rows are what decide whether `underrun` discriminates a real stall.
+        _ticks.add(<String, Object?>{
+          'session': tick.session,
+          'monotonicNs': tick.monotonicNs,
+          'timePos': tick.timePos,
+          'paused': tick.paused,
+          'coreIdle': tick.coreIdle,
+          'forwardBytes': tick.forwardBytes,
+          'inputRate': tick.inputRate,
+          'underrun': tick.underrun,
+          'demuxerIdle': tick.demuxerIdle,
+        });
+        _write('watchools_player_ticks.json', <String, Object?>{
+          'ticks': _ticks,
+        });
+        return;
+      }
+
+      // Every other event, not only the end: whether a fault produces any
+      // event at all is the question, so an unrecorded one would answer it
+      // wrongly.
       _seen.add(<String, Object?>{
         'name': event.name,
+        'session': event.session,
         'reason': event.reason,
         'error': event.error,
         'level': event.level,

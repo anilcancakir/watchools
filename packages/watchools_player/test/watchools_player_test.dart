@@ -99,6 +99,61 @@ void main() {
     expect(log.level, 'warn');
   });
 
+  test('a tick carries the counters and its session', () {
+    final PlayerEvent event = PlayerEvent.fromNative(<Object?, Object?>{
+      'event': 'tick',
+      'session': 3,
+      'monotonicNs': 123456789,
+      'timePos': 15.5,
+      'paused': false,
+      'coreIdle': false,
+      'forwardBytes': 81920,
+      'inputRate': 190235,
+      'underrun': false,
+      'demuxerIdle': false,
+    });
+
+    expect(event.session, 3);
+    expect(event.tick, isNotNull);
+    expect(event.tick!.timePos, 15.5);
+    expect(event.tick!.forwardBytes, 81920);
+    expect(event.tick!.underrun, isFalse);
+  });
+
+  test('an absent cache field reads as unknown, never as healthy', () {
+    // `underrun`, `idle` and `eof` sit under mpv's "might be changed or
+    // removed" heading, so a build without them must not report health the
+    // core never asserted.
+    final PlayerTick tick = PlayerTick.fromNative(<Object?, Object?>{
+      'session': 1,
+      'monotonicNs': 1,
+      'paused': false,
+      'coreIdle': false,
+    });
+
+    expect(tick.underrun, isNull);
+    expect(tick.demuxerIdle, isNull);
+    expect(tick.forwardBytes, isNull);
+    expect(tick.timePos, isNull);
+    // And the two that are not optional still read, so a missing optional does
+    // not take the whole sample with it.
+    expect(tick.paused, isFalse);
+    expect(tick.session, 1);
+  });
+
+  test('a non-tick event carries its session but no counters', () {
+    final PlayerEvent event = PlayerEvent.fromNative(<Object?, Object?>{
+      'event': 'endFile',
+      'session': 7,
+      'reason': 0,
+      'error': 0,
+    });
+
+    expect(event.session, 7);
+    expect(event.tick, isNull);
+    expect(event.isEnd, isTrue);
+  });
+
   test('an unknown event name survives the trip', () {
     // The native set grows with the variant ladder, and a build pairing a new
     // engine with an older Dart side must not drop what it cannot name.
