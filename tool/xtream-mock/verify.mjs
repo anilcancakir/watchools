@@ -254,8 +254,12 @@ async function run() {
 
     const afterExpiry = await fetch(shortUrl);
     const afterBody = await afterExpiry.text();
-    check('a lapsed token answers 403', afterExpiry.status === 403, String(afterExpiry.status));
-    check('and says so in a short body', afterBody.trim() === 'Token expired', afterBody.slice(0, 40));
+    // 509, measured on the real panel rather than assumed. It is a 5xx, so a
+    // client reads "server error, retry" where the only action that helps is
+    // re-resolving through the API, and there is no body to sniff either.
+    check('a lapsed token answers 509', afterExpiry.status === 509, String(afterExpiry.status));
+    check('and its body is empty', afterBody.length === 0, `${afterBody.length} bytes`);
+    check('and it closes the connection', (afterExpiry.headers.get('connection') ?? '') === 'close');
 
     // The client's recovery is to go back to the API for a fresh URL, so that
     // has to work while the old token is dead.
@@ -278,10 +282,16 @@ const panel = spawn('node', [join(HERE, 'server.mjs')], {
 });
 
 // The panel exits non-zero when media/ is missing, which is the common first
-// run. Waiting on a fixed delay would report that as a wall of failed checks.
+// run, and when its port is taken, which is the common second one. Naming only
+// the first was wrong: a leftover server from an interrupted run reported itself
+// as a missing encode. The child's stderr is inherited, so it has already said
+// which it was; do not guess over the top of it.
 panel.on('exit', (code) => {
     if (code !== 0) {
-        console.error('The panel could not start. Run: node tool/xtream-mock/encode.mjs');
+        console.error(`\nThe panel exited with code ${code} before the checks could run.`);
+        console.error('Its own error is above. Two usual causes: media/ is missing');
+        console.error(`(run node tool/xtream-mock/encode.mjs) or port ${PORT} is still held`);
+        console.error('by an earlier run (lsof -ti :' + PORT + ' | xargs kill).');
         process.exit(1);
     }
 });

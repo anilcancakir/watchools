@@ -49,7 +49,10 @@ const WINDOW_SEGMENTS = 3;
 
 /** @type {Record<string, string>} */
 const CONTENT_TYPES = {
-    m3u8: 'application/vnd.apple.mpegurl',
+    // The real panel sends `application/x-mpegURL`, not the Apple spelling.
+    // Both are in the wild and a client should accept either, so the fixture
+    // sends the one a real panel sent.
+    m3u8: 'application/x-mpegURL',
     ts: 'video/mp2t',
     m4s: 'video/iso.segment',
     mp4: 'video/mp4',
@@ -879,16 +882,30 @@ const server = createServer((request, response) => {
             return;
         }
 
-        // A lapsed token is a 403 with a short body, which is the shape that
-        // matters: mpv sets `reconnect=1` but leaves `reconnect_on_http_error`
-        // empty, so FFmpeg refuses to reconnect on any 4xx and playback simply
-        // ends. A client wanting to survive this has to pass
-        // `reconnect_on_http_error=4xx,5xx` or go back to the API for a fresh
-        // URL. The real panel does this after about forty minutes.
+        // A lapsed token answers **509 with an empty body**, measured against
+        // the real panel: an expired token and a token minted a minute later
+        // were requested seconds apart on the same channel and answered 509 and
+        // 200 respectively, so this is the expiry response rather than a
+        // bandwidth or connection condition.
+        //
+        // 509 is the interesting part. It is non-standard (Apache and cPanel
+        // use it for "Bandwidth Limit Exceeded"), it is a 5xx, and nothing in
+        // an ordinary error taxonomy maps it to "your URL is stale, ask the API
+        // for a new one", which is the only action that helps. A client reading
+        // it as a server error retries the same dead token forever. There is no
+        // body to sniff either, unlike the `blocked` case.
+        //
+        // It also interacts with the reconnect flag: `5xx` in
+        // `reconnect_on_http_error` covers 509, so FFmpeg will retry, and every
+        // retry fails identically until the client re-resolves.
         if (state.expired) {
             console.log(`  token expired for ${kind}/${file}`);
-            response.writeHead(403, { 'Content-Type': 'text/plain' });
-            response.end('Token expired\n');
+            response.writeHead(509, {
+                'Content-Type': 'text/html; charset=UTF-8',
+                Connection: 'close',
+                'Access-Control-Allow-Origin': '*',
+            });
+            response.end('');
             return;
         }
 
