@@ -141,6 +141,37 @@ lapse arrives as a clean end of file, so a client watching for error codes sees 
 normal finish. That is a fourth silent shape alongside the ones already in
 `.ac/research/player-layer.md`.
 
+### Where the fault is actually visible, measured in the Flutter app
+
+The isolation above starved the cache to make the failure prompt. With the
+plugin's real option set in front of it, the same lapsing account behaves worse
+and the event channel is what shows it. One 75 s run against
+`live/expiring/expiring/10001.m3u8`:
+
+- mpv fetched **three segments**, then the token lapsed.
+- From then on it re-requested **only the playlist**, took a 509 **twelve
+  times**, and never asked for another segment.
+- **No `endFile` arrived.** `state()` kept reporting `videoOutput: gpu-next`,
+  `hasPicture: true`, and `cacheSeconds: 15.68` frozen at the value it held
+  when the token died. `demuxer-cache-duration` does not fall to zero here, it
+  stops moving, which is why the variant ladder must read
+  `demuxer-cache-state` and `cache-speed` instead of it.
+- The reconnects **are** visible, at `warn`, with the backoff in the text:
+
+  ```
+  warn   http: Will reconnect at 0 in 1 second(s), error=End of file.
+  warn   http: Will reconnect at 0 in 3 second(s), error=End of file.
+  error  http: Error reading HTTP response: End of file
+  ```
+
+  FFmpeg reports the 509 as `End of file`, the same silent shape as `reason=0`.
+
+So the log stream is the earliest signal for this fault and the only one that
+names it, which is the argument for `mpv_request_log_messages("warn")` over
+`terminal=yes`: the same lines, delivered where Dart can act on them instead of
+to a stdout no release build reads. Thirteen events reached Dart in that run,
+`log` and `videoReconfig` both, so the channel is wired end to end.
+
 ## What is deliberately absent
 
 No `PlaybackEngine`. That interface belongs in Dart with buffer, live offset,
