@@ -137,6 +137,59 @@ void main() {
     });
   });
 
+  group('the parsed account carries no credential', () {
+    test('neither toString nor any field echoes the username or the password back', () {
+      // The panel echoes both inside `user_info`
+      // (`tool/xtream-mock/server.mjs:151-152`), and magic_devtools' telescope
+      // interceptor records the first 8 KiB of every response body, which is
+      // far more than a handshake. So a model that kept either field would be
+      // one `Log` line or one inspector away from a provider password. Nothing
+      // asserted the stripping until this test.
+      final Map<String, dynamic> handshake = _handshake(auth: 1, status: 'Active');
+      (handshake['user_info'] as Map<String, dynamic>)
+        ..['username'] = 'Vipall39933'
+        ..['password'] = 'rjJB1jq';
+
+      final XtreamAccount account = XtreamAccount.fromHandshake(handshake);
+
+      expect(account.toString(), isNot(contains('rjJB1jq')));
+      expect(account.toString(), isNot(contains('Vipall39933')));
+    });
+  });
+
+  group('value equality', () {
+    test('two accounts parsed from the same handshake are equal and hash alike', () {
+      final Map<String, dynamic> handshake = _handshake(auth: 1, status: 'Active');
+
+      final XtreamAccount first = XtreamAccount.fromHandshake(handshake);
+      final XtreamAccount second = XtreamAccount.fromHandshake(handshake);
+
+      expect(first, second);
+      expect(first.hashCode, second.hashCode);
+    });
+
+    test('a difference in any single field breaks equality', () {
+      final XtreamAccount base = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+
+      expect(base, isNot(XtreamAccount.fromHandshake(_handshake(auth: 0, status: 'Active'))));
+      expect(base, isNot(XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Expired'))));
+      expect(base, isNot(XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active', activeCons: '2'))));
+      expect(base, isNot(XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active', maxConnections: '9'))));
+    });
+
+    test('the output formats participate by value, not by identity', () {
+      // `allowedOutputFormats` is a list, so `==` on it would compare
+      // references and two accounts parsed from two identical payloads would
+      // read as different. `listEquals` is what makes the field carry.
+      final XtreamAccount first = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+      final XtreamAccount second = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+
+      expect(first.allowedOutputFormats, <String>['m3u8', 'ts']);
+      expect(identical(first.allowedOutputFormats, second.allowedOutputFormats), isFalse);
+      expect(first, second);
+    });
+  });
+
   group('classifyProviderFault', () {
     test('statusCode 0 is unreachable, regardless of account or body', () {
       expect(classifyProviderFault(account: null, statusCode: 0, body: null), ProviderFault.unreachable);

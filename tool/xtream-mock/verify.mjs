@@ -335,6 +335,53 @@ async function run() {
     const vod = await json(`${API}?username=demo&password=demo&action=get_vod_info&vod_id=20002`);
     check('VOD reports its video codec', vod.info.video.codec_name === 'hevc');
     check('VOD reports its container', vod.movie_data.container_extension === 'mkv');
+
+    // 15. Real panels disagree on whether EPG text is base64: iptvnator's
+    //     `decodeBase64Unicode` falls back to the raw string on a decode
+    //     failure. `demo` always encodes, so this account is the other half.
+    const plainEpg = await json(
+        `${API}?username=plaintext&password=plaintext&action=get_short_epg&stream_id=10001&limit=1`,
+    );
+    check(
+        'a plain-text EPG account sends title as-is',
+        plainEpg.epg_listings[0].title.includes('H.264'),
+        plainEpg.epg_listings[0].title,
+    );
+
+    // 16. `exp_date: "0"` is a real no-expiry spelling next to null, and a
+    //     naive date comparison reads it as 1970 rather than never expiring.
+    const zeroExpiry = (await json(`${API}?username=zeroexpiry&password=zeroexpiry`)).user_info;
+    check('exp_date 0 means no expiry, not 1970', zeroExpiry.exp_date === '0', zeroExpiry.exp_date);
+    check('and the account is otherwise active', zeroExpiry.auth === 1 && zeroExpiry.status === 'Active');
+
+    // 17. Some panels implement only the typo'd `get_simple_date_table`
+    //     ("date", not "data"). The documented spelling has to look like an
+    //     unimplemented action, empty rather than an error, or a client has
+    //     no signal to retry on.
+    const typoWrong = await json(
+        `${API}?username=datetypo&password=datetypo&action=get_simple_data_table&stream_id=10001`,
+    );
+    check('the documented spelling answers empty on a typo-only panel', typoWrong.epg_listings.length === 0);
+    const typoRight = await json(
+        `${API}?username=datetypo&password=datetypo&action=get_simple_date_table&stream_id=10001`,
+    );
+    check('the typo\'d spelling answers for real', typoRight.epg_listings.length > 0, JSON.stringify(typoRight));
+
+    // 18. A panel that refuses the bare handshake, so a client has to try
+    //     `get_account_info` instead. `xtream_client.dart` does not implement
+    //     that fallback yet, so this only records the wire shape it would
+    //     need: the bare call answers nothing usable and the named action
+    //     carries the real payload.
+    const bareRefused = await json(`${API}?username=accountinfo&password=accountinfo`);
+    check(
+        'a refusing panel answers nothing useful on the bare handshake',
+        bareRefused.user_info === undefined,
+        JSON.stringify(bareRefused),
+    );
+    const viaAccountInfo = await json(
+        `${API}?username=accountinfo&password=accountinfo&action=get_account_info`,
+    );
+    check('and answers get_account_info instead', viaAccountInfo.user_info?.auth === 1, JSON.stringify(viaAccountInfo));
 }
 
 const panel = spawn('node', [join(HERE, 'server.mjs')], {

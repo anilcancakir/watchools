@@ -250,3 +250,31 @@ behaviour.
     `matches`'s filter and the category strip agreeing. Worth knowing it was a judgment call rather
     than a specified one, because a curated ordering is the kind of thing a product decision could
     later want.
+
+## Wave 6
+
+25. **The plan claimed the mock's README listed four behaviours as absent. It never did.** Step 12
+    read the whole 240-line file, grepped for the phrasing, found nothing, and reported the
+    discrepancy instead of quietly editing something else or claiming the criterion met. The claim
+    came from the plan's own prose, which I passed through verbatim as a briefing. The criterion is
+    satisfied in substance (nothing states them as absent, and all four accounts are now documented
+    as present), but the general lesson is that a plan's description of a file is a claim about that
+    file, and it inherits no authority from being in the plan.
+
+26. **[REMEDIATION] The coverage gate found a security assertion nobody had written.**
+    `xtream_account.dart` measured 27/51, and every one of the 24 missing lines was `==`,
+    `hashCode` or `toString`. That is easy to dismiss as convention code, except the account is
+    parsed from a handshake whose `user_info` **echoes the username and password back**
+    (`server.mjs:151-152`), the model strips both on receipt because magic_devtools' telescope
+    records the first 8 KiB of every response body, and nothing tested that the stripping worked.
+    Now 51/51, with the strip asserted directly and `listEquals` on the output formats covered.
+    The lesson: a low-coverage file whose gaps are all "boilerplate" is worth one look at what the
+    boilerplate is adjacent to.
+
+27. **I reported a failing gate that was a stale read.** I read step 12's evidence file while the
+    worker was still writing it, saw 55 checks and a dead panel, and said the gate had not passed.
+    It had: the finished file shows 77 and "All checks passed", confirmed by my own independent
+    run. Two corrections follow. An evidence file is only evidence once its writer has returned,
+    and an `EADDRINUSE` from a fixture that binds a fixed port usually means two runs overlapping
+    rather than a leak, which I checked before filing it as a defect and which turned out to be
+    exactly that: the verifier does release 3399 on a clean exit.

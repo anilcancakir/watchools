@@ -157,7 +157,16 @@ function userInfo(account, username, password, now) {
         // corpus proves outright: testData/eternal/auth.json carries
         // "exp_date": null. A client comparing it as a date without a null
         // check reports the account that never expires as expired.
-        exp_date: account.kind === 'lifetime' ? null : String(now + (expired ? -14 * 86400 : 365 * 86400)),
+        //
+        // "0" is the other no-expiry spelling, per `tvarr` `xtream_account.go:56-58`,
+        // and it is the more dangerous one: `Number('0')` is 0, so a naive
+        // comparison against `now` reads a live subscription as having expired
+        // in 1970 rather than as never expiring.
+        exp_date: account.expiryZero
+            ? '0'
+            : account.kind === 'lifetime'
+              ? null
+              : String(now + (expired ? -14 * 86400 : 365 * 86400)),
         is_trial: '0',
         active_cons: '1',
         created_at: String(now - 365 * 86400),
@@ -187,6 +196,25 @@ function serverInfo(host, now) {
         timezone: TIMEZONE,
         timestamp_now: now,
         time_now: panelTime(now, OFFSET_MINUTES),
+    };
+}
+
+/**
+ * The handshake body, shared between the bare no-action call and its
+ * `get_account_info` alternate spelling, since a real panel that answers both
+ * sends the identical payload to each.
+ *
+ * @param {import('./catalogue.mjs').Account} account
+ * @param {string} username
+ * @param {string} password
+ * @param {string} host
+ * @param {number} now
+ * @returns {object}
+ */
+function handshakePayload(account, username, password, host, now) {
+    return {
+        user_info: userInfo(account, username, password, now),
+        server_info: serverInfo(host, now),
     };
 }
 
@@ -247,9 +275,10 @@ function vodEntry(item, index, host) {
  * @param {URLSearchParams} query
  * @param {string} host
  * @param {number} now
+ * @param {import('./catalogue.mjs').Account} account
  * @returns {object|null} Null when the action is unknown, which a real panel answers with an empty array.
  */
-function dispatch(action, query, host, now) {
+function dispatch(action, query, host, now, account) {
     const categoryFilter = query.get('category_id');
     const inCategory = (/** @type {number} */ id) => !categoryFilter || String(id) === categoryFilter;
 
@@ -322,21 +351,29 @@ function dispatch(action, query, host, now) {
             if (!channel || !channel.epgId) return { epg_listings: [] };
             const limit = Number(query.get('limit') ?? 4);
 
-            return { epg_listings: epgWindow(channel, now, limit).map((p, i) => epgListing(channel, p, i)) };
-        }
-
-        case 'get_simple_data_table': {
-            const channel = CHANNELS.find((c) => String(c.id) === query.get('stream_id'));
-            if (!channel || !channel.epgId) return { epg_listings: [] };
-
             return {
-                epg_listings: epgWindow(channel, now, 12).map((p, i) => ({
-                    ...epgListing(channel, p, i),
-                    now_playing: p.start <= now && now < p.stop ? 1 : 0,
-                    has_archive: channel.archive,
-                })),
+                epg_listings: epgWindow(channel, now, limit).map((p, i) =>
+                    epgListing(channel, p, i, account.epgPlain === true),
+                ),
             };
         }
+
+        // The documented spelling. On a `dateTypoOnly` account this has to
+        // look like an unimplemented action, empty rather than an error, or a
+        // client has no signal that it should retry with the typo below.
+        case 'get_simple_data_table':
+            return account.dateTypoOnly
+                ? { epg_listings: [] }
+                : simpleDataTable(CHANNELS.find((c) => String(c.id) === query.get('stream_id')), now, account);
+
+        // The typo ("date", not "data") some real panels implement instead of
+        // the spelling above. Answered only on the account that models that
+        // panel; every other account never sends this action and falls
+        // through to the default, unknown-action case.
+        case 'get_simple_date_table':
+            return account.dateTypoOnly
+                ? simpleDataTable(CHANNELS.find((c) => String(c.id) === query.get('stream_id')), now, account)
+                : null;
 
         default:
             return null;
@@ -344,23 +381,51 @@ function dispatch(action, query, host, now) {
 }
 
 /**
+ * The full-schedule EPG table, shared between `get_simple_data_table` and its
+ * typo because a real panel sends the identical payload whichever name reaches
+ * it; only which name is answered differs per account.
+ *
+ * @param {import('./catalogue.mjs').Channel|undefined} channel
+ * @param {number} now
+ * @param {import('./catalogue.mjs').Account} account
+ * @returns {object}
+ */
+function simpleDataTable(channel, now, account) {
+    if (!channel || !channel.epgId) return { epg_listings: [] };
+
+    return {
+        epg_listings: epgWindow(channel, now, 12).map((p, i) => ({
+            ...epgListing(channel, p, i, account.epgPlain === true),
+            now_playing: p.start <= now && now < p.stop ? 1 : 0,
+            has_archive: channel.archive,
+        })),
+    };
+}
+
+/**
  * One EPG listing. Title and description are base64 here and plain text in
- * `xmltv.php`, which is a real asymmetry rather than an inconsistency.
+ * `xmltv.php`, which is a real asymmetry rather than an inconsistency. `plain`
+ * reproduces the other real disagreement: some panels send `get_short_epg` and
+ * `get_simple_data_table` text unencoded too, which is why a real client falls
+ * back to the raw string on a decode failure instead of throwing.
  *
  * @param {import('./catalogue.mjs').Channel} channel
  * @param {{title: string, description: string, start: number, stop: number}} programme
  * @param {number} index
+ * @param {boolean} plain Send title/description as-is instead of base64.
  * @returns {object}
  */
-function epgListing(channel, programme, index) {
+function epgListing(channel, programme, index, plain) {
+    const encode = (/** @type {string} */ text) => (plain ? text : Buffer.from(text, 'utf8').toString('base64'));
+
     return {
         id: String(channel.id * 100 + index),
         epg_id: '1',
-        title: Buffer.from(programme.title, 'utf8').toString('base64'),
+        title: encode(programme.title),
         lang: 'tr',
         start: panelTime(programme.start, OFFSET_MINUTES),
         end: panelTime(programme.stop, OFFSET_MINUTES),
-        description: Buffer.from(programme.description, 'utf8').toString('base64'),
+        description: encode(programme.description),
         channel_id: channel.epgId ?? '',
         start_timestamp: String(programme.start),
         stop_timestamp: String(programme.stop),
@@ -946,14 +1011,21 @@ const server = createServer((request, response) => {
 
         // The handshake is the no-action call, and it is the only response a
         // rejected account gets: every listing action on bad credentials
-        // answers an empty array, not an error.
+        // answers an empty array, not an error. `refusesHandshake` models the
+        // panels that answer nothing useful here at all: `iptvnator` probes
+        // this shape first, then `get_account_info`, then `get_profile`,
+        // because some panels genuinely refuse a bare request.
         if (!action) {
-            response.end(
-                JSON.stringify({
-                    user_info: userInfo(account, username, password, now),
-                    server_info: serverInfo(host, now),
-                }),
-            );
+            response.end(JSON.stringify(account.refusesHandshake ? {} : handshakePayload(account, username, password, host, now)));
+            return;
+        }
+
+        // The alternate spelling of the handshake every account answers,
+        // which is what the account above forces a client to fall back to.
+        // The Dart client has no such fallback yet; this only records the
+        // wire shape it would need.
+        if (action === 'get_account_info') {
+            response.end(JSON.stringify(handshakePayload(account, username, password, host, now)));
             return;
         }
 
@@ -962,7 +1034,7 @@ const server = createServer((request, response) => {
             return;
         }
 
-        response.end(JSON.stringify(dispatch(action, query, host, now) ?? []));
+        response.end(JSON.stringify(dispatch(action, query, host, now, account) ?? []));
         return;
     }
 

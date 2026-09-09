@@ -482,7 +482,7 @@ This is the same class as the fault arm in step 11 and lands in the same pull re
 
 ### Wave 6
 
-- [ ] **Step 12**: Close the four mock gaps the research exposed
+- [x] **Step 12**: Close the four mock gaps the research exposed
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: a zero-dependency Node fixture with an established idiom and a 70-check verifier, so the work is pattern-following plus a check per behaviour.
@@ -505,7 +505,7 @@ This is the same class as the fault arm in step 11 and lands in the same pull re
         - Add a dependency; this tool is zero-dependency on purpose
         - Touch the media encoding pipeline
 
-- [ ] **Step 13**: Measure the catalogue write at real scale
+- [x] **Step 13**: Measure the catalogue write at real scale
     - **Type**: verification
     - **Files**: (no source edits; runs commands)
     - **Description**: The oracle set an escalation trigger here and it decides whether this design ships. `DB.statement` and the prepared path are **synchronous**, so whatever the write costs is a frozen UI for exactly that long. Write 2,976 channels and 38,247 titles, the real provider's measured counts, and time it. Above roughly two seconds the synchronous path is not survivable behind a progress state on a television, and the answer becomes a background isolate with its own connection, which magic's web arm cannot provide: stop and re-plan rather than shipping it.
@@ -520,7 +520,7 @@ This is the same class as the fault arm in step 11 and lands in the same pull re
         - Reduce the row counts to make the number look better; 2,976 and 38,247 are the measured real ones
         - Proceed past a figure over two seconds without re-planning
 
-- [ ] **Step 14**: Run every gate the project enforces
+- [x] **Step 14**: Run every gate the project enforces
     - **Type**: verification
     - **Files**: (no source edits; runs commands)
     - **Description**: The full local gate set before the pull request, in the order CI runs it. The lock check runs **before** `pub get`, because that is the only moment the committed file is still the committed file. Coverage is the one most likely to fail on this plan: the layer is large and its own logic must clear 90% over a denominator that excludes only the generated scaffold.

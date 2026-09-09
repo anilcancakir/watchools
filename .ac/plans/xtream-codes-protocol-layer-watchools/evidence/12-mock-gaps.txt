@@ -1,0 +1,79 @@
+  ok    handshake authenticates
+  ok    auth is a bare integer
+  ok    max_connections is a string
+  ok    exp_date is a string
+  ok    server_info carries the clock pair
+  ok    expired flags status
+  ok    expired hides behind a future date
+  ok    lapsed keeps status Active
+  ok    lapsed only shows in the date
+  ok    lifetime carries a null exp_date
+  ok    lifetime is otherwise active
+  ok    unknown credentials answer auth 0
+  ok    the rejected shape carries only auth
+  ok    throttled answers HTTP 200
+  ok    throttled body is not JSON
+  ok    a dead account still lists channels
+  ok    a stream refusal is HTTP 200, not a status code
+  ok    a stream refusal names the status in the body
+  ok    a throttled stream answers 200 and blocked
+  ok    a hanging provider never answers a stream
+  ok    get.php refuses unknown credentials
+  ok    xmltv.php refuses unknown credentials
+  ok    category_id is a string
+  ok    tv_archive is an integer
+  ok    one channel has a null epg id
+  ok    EPG titles are base64
+  ok    XMLTV titles are plain text
+  ok    XMLTV keeps the offset space
+  ok    a channel with no epg id has no listings
+  ok    and XMLTV agrees
+  ok    declared segment durations match the encode
+  ok    the playlist carries a discontinuity sequence
+  ok    segment URIs carry the absolute sequence
+  ok    and increase by one across the window
+  ok    a sliding URI resolves
+  ok    to the loop position it names
+  ok    01 H.264 AAC | HLS/TS decodes as h264 + aac
+  ok    02 H.264 AAC | RAW TS decodes as h264 + aac
+  ok    03 H.264 AC-3 | HLS/TS decodes as h264 + ac3
+  ok    04 H.265 AAC | HLS/fMP4 decodes as hevc + aac
+  ok    05 H.265 E-AC-3 | HLS/TS decodes as hevc + eac3
+  ok    06 MPEG-2 MP2 | RAW TS decodes as mpeg2video + mp2
+  ok    07 AV1 Opus | HLS/fMP4 decodes as av1 + opus
+  ok    08 H.264 MP3 | HLS/TS decodes as h264 + mp3
+  ok    AV1 refuses .ts with a reason
+  ok    timeshift echoes the duration
+  ok    timeshift.php echoes the duration
+  ok    a channel without an archive refuses catch-up
+  ok    a stream URL answers 302
+  ok    the redirect carries a tokenised path
+  ok    the redirect itself is text/html
+  ok    following the redirect reaches the playlist
+  ok    an unreadable token is 404, not 403
+  ok    the expiring account also gets a token
+  ok    its token works at first
+  ok    a lapsed token answers 509
+  ok    and its body is empty
+  ok    and it closes the connection
+  ok    a fresh redirect mints a new token
+  ok    and the new token plays
+  ok    a Range request answers 206
+  ok    with the exact slice asked for
+  ok    and a Content-Range naming the total
+  ok    an unranged request carries a Content-Length
+  ok    and the panel-shaped Accept-Ranges
+  ok    a tail range answers 206
+  ok    with 512 bytes
+  ok    an unsatisfiable range answers 416
+  ok    VOD reports its video codec
+  ok    VOD reports its container
+  ok    a plain-text EPG account sends title as-is
+  ok    exp_date 0 means no expiry, not 1970
+  ok    and the account is otherwise active
+  ok    the documented spelling answers empty on a typo-only panel
+  ok    the typo'd spelling answers for real
+  ok    a refusing panel answers nothing useful on the bare handshake
+  ok    and answers get_account_info instead
+
+All checks passed.

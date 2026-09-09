@@ -1,0 +1,58 @@
+Step 13: the catalogue write at real provider scale
+====================================================
+
+The escalation gate the oracle set. `DB.statement` and the prepared path are both synchronous, so
+whatever the write costs is a frozen UI for exactly that long. Above roughly two seconds the
+design does not ship: the answer becomes a background isolate with its own connection, which
+magic's web arm cannot provide.
+
+Machine
+-------
+macOS 26.6.2, arm64, Apple M1 Pro.
+Dart `sqlite3` 3.5.2 against libsqlite3 3.53.4 (as reported by the engine).
+Debug build, `flutter test`, `sqlite3.openInMemory()`.
+
+Command
+-------
+  $ flutter test test/app/provider/catalogue_store_scale_test.dart \
+      --plain-name 'writes the real catalogue size'
+
+Output
+------
+  00:00 +0: loading test/app/provider/catalogue_store_scale_test.dart
+  00:00 +0: writes the real catalogue size
+  Shell: SCALE channels: 2976 rows in 34 ms
+  Shell: SCALE titles:   38247 rows in 142 ms
+  Shell: SCALE combined: 176 ms (redesign threshold, not asserted: ~2000 ms)
+  00:00 +1: All tests passed!
+
+Row counts are the measured real provider's, not a convenience: 2,976 live channels and 38,247 VOD
+titles, from `.ac/research/player-layer.md`.
+
+Verdict
+-------
+176 ms combined against a ~2,000 ms escalation trigger. An order of magnitude under, so the
+synchronous write stays survivable behind a progress state and **no background isolate is needed**.
+Proceed.
+
+A second, independent run during step 7 measured 30 ms / 137 ms / 167 ms on the same machine, so
+the figure is stable to within about 5%.
+
+How to read this number, which is the part that matters
+-------------------------------------------------------
+**It is a floor, not a device number.** In-memory means no file system and no disk sync; a debug
+build means no AOT. A television writing to flash will be slower, and by how much is unmeasured.
+
+What it measures honestly is the statement SHAPE, and that is what the gate was really about. The
+store writes one prepared statement per table, reused per row, inside one transaction. The
+alternative the plan warned against, magic's `insertAll`, runs an `INSERT` plus a
+`SELECT last_insert_rowid()` per row: 76,494 statements for 38,247 titles instead of 38,247
+`execute` calls on one prepared statement. A regression to that shape would show here as an order
+of magnitude rather than as noise, which is why this test is worth keeping in the suite rather
+than being a one-off measurement.
+
+Two things it does NOT measure, both named so nobody reads them into it:
+
+- Disk. See above.
+- The network fetch that produces these rows, which on a `max_connections: 1` account is the
+  actual cold-start cost and is not this test's business.
