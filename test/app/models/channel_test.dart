@@ -128,6 +128,26 @@ void main() {
       expect(programme.endMinute, greaterThan(24 * 60));
     });
 
+    test('labels a negative minute as the previous evening, not as after midnight', () {
+      // The unit is allowed to go negative: `get_short_epg`'s first listing is
+      // the programme already on air, which began the previous evening, so
+      // after a post-midnight re-anchor a window legitimately starts at -30.
+      // Dart's `~/` truncates toward zero, so the naive formatter printed
+      // `00:30` for half past eleven the night before. Block placement was
+      // never affected, only the label, which is why every layout test passed.
+      const Programme spanning = Programme(startMinute: -30, endMinute: 20, title: 'Gece Kuşağı');
+
+      expect(spanning.startLabel, '23:30');
+      expect(spanning.endLabel, '00:20');
+    });
+
+    test('still labels a past-midnight minute without wrapping the unit', () {
+      const Programme late = Programme(startMinute: 1470, endMinute: 1500, title: 'Kapanış');
+
+      expect(late.startLabel, '00:30');
+      expect(late.endLabel, '01:00');
+    });
+
     test('returns null when the listing has no parsable start or end', () {
       final Programme? programme = Programme.fromXtream(const <String, dynamic>{
         'title': 'x',

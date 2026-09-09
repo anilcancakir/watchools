@@ -132,7 +132,13 @@ class XtreamClient {
   Future<XtreamResponse<List<Map<String, dynamic>>>> simpleDataTable(int streamId) async {
     final XtreamResponse<List<Map<String, dynamic>>> documented = await _listings('get_simple_data_table', streamId);
 
-    if (documented.statusCode != 200 || (documented.data?.isNotEmpty ?? false)) {
+    // A null `data` is a body this layer could not read, which is the generic
+    // 200-plus-`blocked` denial among other things, and it must NOT be retried:
+    // the previous guard read it as "empty, so try the other spelling" and sent
+    // a second request to a panel that had just refused one. On an account at
+    // its connection limit that second request is what costs another device its
+    // slot. Only a readable, genuinely empty result earns the retry.
+    if (documented.statusCode != 200 || documented.data == null || documented.data!.isNotEmpty) {
       return documented;
     }
 

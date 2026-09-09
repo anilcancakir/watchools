@@ -172,7 +172,10 @@ class CurtainLayout extends StatelessWidget {
           className: 'flex flex-row items-center gap-3',
           children: <Widget>[
             if (rating != null) WText('★ $rating', className: 'shrink-0 text-sm font-bold text-primary'),
-            WText('${title.year} · ${title.lengthLabel}', className: 'shrink-0 text-sm font-medium text-fg-muted'),
+            // `metaLabel` rather than the two fields: a provider entry has
+            // neither, and printing them gives `0 · 0 dk`.
+            if (title.metaLabel.isNotEmpty)
+              WText(title.metaLabel, className: 'shrink-0 text-sm font-medium text-fg-muted'),
             WDiv(
               className: 'flex-1 min-w-0',
               child: WText(

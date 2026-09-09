@@ -40,7 +40,30 @@ class LibraryController extends SimpleMagicController {
   ///
   /// [session] is what [titles], [categories] and [fault] read on the
   /// provider path; pass one in a test, leave it null in the app.
-  LibraryController({ProviderSession? session}) : _sessionOverride = session;
+  LibraryController({ProviderSession? session}) : _sessionOverride = session {
+    _session.addListener(_onSessionChanged);
+  }
+
+  /// Repaints when the session's catalogue or fault moves.
+  ///
+  /// Load-bearing rather than convenient. `AppServiceProvider.boot()` fires
+  /// `ProviderSession.refresh()` **unawaited**, so the catalogue arrives after
+  /// the first frame, and a build-time poll cannot observe a value that
+  /// arrives between builds. Without this subscription the arriving catalogue
+  /// and the [ProviderFault] would sit invisible until an unrelated gesture
+  /// rebuilt the screen.
+  void _onSessionChanged() {
+    _lastSeenTitles = null;
+    _invalidate();
+    _categoriesCache = null;
+    refreshUI();
+  }
+
+  @override
+  void onClose() {
+    _session.removeListener(_onSessionChanged);
+    super.onClose();
+  }
 
   /// The provider handle, resolved on every read rather than captured once.
   ///

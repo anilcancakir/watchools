@@ -530,5 +530,25 @@ void main() {
       expect(response.statusCode, 0);
       fake.assertSentCount(1);
     });
+
+    test('a 200 carrying an unreadable body is NOT retried', () async {
+      // The panel's generic denial: HTTP 200 with the plain word `blocked`.
+      // `data` is null there, and the previous guard read null as "empty, so
+      // try the other spelling" and sent a second request to a panel that had
+      // just refused one. On an account at its connection limit that second
+      // request is what costs another device its slot, which is the whole
+      // reason `ProviderFault.evicted` exists as a separate member.
+      final FakeNetworkDriver fake = _bindFakeDriver(<String, MagicResponse>{
+        '*': MagicResponse(data: 'blocked', statusCode: 200),
+      });
+
+      final XtreamResponse<List<Map<String, dynamic>>> response = await XtreamClient(_credentials())
+          .simpleDataTable(101);
+
+      expect(response.statusCode, 200);
+      expect(response.data, isNull);
+      expect(response.body, 'blocked', reason: 'the caller needs the raw body to classify the denial');
+      fake.assertSentCount(1);
+    });
   });
 }

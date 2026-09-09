@@ -94,6 +94,22 @@ class GuideController extends SimpleMagicController {
       _sessionOverride = session {
     _tickingSource = this.clock;
     this.clock.addListener(_onTick);
+    _session.addListener(_onSessionChanged);
+  }
+
+  /// Repaints when the session's catalogue, clock or fault moves.
+  ///
+  /// Load-bearing rather than convenient. `AppServiceProvider.boot()` fires
+  /// `ProviderSession.refresh()` **unawaited**, so the catalogue arrives after
+  /// the first frame. A build-time poll cannot observe a value that arrives
+  /// between builds, so without this subscription the arriving line-up, the
+  /// anchored clock and the [ProviderFault] would all sit invisible until an
+  /// unrelated gesture happened to rebuild the screen.
+  void _onSessionChanged() {
+    _lastSeenChannels = null;
+    _invalidate();
+    _groupsCache = null;
+    refreshUI();
   }
 
   /// The provider handle, resolved on every read rather than captured once.
@@ -245,6 +261,7 @@ class GuideController extends SimpleMagicController {
     // controller made it: the session's own instance outlives this controller
     // and disposing it would take the guide down for whoever else reads it.
     _tickingSource?.removeListener(_onTick);
+    _session.removeListener(_onSessionChanged);
     if (_ownsClock) clock.dispose();
     super.onClose();
   }

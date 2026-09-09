@@ -175,8 +175,11 @@ class ShowcaseLayout extends StatelessWidget {
       children: <Widget>[
         WText(title.isSeries ? 'DİZİ' : 'FİLM', className: 'text-xs font-bold tracking-widest text-primary'),
         WText(title.name, className: 'text-3xl sm:text-5xl font-bold text-fg line-clamp-2'),
+        // Composed from the parts, not interpolated: a provider entry carries
+        // no year and no runtime, and `0 · 0 dk` states two facts it never
+        // sent. See `TitleItem.metaLabel`.
         WText(
-          rating == null ? '${title.year} · ${title.lengthLabel}' : '${title.year} · ${title.lengthLabel} · ★ $rating',
+          <String>[if (title.metaLabel.isNotEmpty) title.metaLabel, if (rating != null) '★ $rating'].join(' · '),
           className: 'text-sm font-medium text-fg-muted',
         ),
         if (title.synopsis != null && wide)
@@ -289,7 +292,7 @@ class ShowcaseLayout extends StatelessWidget {
   Widget _resumeCard(TitleItem title, double width) {
     final Episode? next = title.upNext;
     final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
-    final String caption = title.isSeries && next != null ? '${next.code} · ${next.title}' : title.lengthLabel;
+    final String caption = title.isSeries && next != null ? '${next.code} · ${next.title}' : title.lengthLabel ?? '';
 
     return SizedBox(
       width: width,

@@ -326,6 +326,36 @@ void main() {
 
       expect(panel.requestedShortEpgStreamIds, <int>[201]);
     });
+
+    test('the bound counts channels that HAVE an epg id, not positions in the line-up', () async {
+      // The shape of a real line-up: 91% of channels carry no
+      // `epg_channel_id` at all. Bounding an index over the unfiltered list
+      // spends a slot on every channel it then skips, so a limit of two here
+      // would reach only stream 303 and stop, leaving the two live screens
+      // with one schedule between them. The bound has to apply to candidates.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Spor')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 301, number: 1, name: 'No EPG 1', categoryId: '1'),
+        _liveEntry(streamId: 302, number: 2, name: 'No EPG 2', categoryId: '1'),
+        _liveEntry(streamId: 303, number: 3, name: 'Has EPG 1', categoryId: '1', epgChannelId: 'ch3'),
+        _liveEntry(streamId: 304, number: 4, name: 'No EPG 3', categoryId: '1'),
+        _liveEntry(streamId: 305, number: 5, name: 'Has EPG 2', categoryId: '1', epgChannelId: 'ch5'),
+      ];
+      for (final int streamId in <int>[303, 305]) {
+        panel.shortEpgByStreamId[streamId] = <Map<String, dynamic>>[
+          _shortEpgListing(start: '2024-01-01 20:00:00', end: '2024-01-01 21:00:00', title: 'Programme'),
+        ];
+      }
+
+      final ProviderSession session = ProviderSession(epgFetchLimit: 2);
+      await session.start();
+      await session.refresh();
+
+      expect(panel.requestedShortEpgStreamIds, <int>[303, 305]);
+      expect(session.channels.where((Channel c) => c.schedule.isNotEmpty), hasLength(2));
+    });
   });
 
   group('user state, surviving a refresh', () {
@@ -367,6 +397,56 @@ void main() {
       final TitleItem title = session.titles.firstWhere((TitleItem t) => t.providerId == 401);
       expect(title.favourite, isTrue);
       expect(title.progress, 0.5);
+    });
+  });
+
+  group('the guards a real caller trips', () {
+    test('two overlapping refreshes are one refresh', () async {
+      // `DB.transaction` issues a literal `BEGIN TRANSACTION` on the one
+      // shared connection, so two overlapping refreshes nest a `BEGIN`,
+      // sqlite3 rejects it, and the inner `rollback()` discards the outer
+      // transaction's rows too. Reachable by double-tapping the fault panel's
+      // retry, which cannot repaint into a disabled state because the
+      // controller notifies only after the refresh returns.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveStreams = <Map<String, dynamic>>[_liveEntry(streamId: 601, number: 1, name: 'Kanal', categoryId: '1')];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      await Future.wait<void>(<Future<void>>[session.refresh(), session.refresh(), session.refresh()]);
+
+      expect(panel.handshakeCalls, 1, reason: 'three calls, one refresh');
+    });
+
+    test('a refresh after the first one completes is a second refresh', () async {
+      // The guard must not latch: the retry button has to work twice.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      await session.refresh();
+      await session.refresh();
+
+      expect(panel.handshakeCalls, 2);
+    });
+
+    test('an unreadable stored credential becomes a fault, not a boot failure', () async {
+      // `start()` is awaited inside `Magic.init()`, which `main()` awaits
+      // before `runApp()`. A `FormatException` propagating from here aborts
+      // the boot with no UI at all, and with no onboarding screen the user has
+      // no way to clear the bad value.
+      Vault.fake(<String, String>{XtreamCredentials.vaultKey: 'not a credential at all'});
+
+      final ProviderSession session = ProviderSession();
+
+      await expectLater(session.start(), completes);
+      expect(session.hasCredentials, isFalse);
+      expect(session.fault, ProviderFault.expired);
+      driver.assertNothingSent();
     });
   });
 

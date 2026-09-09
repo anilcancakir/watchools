@@ -493,6 +493,45 @@ void main() {
       expect(fromSession.now, 9 * 60);
     });
 
+    test('a catalogue arriving after the first frame repaints the screen', () async {
+      // `AppServiceProvider.boot()` fires `refresh()` unawaited, so the
+      // catalogue lands AFTER the first build. A controller that only polled
+      // the session from a getter could not see it: the getter runs during a
+      // build and the value arrives between builds, so the line-up would stay
+      // invisible until an unrelated gesture happened to rebuild.
+      final _NotifyingSession session = _NotifyingSession();
+      final GuideController controller = GuideController(session: session);
+
+      expect(controller.channels, isEmpty);
+
+      int repaints = 0;
+      controller.addListener(() => repaints++);
+
+      session.arrive(const <Channel>[
+        Channel(number: 1, name: 'Anadolu Spor', group: 'Spor', status: ChannelStatus.idle, streamId: 10),
+      ]);
+
+      expect(repaints, 1, reason: 'the session notified and the controller has to pass it on');
+      expect(controller.channels, hasLength(1));
+      expect(controller.matches, hasLength(1));
+      expect(controller.groups, contains('Spor'));
+    });
+
+    test('a fault arriving after the first frame repaints too', () async {
+      final _NotifyingSession session = _NotifyingSession();
+      final GuideController controller = GuideController(session: session);
+
+      expect(controller.fault, isNull);
+
+      int repaints = 0;
+      controller.addListener(() => repaints++);
+
+      session.fail(ProviderFault.unreachable);
+
+      expect(repaints, 1);
+      expect(controller.fault, ProviderFault.unreachable);
+    });
+
     test('the tick subscription moves onto the session clock, so a minute change repaints', () {
       // Reading the right minute is not the same as being told when it
       // changes. Without the move, `now` would report a live value that
@@ -557,6 +596,39 @@ class _StubClock extends GuideClock {
 
   void set(int value) {
     _minute = value;
+    notifyListeners();
+  }
+}
+
+/// A session double whose catalogue and fault arrive AFTER construction, the
+/// way a real refresh does, and which notifies when they do.
+///
+/// The fixed [_FakeProviderSession] cannot show this: it reports its values
+/// from the moment it is built, so a controller that never subscribed would
+/// still read them. Only a value that arrives later distinguishes a
+/// subscription from a poll.
+class _NotifyingSession extends ProviderSession {
+  List<Channel> _channels = const <Channel>[];
+  ProviderFault? _fault;
+
+  @override
+  bool get hasCredentials => true;
+
+  @override
+  List<Channel> get channels => _channels;
+
+  @override
+  ProviderFault? get fault => _fault;
+
+  /// A refresh landing its line-up.
+  void arrive(List<Channel> channels) {
+    _channels = channels;
+    notifyListeners();
+  }
+
+  /// A refresh landing a fault instead.
+  void fail(ProviderFault fault) {
+    _fault = fault;
     notifyListeners();
   }
 }

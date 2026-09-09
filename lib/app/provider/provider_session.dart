@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/channel.dart';
 import '../models/programme.dart';
 import '../models/provider_fault.dart';
@@ -75,7 +77,17 @@ import 'catalogue_store.dart';
 /// track them. The 180px "now line" teleport a fresh anchor causes on the
 /// grid is `CLAUDE.md`'s own tracked follow-up (a sticky window), out of
 /// scope here.
-class ProviderSession {
+/// ## Why this notifies
+///
+/// A refresh lands **after** the first frame, by design: `boot()` awaits only
+/// [start] and fires [refresh] unawaited, so the app paints the cached
+/// catalogue rather than a blank window. That makes notification load-bearing
+/// rather than convenient. A consumer that polled this object from a getter
+/// would only ever observe it during a build, and the value it is waiting for
+/// arrives between builds, so the arriving catalogue, the anchored clock and
+/// the [ProviderFault] would all sit invisible until an unrelated gesture
+/// happened to rebuild the screen.
+class ProviderSession extends ChangeNotifier {
   /// The on-screen minimum, bounded.
   ///
   /// A real catalogue can hold thousands of channels and only about one in
@@ -105,6 +117,9 @@ class ProviderSession {
   DateTime? _midnight;
   List<Channel> _channels = const <Channel>[];
   List<TitleItem> _titles = const <TitleItem>[];
+
+  /// The refresh currently in flight, or null. See [refresh].
+  Future<void>? _inFlight;
 
   /// Creates a session. [store] defaults to a fresh, stateless
   /// [CatalogueStore]; [isPlaying] defaults to "never playing".
@@ -158,19 +173,50 @@ class ProviderSession {
   /// on screen, and lets [refresh] land afterwards.
   ///
   /// A test that wants the fetched catalogue awaits both in turn.
+  ///
+  /// An unreadable stored payload becomes [ProviderFault.expired] rather than
+  /// a throw. `XtreamCredentials.load` throws [FormatException] on a payload
+  /// that is not this record (an older build's shape, a partial write), and
+  /// this method is awaited inside `Magic.init()`, which `main()` awaits
+  /// before `runApp()`: letting it propagate aborts the boot with no UI at
+  /// all, and with no onboarding screen the user has no way to clear the bad
+  /// value. `expired` is the honest reading, because an unusable credential is
+  /// exactly a credential that needs replacing, and it is the fault whose
+  /// button goes to the provider settings.
   Future<void> start() async {
     _store.migrate();
 
-    final XtreamCredentials? credentials = await XtreamCredentials.load();
+    final XtreamCredentials? credentials = await _loadCredentials();
     _credentials = credentials;
 
-    if (credentials == null) return;
+    if (credentials == null) {
+      notifyListeners();
+
+      return;
+    }
 
     _client = XtreamClient(credentials);
 
     final String account = CatalogueStore.accountKey(credentials);
     _channels = _store.channelsFor(account);
     _titles = _store.titlesFor(account);
+
+    notifyListeners();
+  }
+
+  /// The stored credential, or null when there is none or it cannot be read.
+  ///
+  /// Sets [fault] on an unreadable payload rather than swallowing it: the
+  /// exception is handled deliberately, into the vocabulary the UI already
+  /// renders, which is the opposite of a silent catch.
+  Future<XtreamCredentials?> _loadCredentials() async {
+    try {
+      return await XtreamCredentials.load();
+    } on FormatException {
+      _fault = ProviderFault.expired;
+
+      return null;
+    }
   }
 
   /// Refreshes the handshake, the classification and, when healthy, the
@@ -190,7 +236,21 @@ class ProviderSession {
   ///    subscription already known dead.
   /// 5. Healthy: re-anchor the clock, then rebuild the channel and the VOD
   ///    catalogue in turn.
-  Future<void> refresh() async {
+  ///
+  /// **Not re-entrant, and it enforces that itself.** A second call while one
+  /// is in flight returns the first one's future rather than starting another,
+  /// because `DB.transaction` issues a literal `BEGIN TRANSACTION` on the one
+  /// shared connection (`magic/lib/src/facades/db.dart:183-193`): two
+  /// overlapping refreshes nest a `BEGIN`, sqlite3 rejects it, and the inner
+  /// `rollback()` then discards the outer transaction's rows as well. Reachable
+  /// by double-tapping the fault panel's retry, which cannot repaint into a
+  /// disabled state because the controller's `reload()` only notifies after
+  /// this returns.
+  Future<void> refresh() {
+    return _inFlight ??= _refresh().whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _refresh() async {
     if (_isPlaying()) return;
 
     final XtreamCredentials? credentials = _credentials;
@@ -203,13 +263,19 @@ class ProviderSession {
     _fault = classifyProviderFault(account: parsed ?? _account, statusCode: handshake.statusCode, body: handshake.body);
     if (parsed != null) _account = parsed;
 
-    if (_fault != null) return;
+    if (_fault != null) {
+      notifyListeners();
+
+      return;
+    }
 
     _anchorClock();
 
     final String account = CatalogueStore.accountKey(credentials);
     await _refreshChannels(client: client, account: account);
     await _refreshTitles(client: client, account: account);
+
+    notifyListeners();
   }
 
   /// Stars or unstars a channel, in the store and in the held line-up.
@@ -229,6 +295,8 @@ class ProviderSession {
       for (final Channel channel in _channels)
         channel.streamId == streamId ? _applyChannelFavourite(channel, favourite) : channel,
     ];
+
+    notifyListeners();
   }
 
   /// Stars or unstars a title, in the store and in the held catalogue.
@@ -247,6 +315,8 @@ class ProviderSession {
       for (final TitleItem title in _titles)
         (title.kind == kind && title.providerId == providerId) ? _applyTitleFavourite(title, favourite) : title,
     ];
+
+    notifyListeners();
   }
 
   /// Records how far through a title the viewer got, in the store and in
@@ -266,6 +336,8 @@ class ProviderSession {
       for (final TitleItem title in _titles)
         (title.kind == kind && title.providerId == providerId) ? _withProgress(title, progress) : title,
     ];
+
+    notifyListeners();
   }
 
   /// Rebuilds the line-up from `get_live_categories` and `get_live_streams`,
@@ -290,10 +362,22 @@ class ProviderSession {
         Channel.fromXtream(entry, categoryName: categoryNames[_categoryId(entry)] ?? '', clock: guideClock),
     ];
 
-    for (int index = 0; index < built.length && index < epgFetchLimit; index++) {
-      final String? epgChannelId = readNullableString(rawChannels[index], 'epg_channel_id');
-      final int? streamId = built[index].streamId;
-      if (epgChannelId == null || streamId == null) continue;
+    // Filter to candidates BEFORE applying the bound, which is the whole
+    // difference between this pass working and not. Bounding an index over the
+    // unfiltered line-up spends a slot on every channel it then skips, and
+    // **91% of a real provider's channels carry no `epg_channel_id` at all**
+    // (`.ac/research/player-layer.md:286`), so a limit of twenty over 2,976
+    // entries buys about two schedules instead of twenty. Two of the four
+    // screens are built around a schedule, so that is the difference between
+    // this step delivering what it exists for and delivering nothing
+    // measurable.
+    final List<int> candidates = <int>[
+      for (int index = 0; index < built.length; index++)
+        if (readNullableString(rawChannels[index], 'epg_channel_id') != null && built[index].streamId != null) index,
+    ];
+
+    for (final int index in candidates.take(epgFetchLimit)) {
+      final int streamId = built[index].streamId!;
 
       final List<Map<String, dynamic>> listings =
           (await client.shortEpg(streamId)).data ?? const <Map<String, dynamic>>[];
@@ -391,6 +475,14 @@ class ProviderSession {
     final DateTime midnight = DateTime(now.year, now.month, now.day);
 
     if (_midnight == midnight) return;
+
+    // Dispose the outgoing clock before dropping the reference.
+    // `TickingGuideClock._scheduleNext` re-arms unconditionally
+    // (`guide_clock.dart:104-107`), so a detached instance keeps a live
+    // one-minute timer for the life of the process: one leaked timer per
+    // calendar day the app stays open. `removeListener` stays safe after
+    // dispose, so `GuideController._followSessionClock` can still detach.
+    _clock?.dispose();
 
     _clock = TickingGuideClock(anchor: now.difference(midnight).inMinutes);
     _midnight = midnight;

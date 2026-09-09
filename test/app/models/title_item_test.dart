@@ -154,5 +154,86 @@ void main() {
 
       expect(series.providerId, 77);
     });
+
+    test('reads a series from ITS field names, not the movie ones', () {
+      // `get_series` and `get_vod_streams` do not share field names. A series
+      // entry carries `cover`, `plot`, `genre` and `releaseDate`; reading
+      // `stream_icon` and `year` on it gave every provider series a null
+      // poster and an empty genre list, which `Vitrin` renders as the
+      // no-artwork fallback with a note blaming the provider. Confirmed
+      // against `pbergman/xtream-codes-go` `series.go` and
+      // `ektotv/xtream-api`. The mock answers `get_series` with `[]`, which is
+      // why nothing caught this.
+      final TitleItem series = TitleItem.fromXtream(
+        const <String, dynamic>{
+          'name': 'Bozkır Hattı',
+          'series_id': 77,
+          'cover': 'http://h/cover/77.jpg',
+          'backdrop_path': 'http://h/back/77.jpg',
+          'plot': 'Bir kasabanın hikâyesi.',
+          'genre': 'Dram, Gerilim , ',
+          'releaseDate': '2021-04-18',
+        },
+        kind: TitleKind.series,
+        categoryName: 'Dram',
+      );
+
+      expect(series.posterUrl, 'http://h/cover/77.jpg');
+      expect(series.backdropUrl, 'http://h/back/77.jpg');
+      expect(series.synopsis, 'Bir kasabanın hikâyesi.');
+      expect(series.genres, <String>['Dram', 'Gerilim']);
+      expect(series.year, 2021);
+    });
+
+    test('a movie still reads stream_icon, and a series never does', () {
+      final TitleItem movie = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'X', 'stream_id': 1, 'stream_icon': 'http://h/logo/1.svg'},
+        kind: TitleKind.movie,
+        categoryName: 'Aksiyon',
+      );
+      final TitleItem series = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'Y', 'series_id': 1, 'stream_icon': 'http://h/logo/1.svg'},
+        kind: TitleKind.series,
+        categoryName: 'Dram',
+      );
+
+      expect(movie.posterUrl, 'http://h/logo/1.svg');
+      expect(series.posterUrl, isNull, reason: 'a series poster is `cover`, and reading the movie field masked that');
+    });
+  });
+
+  group('metaLabel, which is what a provider entry can actually fill', () {
+    test('omits the year and the runtime the provider never sent', () {
+      // `get_vod_streams` carries neither, so `year` is 0 and `minutes` null.
+      // Interpolating them printed `0 · 0 dk` on every poster caption, every
+      // hero and every title screen in a provider catalogue.
+      final TitleItem provider = TitleItem.fromXtream(
+        const <String, dynamic>{'name': 'Film', 'stream_id': 1},
+        kind: TitleKind.movie,
+        categoryName: 'Aksiyon',
+      );
+
+      expect(provider.year, 0);
+      expect(provider.minutes, isNull);
+      expect(provider.lengthLabel, isNull);
+      expect(provider.metaLabel, isEmpty);
+    });
+
+    test('carries whichever half is known', () {
+      const TitleItem yearOnly = TitleItem(kind: TitleKind.movie, name: 'A', category: 'C', year: 1999);
+      const TitleItem lengthOnly = TitleItem(kind: TitleKind.movie, name: 'B', category: 'C', year: 0, minutes: 95);
+      const TitleItem both = TitleItem(kind: TitleKind.movie, name: 'C', category: 'C', year: 1999, minutes: 95);
+
+      expect(yearOnly.metaLabel, '1999');
+      expect(lengthOnly.metaLabel, '1s 35dk');
+      expect(both.metaLabel, '1999 · 1s 35dk');
+    });
+
+    test('a series with no episodes has no season count to state', () {
+      const TitleItem bare = TitleItem(kind: TitleKind.series, name: 'A', category: 'C', year: 0);
+
+      expect(bare.lengthLabel, isNull);
+      expect(bare.metaLabel, isEmpty);
+    });
   });
 }

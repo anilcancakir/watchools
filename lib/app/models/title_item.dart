@@ -236,23 +236,70 @@ class TitleItem {
   /// one (`mp4` | `mkv` | `avi`): it is the one technical fact a
   /// `get_vod_streams` entry actually carries.
   factory TitleItem.fromXtream(Map<String, dynamic> entry, {required TitleKind kind, required String categoryName}) {
-    final String? poster = readNullableString(entry, 'stream_icon');
-    final String? containerExtension = readNullableString(entry, 'container_extension');
-    final int? durationSecs = readInt(entry, 'duration_secs');
+    final bool series = kind == TitleKind.series;
+
+    // The two actions do NOT share field names, which is the trap here. A
+    // `get_vod_streams` movie carries `stream_icon`, `container_extension` and
+    // `duration_secs`; a `get_series` entry carries `cover`, `plot`, `genre`
+    // and `releaseDate` and none of the movie names. Reading the movie set on
+    // a series gave every provider series a null poster and an empty genre
+    // list, which `Vitrin` renders as the no-artwork fallback with a note
+    // blaming the provider for our mapping. Confirmed against two independent
+    // clients, `pbergman/xtream-codes-go` `series.go` (`SeriesId`, `Cover`,
+    // `Plot`) and `ektotv/xtream-api` (`plot`, `genre`, `cast`,
+    // `backdropPath`). The mock answers `get_series` with `[]`, which is
+    // exactly why no test could see it.
+    final String? poster = readNullableString(entry, series ? 'cover' : 'stream_icon');
+    final String? backdrop = readNullableString(entry, 'backdrop_path');
+    final String? containerExtension = series ? null : readNullableString(entry, 'container_extension');
+    final int? durationSecs = series ? null : readInt(entry, 'duration_secs');
 
     return TitleItem(
       kind: kind,
       name: readNullableString(entry, 'name') ?? '',
       category: categoryName,
-      year: readInt(entry, 'year') ?? 0,
+      year: _year(entry, series: series),
       posterUrl: (poster == null || poster.isEmpty) ? null : poster,
+      backdropUrl: (backdrop == null || backdrop.isEmpty) ? null : backdrop,
       minutes: durationSecs == null ? null : (durationSecs / 60).round(),
       rating: readDouble(entry, 'rating'),
+      genres: _genres(entry),
+      synopsis: series ? readNullableString(entry, 'plot') : null,
       facts: containerExtension == null || containerExtension.isEmpty
           ? const <String>[]
           : <String>[containerExtension.toUpperCase()],
-      providerId: kind == TitleKind.movie ? readInt(entry, 'stream_id') : readInt(entry, 'series_id'),
+      providerId: series ? readInt(entry, 'series_id') : readInt(entry, 'stream_id'),
     );
+  }
+
+  /// The release year, from whichever field the action carries, or `0`.
+  ///
+  /// A series sends `releaseDate` as a `YYYY-MM-DD` string; a movie sends
+  /// nothing at all in the list action, only in the deferred `get_vod_info`.
+  /// `0` therefore means "not sent" and every render site treats it that way
+  /// rather than printing it (see [metaLabel]).
+  static int _year(Map<String, dynamic> entry, {required bool series}) {
+    if (!series) return readInt(entry, 'year') ?? 0;
+
+    final String? released = readNullableString(entry, 'releaseDate');
+    if (released == null || released.length < 4) return 0;
+
+    return int.tryParse(released.substring(0, 4)) ?? 0;
+  }
+
+  /// Genres, from the comma-separated `genre` string a series sends.
+  ///
+  /// Split and trimmed here rather than at a call site, because the wire sends
+  /// one string and every consumer wants a list. A movie's list action sends
+  /// no genre at all, so an empty list is the honest answer there.
+  static List<String> _genres(Map<String, dynamic> entry) {
+    final String? genre = readNullableString(entry, 'genre');
+    if (genre == null || genre.trim().isEmpty) return const <String>[];
+
+    return <String>[
+      for (final String part in genre.split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
   }
 
   /// Whether this is a series.
@@ -311,15 +358,33 @@ class TitleItem {
   }
 
   /// `1s 52dk` for a movie, `3 sezon` for a series.
-  String get lengthLabel {
-    if (isSeries) return '${seasons.length} sezon';
+  String? get lengthLabel {
+    if (isSeries) return seasons.isEmpty ? null : '${seasons.length} sezon';
 
-    final int total = minutes ?? 0;
+    final int? total = minutes;
+    if (total == null || total <= 0) return null;
+
     final int hours = total ~/ 60;
     final int rest = total % 60;
 
     return hours == 0 ? '$rest dk' : '${hours}s ${rest}dk';
   }
+
+  /// The year and the runtime as one line, with an absent part omitted.
+  ///
+  /// Nullable rather than coercing, and that is the whole point. A
+  /// `get_vod_streams` entry carries **neither** a year nor a runtime: only
+  /// the deferred detail actions do (`tool/xtream-mock/server.mjs:254-269`
+  /// sends no `year` and no `duration_secs`), so a provider movie arrives with
+  /// `year: 0` and a null [minutes]. Printing those verbatim produced
+  /// `0 · 0 dk` on every poster caption, every hero and every title screen in
+  /// a provider catalogue: two facts the provider never sent, stated as
+  /// though it had. The fixtures always supplied both, which is why no widget
+  /// test could see it.
+  ///
+  /// Empty when neither is known, which a caller renders as no line at all
+  /// rather than as an empty one occupying its slot.
+  String get metaLabel => <String>[if (year > 0) '$year', if (lengthLabel case final String length) length].join(' · ');
 
   /// `7,8`, with the decimal comma Turkish uses, or null when unrated.
   String? get ratingLabel => rating?.toStringAsFixed(1).replaceAll('.', ',');

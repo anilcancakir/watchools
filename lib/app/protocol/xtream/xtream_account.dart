@@ -210,13 +210,31 @@ ProviderFault? classifyProviderFault({
   // 1. Nothing answered at all.
   if (statusCode == 0) return ProviderFault.unreachable;
 
-  // 2. A subscription already known dead stays dead, whatever this call answered.
-  if (account == null || !account.active) return ProviderFault.expired;
+  // 2. A body that decoded is a body that spoke. Whatever the account says is
+  //    then the answer: a null or inactive one here is a real credential
+  //    rejection, because the panel returned JSON and that JSON is what the
+  //    account was parsed from. A JSON array counts, so a healthy catalogue
+  //    call is never mistaken for a denial.
+  if (!_isGenericDenial(body)) {
+    return (account == null || !account.active) ? ProviderFault.expired : null;
+  }
 
-  // 3. A JSON object or array is a healthy response, whichever this action returns.
-  if (!_isGenericDenial(body)) return null;
+  // 3. The generic denial with no account behind it, which is the first-launch
+  //    case: the handshake itself came back as unparseable text. That says
+  //    nothing whatsoever about the credential, so it must not be read as
+  //    `expired`, the one fault that withholds the retry
+  //    (`provider_notice.dart`'s button routes to settings for it and nowhere
+  //    useful, since no onboarding screen exists). A blocked address, a
+  //    blocked user agent and a reverse proxy's HTML error page all land here,
+  //    and all three are recoverable.
+  if (account == null) return ProviderFault.throttled;
 
-  // 4. The generic denial, narrowed by whether answering it would cost a connection slot.
+  // 4. A subscription already known dead stays dead, whatever this call
+  //    answered.
+  if (!account.active) return ProviderFault.expired;
+
+  // 5. The denial against a live account, narrowed by whether answering it
+  //    would cost the other device its slot.
   return account.atConnectionLimit ? ProviderFault.evicted : ProviderFault.throttled;
 }
 

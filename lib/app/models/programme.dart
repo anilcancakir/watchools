@@ -122,9 +122,22 @@ class Programme {
   /// `20:55`.
   String get endLabel => _hhmm(endMinute);
 
+  /// A minute-of-day label, correct for a **negative** minute too.
+  ///
+  /// The unit is minutes since the schedule's reference midnight and it is
+  /// allowed to go negative: `get_short_epg`'s first listing is the programme
+  /// already on air, which began the previous evening, so after a post-midnight
+  /// re-anchor a window legitimately starts at -30. Dart's `~/` truncates
+  /// toward zero, so `-30 ~/ 60` is `0` while `-30 % 60` is `30`, and the naive
+  /// form printed `00:30` for half past eleven the night before. The hour is
+  /// floored and both operands normalised instead.
+  ///
+  /// Block placement was never affected, only the printed label and the ruler,
+  /// which is why this survived every layout test.
   static String _hhmm(int minute) {
-    final String h = (minute ~/ 60 % 24).toString().padLeft(2, '0');
-    final String m = (minute % 60).toString().padLeft(2, '0');
+    final int hour = ((minute / 60).floor() % 24 + 24) % 24;
+    final String h = hour.toString().padLeft(2, '0');
+    final String m = (((minute % 60) + 60) % 60).toString().padLeft(2, '0');
 
     return '$h:$m';
   }
