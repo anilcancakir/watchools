@@ -10,12 +10,12 @@
  * repository that has none of the three.
  *
  * Serves `player_api.php`, `get.php`, `xmltv.php`, the three stream URL shapes
- * and both timeshift conventions. Bound to loopback by default because it
- * answers without authenticating anything; set HOST=0.0.0.0 deliberately when
- * pointing a phone or a TV box at it.
+ * and two spellings of the `xc` timeshift convention. Bound to loopback by
+ * default because it authenticates only against a fixture table; set
+ * HOST=0.0.0.0 deliberately when pointing a phone or a TV box at it.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -78,8 +78,12 @@ function resolveAccount(username, password) {
  * @returns {object}
  */
 function userInfo(account, username, password, now) {
+    // Exactly one key, which is what the real panel sends and what
+    // `.ac/research/stack-decisions.md:264` records. A Dart model with a
+    // non-nullable `status` or `exp_date` has to survive this, so padding the
+    // shape out would hide the failure until a provider produced it.
     if (account.kind === 'rejected') {
-        return { username, password, message: '', auth: 0, status: '' };
+        return { auth: 0 };
     }
 
     // A lapsed account is the reason a client cannot read `status` alone: the
@@ -92,7 +96,11 @@ function userInfo(account, username, password, now) {
         message: '',
         auth: 1,
         status: account.kind === 'status' ? account.status : 'Active',
-        exp_date: String(now + (expired ? -14 * 86400 : 365 * 86400)),
+        // Null means lifetime, and it is the one expiry state the capture
+        // corpus proves outright: testData/eternal/auth.json carries
+        // "exp_date": null. A client comparing it as a date without a null
+        // check reports the account that never expires as expired.
+        exp_date: account.kind === 'lifetime' ? null : String(now + (expired ? -14 * 86400 : 365 * 86400)),
         is_trial: '0',
         active_cons: '1',
         created_at: String(now - 365 * 86400),
@@ -246,7 +254,12 @@ function dispatch(action, query, host, now) {
 
         case 'get_short_epg': {
             const channel = CHANNELS.find((c) => String(c.id) === query.get('stream_id'));
-            if (!channel) return { epg_listings: [] };
+            // A channel with no `epg_channel_id` has no guide, and this has to
+            // agree with `xmltv.php`, which omits it. It did not: the JSON
+            // surface returned a full schedule for channel 06 while the XMLTV
+            // one had never heard of it, and the JSON surface is the one the
+            // client reads first.
+            if (!channel || !channel.epgId) return { epg_listings: [] };
             const limit = Number(query.get('limit') ?? 4);
 
             return { epg_listings: epgWindow(channel, now, limit).map((p, i) => epgListing(channel, p, i)) };
@@ -254,7 +267,7 @@ function dispatch(action, query, host, now) {
 
         case 'get_simple_data_table': {
             const channel = CHANNELS.find((c) => String(c.id) === query.get('stream_id'));
-            if (!channel) return { epg_listings: [] };
+            if (!channel || !channel.epgId) return { epg_listings: [] };
 
             return {
                 epg_listings: epgWindow(channel, now, 12).map((p, i) => ({
@@ -294,6 +307,46 @@ function epgListing(channel, programme, index) {
     };
 }
 
+/** @type {Map<number, number[]>} Per channel, the real duration of each encoded segment. */
+const durationCache = new Map();
+
+/**
+ * Reads the segment durations FFmpeg actually produced, from the playlist it
+ * wrote beside them.
+ *
+ * Declaring a flat `SEGMENT_SECONDS` instead was wrong and expensively so:
+ * forced keyframes land a 4.120 s final segment on channels 04 and 05, so the
+ * playlist under-declared 120 ms per 16 s loop, about 27 s an hour, on two of
+ * eight channels. That reads as a codec-specific player bug, which is the most
+ * costly kind of false lead.
+ *
+ * @param {import('./catalogue.mjs').Channel} channel
+ * @returns {number[]}
+ */
+function segmentDurations(channel) {
+    const cached = durationCache.get(channel.id);
+    if (cached) {
+        return cached;
+    }
+
+    const source = join(MEDIA, String(channel.id), 'source.m3u8');
+    const durations = readFileSync(source, 'utf8')
+        .split('\n')
+        .filter((line) => line.startsWith('#EXTINF:'))
+        .map((line) => Number.parseFloat(line.slice('#EXTINF:'.length)));
+
+    if (durations.length !== SEGMENT_COUNT) {
+        throw new Error(
+            `${channel.name} has ${durations.length} segments, expected ${SEGMENT_COUNT}. ` +
+                'Regenerate with: node tool/xtream-mock/encode.mjs --force',
+        );
+    }
+
+    durationCache.set(channel.id, durations);
+
+    return durations;
+}
+
 /**
  * Synthesises a live HLS playlist over the pre-encoded loop.
  *
@@ -311,12 +364,20 @@ function livePlaylist(channel, now) {
     const extension = fmp4 ? 'm4s' : 'ts';
     const sequence = Math.floor(now / SEGMENT_SECONDS);
     const first = sequence - (WINDOW_SEGMENTS - 1);
+    const durations = segmentDurations(channel);
 
     const lines = [
         '#EXTM3U',
         `#EXT-X-VERSION:${fmp4 ? 7 : 3}`,
-        `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS}`,
+        `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(...durations))}`,
         `#EXT-X-MEDIA-SEQUENCE:${first}`,
+        // RFC 8216 section 6.2.1 derives a segment's discontinuity sequence
+        // number from this tag plus the DISCONTINUITY tags above it. Without
+        // the tag the same segment carried DSN 1 in one reload and DSN 0 in the
+        // next, which is the mismatch hls.js reports as
+        // "discontinuity sequence mismatch". The count is how many times the
+        // loop has wrapped before this window.
+        `#EXT-X-DISCONTINUITY-SEQUENCE:${Math.ceil(Math.max(first, 0) / SEGMENT_COUNT)}`,
     ];
     // Absolute segment paths, not relative names: the playlist is served from a
     // URL carrying the credentials, so a relative URI would both lose the
@@ -331,7 +392,7 @@ function livePlaylist(channel, now) {
         if (index === 0) {
             lines.push('#EXT-X-DISCONTINUITY');
         }
-        lines.push(`#EXTINF:${SEGMENT_SECONDS}.000,`);
+        lines.push(`#EXTINF:${durations[index].toFixed(3)},`);
         lines.push(`${base}/seg-${String(index).padStart(3, '0')}.${extension}`);
     }
 
@@ -351,6 +412,16 @@ function livePlaylist(channel, now) {
  * @param {import('node:http').ServerResponse} response
  */
 function streamEndless(file, response) {
+    // Guarded like sendFile, because a half finished encode leaves the tree
+    // looking complete: encode.mjs refuses to re-run without --force once
+    // media/ exists. Unguarded this answered 200 with zero bytes, which is
+    // exactly the empty body channel 07's explicit 404 exists to avoid.
+    if (!existsSync(file)) {
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end(`Not generated: ${file}\nRun: node tool/xtream-mock/encode.mjs --force\n`);
+        return;
+    }
+
     response.writeHead(200, { 'Content-Type': CONTENT_TYPES['ts'], 'Cache-Control': 'no-store' });
 
     const child = spawn(
@@ -358,6 +429,14 @@ function streamEndless(file, response) {
         ['-hide_banner', '-loglevel', 'error', '-re', '-stream_loop', '-1', '-i', file, '-c', 'copy', '-f', 'mpegts', 'pipe:1'],
         { stdio: ['ignore', 'pipe', 'ignore'] },
     );
+
+    // Without this the panel dies outright on the first progressive request
+    // when ffmpeg is not on PATH: spawn emits 'error', nothing handles it, and
+    // an unhandled 'error' event takes the process with it.
+    child.on('error', (error) => {
+        console.error(`ffmpeg could not start: ${error.message}`);
+        response.destroy();
+    });
 
     child.stdout.pipe(response);
     response.on('close', () => child.kill('SIGKILL'));
@@ -502,9 +581,12 @@ function indexPage(host) {
  * @returns {boolean} True when the request has been answered and must not continue.
  */
 function handleFault(account, response) {
-    // Throttling has no wire format of its own in this protocol. A panel under
-    // pressure or refusing an address answers HTTP 200 with a body that is not
-    // JSON at all, so a client keying on the status code sees success.
+    // A panel's denial shape is a short plain-text body under HTTP 200, not a
+    // status code. `.ac/research/stack-decisions.md:264` records the same:
+    // "Plan for 200 with an empty body, 200 with the bare word blocked, 200
+    // with HTML, and only occasionally a real 401." So a client keying on the
+    // status code sees success, and the body is all it has to go on. That is
+    // also why one body cannot tell throttled from blocked from expired.
     if (account.kind === 'blocked') {
         response.writeHead(200, { 'Content-Type': 'text/plain' });
         response.end('blocked');
@@ -522,6 +604,40 @@ function handleFault(account, response) {
 }
 
 /**
+ * Refuses a stream the way a panel really does: HTTP 200 with a short
+ * plain-text body. Never a 403, which was this mock's own first answer and was
+ * backwards. A client cannot tell this from a real stream by status code, so it
+ * has to look at the first bytes, and learning that here is the point.
+ *
+ * @param {import('./catalogue.mjs').Account} account
+ * @param {import('node:http').ServerResponse} response
+ * @returns {boolean} True when the request has been refused and must not continue.
+ */
+function refuseStream(account, response) {
+    if (account.kind === 'active' || account.kind === 'lifetime') {
+        return false;
+    }
+
+    // A provider that never answers does not answer here either, on the very
+    // surface where that strands a viewer.
+    if (account.kind === 'hang') {
+        return true;
+    }
+
+    /** @type {Record<string, string>} */
+    const bodies = {
+        blocked: 'blocked',
+        lapsed: 'Expired',
+        rejected: 'No User Found',
+    };
+
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.end(bodies[account.kind] ?? account.status ?? 'Expired');
+
+    return true;
+}
+
+/**
  * Answers either catch-up shape. The stream is the channel's ordinary loop; the
  * X-Timeshift-* headers carry what the panel understood, so a walk can assert
  * the client's derivation rather than only that something played.
@@ -535,9 +651,7 @@ function handleFault(account, response) {
 function answerTimeshift(account, channelId, duration, start, response) {
     const channel = CHANNELS.find((c) => String(c.id) === channelId);
 
-    if (account.kind !== 'active') {
-        response.writeHead(403, { 'Content-Type': 'text/plain' });
-        response.end(`Account not active: ${account.status ?? account.kind}\n`);
+    if (refuseStream(account, response)) {
         return;
     }
 
@@ -592,15 +706,26 @@ const server = createServer((request, response) => {
             return;
         }
 
-        if (path === '/get.php') {
-            response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-            response.end(
-                m3uPlaylist(username, password, host, query.get('type') ?? 'm3u_plus', query.get('output') ?? 'ts'),
-            );
-            return;
-        }
+        // Both playlist surfaces authenticate BEFORE they answer. Unguarded
+        // they handed the whole catalogue to a wrong password, with the bad
+        // credentials baked into every URL, so the app showed a working
+        // provider whose every channel then failed. The real panel's playlist
+        // generator refuses outright on a lapsed account.
+        if (path === '/get.php' || path === '/xmltv.php') {
+            if (account.kind === 'rejected') {
+                response.writeHead(200, { 'Content-Type': 'text/plain' });
+                response.end('');
+                return;
+            }
 
-        if (path === '/xmltv.php') {
+            if (path === '/get.php') {
+                response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+                response.end(
+                    m3uPlaylist(username, password, host, query.get('type') ?? 'm3u_plus', query.get('output') ?? 'ts'),
+                );
+                return;
+            }
+
             response.writeHead(200, { 'Content-Type': 'application/xml' });
             response.end(xmltvGuide(now));
             return;
@@ -640,9 +765,7 @@ const server = createServer((request, response) => {
         // A dead subscription still lists its catalogue on a real panel and
         // only fails at the stream. Reproducing that is the point: it is the
         // shape where the app looks healthy and nothing plays.
-        if (account.kind !== 'active') {
-            response.writeHead(403, { 'Content-Type': 'text/plain' });
-            response.end(`Account not active: ${account.status ?? account.kind}\n`);
+        if (refuseStream(account, response)) {
             return;
         }
 
@@ -696,10 +819,11 @@ const server = createServer((request, response) => {
         return;
     }
 
-    // Both catch-up conventions a panel can expose. The content is not really
-    // time shifted, but each echoes the duration and start it parsed into
-    // response headers, which is what makes a client's URL derivation
-    // assertable: the five conventions differ only in how those are spelled.
+    // The two spellings of the `xc` catch-up convention. There are five in
+    // total per stack-decisions.md:270 and the other three are not here. The
+    // content is not really time shifted and the start is echoed rather than
+    // validated, so a client's derivation is readable but a start in the wrong
+    // timezone or format still gets a 200.
     const timeshift = path.match(/^\/timeshift\/([^/]+)\/([^/]+)\/(\d+)\/([^/]+)\/(\d+)\.ts$/);
     if (timeshift) {
         const [, username, password, duration, start, channelId] = timeshift;
@@ -725,6 +849,13 @@ const server = createServer((request, response) => {
 if (!existsSync(MEDIA)) {
     console.error('media/ is missing. Run: node tool/xtream-mock/encode.mjs');
     process.exit(1);
+}
+
+// Probed at startup rather than discovered mid-session, because the
+// progressive endpoint needs ffmpeg at request time and not only at encode
+// time. A message here beats a dead panel on the first channel zap.
+if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).error) {
+    console.error('ffmpeg is not on PATH. The progressive .ts endpoints will refuse; HLS still works.');
 }
 
 server.listen(PORT, HOST, () => {
