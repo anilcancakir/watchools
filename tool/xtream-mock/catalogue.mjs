@@ -1,13 +1,19 @@
 /**
  * The mock panel's data: accounts, the codec matrix, categories and EPG.
  *
- * Every wire shape here was taken from real captured panel responses in
- * `tellytv/go.xtream-codes` `testData/` (four panels, MIT) rather than from a
- * description of the protocol, because the types drift: in one and the same
- * object `category_id` is a string while `parent_id` is an integer, `auth` is a
- * bare integer while `max_connections` is a string, and `epg_channel_id` is
- * nullable. A client that assumes a fixed JSON type for a numeric field breaks
- * on a real provider, so the mock reproduces the drift instead of tidying it.
+ * The handshake, the categories, the live list and the VOD list are grounded in
+ * real captured panel responses in `tellytv/go.xtream-codes` `testData/` (four
+ * panels, MIT) rather than in a description of the protocol, because the types
+ * drift: in one and the same object `category_id` is a string while `parent_id`
+ * is an integer, `auth` is a bare integer while `max_connections` is a string,
+ * and `epg_channel_id` is nullable. A client that assumes a fixed JSON type for
+ * a numeric field breaks on a real provider, so this reproduces the drift
+ * instead of tidying it.
+ *
+ * That corpus does NOT cover `get_vod_info`, `get_short_epg`,
+ * `get_simple_data_table` or any failure mode; those came from client
+ * implementations and a published fork's `player_api.php`. Weaker sourcing,
+ * worth knowing before changing a field on its authority. See the README.
  */
 
 /** Seconds a single HLS segment covers. Fixed so the live window needs no playlist parsing. */
@@ -26,7 +32,7 @@ export const SEGMENT_COUNT = 4;
  * is the more interesting half of it because a provider that accepts the
  * connection and never answers is what actually strands a client.
  *
- * @typedef {'active' | 'status' | 'lapsed' | 'blocked' | 'hang' | 'rejected'} AccountKind
+ * @typedef {'active' | 'lifetime' | 'status' | 'lapsed' | 'blocked' | 'hang' | 'rejected'} AccountKind
  */
 
 /**
@@ -51,6 +57,10 @@ export const ACCOUNTS = {
         kind: 'lapsed',
         note: 'auth 1, status Active, exp_date in the past. Expiry that only a date comparison catches.',
     },
+    'lifetime:lifetime': {
+        kind: 'lifetime',
+        note: 'auth 1, status Active, exp_date null. A date comparison without a null check calls this expired.',
+    },
     'banned:banned': {
         kind: 'status',
         status: 'Banned',
@@ -63,7 +73,7 @@ export const ACCOUNTS = {
     },
     'throttled:throttled': {
         kind: 'blocked',
-        note: 'HTTP 200 carrying the bare word blocked. Not JSON, which is the only throttling signal there is.',
+        note: 'HTTP 200 carrying the bare word blocked. The generic denial shape, not throttling specifically.',
     },
     'hang:hang': {
         kind: 'hang',
