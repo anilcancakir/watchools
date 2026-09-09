@@ -48,48 +48,68 @@ Three VOD titles (20001 to 20003) exist for `container_extension` and for
 `get_series` answers `[]`. One of the four captured real panels answers exactly
 that, so the empty case is real, but the other three return populated series
 lists: this is a stub with a citation attached rather than a modelled state.
+## The live timestamps, and why the loop is eight passes
 
-## Known defect: the HLS loop jumps its timestamps backwards
+The segments carry **continuous timestamps** across the loop, and that took
+finding. Each of the four encoded segments starts near zero, so serving them
+cyclically jumped the DTS sixteen seconds backwards at every wrap: libmpv
+reported `mpegts: DTS 127920 < 1564320 out of order`, which is exactly 1.421 and
+17.381 in 90 kHz units, and stopped advancing. With a three segment window over
+a four segment loop, most start times had the wrap inside the very first window.
 
-**The four live HLS channels cannot be played past the first loop wrap, and
-usually not at all.** Found by the player plugin's own tick, after four wrong
-guesses, so the diagnosis is worth keeping.
+`encode.mjs` now passes `-stream_loop` to the **remux**, not the encode, so
+there is still exactly one encode per channel and FFmpeg advances the timestamps
+across each `-c copy` pass. Verified on disk: 31 of 32 boundaries are continuous
+where 3 of 4 were before, and the continuous run is 128 s rather than 16 s.
 
-The encoded segments carry continuous timestamps within one pass:
+One wrap remains, at the end of the eight passes. Removing it entirely needs
+per-request timestamp rewriting, which is disproportionate for a fixture.
 
-| Segment | first DTS | last DTS |
-|---|---|---|
-| `seg-000.ts` | 1.421 | 5.381 |
-| `seg-001.ts` | 5.421 | 9.381 |
-| `seg-002.ts` | 9.421 | 13.381 |
-| `seg-003.ts` | 13.421 | 17.381 |
+Three things this cost, worth not repeating. The segment count is **emergent**:
+`-hls_time` cuts at keyframes and a pass boundary need not land on one, so eight
+passes of a four segment master gives 32 segments on most channels and 25 on
+channel 05. Nothing may key on a flat count, and the server reads each channel's
+real one out of the playlist FFmpeg wrote. Nothing else was ever broken, which
+is why this survived: the server always served correctly, the client always
+fetched correctly, and every codec probe passed because `ffprobe` reads the
+streams rather than playing them. And a longer loop is not on its own a fix,
+which `SEGMENT_COUNT` at 16 demonstrated before the timestamps were understood.
+## Measure playback under `caffeinate`, or measure nothing
 
-The loop then wraps to `seg-000` at 1.421, a **16 second jump backwards**, which
-libmpv reports as `mpegts: DTS 127920 < 1564320 out of order` (those are exactly
-1.421 and 17.381 in 90 kHz units) and after which its playback clock does not
-advance. `#EXT-X-DISCONTINUITY` is emitted at the wrap and does not save it.
+**An idle display stops libmpv presenting, and the signature is identical to a
+network stall.** This cost an hour and four wrong hypotheses, so it is written
+down rather than left as folklore.
 
-Because a three segment window slides over a four segment loop, most start
-times have the wrap inside the very first window, so playback commonly freezes
-at `time-pos` 0.08 with the buffer full, `underrun` false and `demuxerIdle`
-true, having never advanced at all.
+Running unattended, every playback measurement froze at `time-pos` 0.08: in the
+Flutter example across 106 ticks, and in the standalone libmpv harness with its
+own `NSWindow`, which reported `moving picture in the layer: no` and 0.0% of
+pixels differing between two frames 0.6 s apart. Both delivery paths, with and
+without `hwdec`. `pmset -g assertions` explained it: `UserIsActive 0` and no
+display-sleep assertion, because nobody was at the machine. `gpu-next` presents
+through the display link, so with the display idle it presents nothing, the
+playback clock stops at the first frame, and the demuxer fills to its cap.
 
-What this does **not** break, all verified: the server serves correctly (one
-90 s run answered 52 playlist reloads and 23 segment fetches with consecutive
-sequence numbers, no gap and no repeat), the client fetches correctly, and every
-codec probe passes because `ffprobe` reads the streams rather than playing them.
-The bytes are right; the timestamps are not.
+With `caffeinate -u -d` held, the same harness on the same channel reports
+`differing pixels 24.2%` and `RESULT the video output presented frames`.
 
-Use the **RAW TS** channels for anything that needs playback to advance. Channel
-02 is served by `streamEndless`, has no playlist and no wrap, and was measured
-clean over 39 s with `time-pos` advancing monotonically and `underrun` false
-throughout.
+For the stall detector this is a case rather than a nuisance: an asleep display
+produces frozen `time-pos`, `underrun` false and `demuxerIdle` true, and must
+never be classified as a provider fault. On a TV a screensaver reaches the same
+state.
 
-Fixing it properly means timestamps that continue across the wrap, which is
-either a per-request remux (too heavy for a fixture) or generating the HLS
-segments from a continuous source the way `streamEndless` already does. A longer
-loop is **not** a fix: `SEGMENT_COUNT` at 16 was tried and the freeze survived,
-because a wrap that is rarer is still a wrap.
+## A healthy channel still starves for eight seconds in twenty four
+
+With the display awake and the timestamps fixed, `time-pos` advances
+monotonically (0.1 to 26.4 with no reset, where it used to jump back to 0 at the
+wrap) and `cache-end` climbs 11.9, 15.9, 27.9. But there is still a window,
+about eight seconds in every twenty four, where the client has drained
+everything advertised and waits: `fw-bytes` 0, `underrun` **true**, `time-pos`
+frozen, then playback resumes cleanly from where it left off.
+
+That is a fetch-cadence property of a three segment window, not a fault. It is
+the reason the variant ladder's stall threshold cannot be three seconds: it
+would fire on a healthy channel here. Whether a real panel's window behaves the
+same way is unmeasured.
 
 ## Accounts
 

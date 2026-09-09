@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNELS, SEGMENT_COUNT, SEGMENT_SECONDS, VOD_ITEMS } from './catalogue.mjs';
+import { CHANNELS, LOOP_PASSES, SEGMENT_SECONDS, SOURCE_SECONDS, VOD_ITEMS } from './catalogue.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MEDIA = join(HERE, 'media');
@@ -32,8 +32,8 @@ const FPS = 25;
 /** Generated frame size. Small enough to encode a nine-item matrix in under a minute, large enough to look real. */
 const SIZE = '640x360';
 
-/** Seconds of media per channel. One full loop of the HLS window. */
-const DURATION = SEGMENT_COUNT * SEGMENT_SECONDS;
+/** Seconds of media actually encoded per channel. The segments loop it. */
+const DURATION = SOURCE_SECONDS;
 
 /**
  * Per-encoder quality flags. Every encoder needs its own, and the defaults are
@@ -132,7 +132,11 @@ async function encodeChannel(channel) {
     );
 
     // 2. Segments are a remux, never a second encode, so the progressive and
-    //    segmented forms of a channel cannot drift apart.
+    //    segmented forms of a channel cannot drift apart. `-stream_loop` is
+    //    what makes the segments' timestamps continuous across every loop
+    //    pass: cutting one pass and serving it cyclically jumps the DTS
+    //    backwards at the wrap, and libmpv's playback clock never recovers.
+    //    See LOOP_PASSES.
     const fmp4 = channel.segment === 'fmp4';
     const segmentArgs = fmp4
         ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4', '-hls_segment_filename', join(dir, 'seg-%03d.m4s')]
@@ -140,6 +144,8 @@ async function encodeChannel(channel) {
 
     await ffmpeg(
         [
+            // Before -i, which is where FFmpeg reads an input option.
+            '-stream_loop', String(LOOP_PASSES - 1),
             '-i', master,
             '-c', 'copy',
             // HEVC in an fMP4 needs the hvc1 brand or Safari refuses the track.

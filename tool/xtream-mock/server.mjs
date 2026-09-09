@@ -24,9 +24,9 @@ import {
     ACCOUNTS,
     CHANNELS,
     LIVE_CATEGORIES,
-    SEGMENT_COUNT,
     SEGMENT_SECONDS,
     SHORT_TOKEN_SECONDS,
+    SOURCE_SECONDS,
     TOKEN_SECONDS,
     UNKNOWN_ACCOUNT,
     VOD_CATEGORIES,
@@ -291,7 +291,10 @@ function dispatch(action, query, host, now) {
                     name: item.name,
                     o_name: item.name,
                     movie_image: `http://${host}/logo/${item.id}.svg`,
-                    duration_secs: SEGMENT_COUNT * SEGMENT_SECONDS,
+                    // A VOD sample is one pass of the encode, not the looped
+                    // live segment set, so this is SOURCE_SECONDS rather than
+                    // SEGMENT_COUNT * SEGMENT_SECONDS.
+                    duration_secs: SOURCE_SECONDS,
                     duration: '00:00:16',
                     video: { codec_name: item.video, width: 640, height: 360 },
                     audio: { codec_name: item.audio, channels: 2, sample_rate: '48000' },
@@ -377,6 +380,12 @@ const durationCache = new Map();
  * eight channels. That reads as a codec-specific player bug, which is the most
  * costly kind of false lead.
  *
+ * **The count is per channel and emergent, not a constant.** `-hls_time` cuts
+ * at keyframes and a loop pass boundary need not land on one, so eight passes
+ * of a four segment master gives 32 segments on most channels and 25 on channel
+ * 05. An earlier version asserted a flat count here and threw, which was the
+ * fixture refusing to admit what FFmpeg had actually written.
+ *
  * @param {import('./catalogue.mjs').Channel} channel
  * @returns {number[]}
  */
@@ -392,10 +401,9 @@ function segmentDurations(channel) {
         .filter((line) => line.startsWith('#EXTINF:'))
         .map((line) => Number.parseFloat(line.slice('#EXTINF:'.length)));
 
-    if (durations.length !== SEGMENT_COUNT) {
+    if (durations.length === 0) {
         throw new Error(
-            `${channel.name} has ${durations.length} segments, expected ${SEGMENT_COUNT}. ` +
-                'Regenerate with: node tool/xtream-mock/encode.mjs --force',
+            `${channel.name} has no segments. Regenerate with: node tool/xtream-mock/encode.mjs --force`,
         );
     }
 
@@ -460,7 +468,7 @@ function livePlaylist(channel, now) {
         // next, which is the mismatch hls.js reports as
         // "discontinuity sequence mismatch". The count is how many times the
         // loop has wrapped before this window.
-        `#EXT-X-DISCONTINUITY-SEQUENCE:${Math.ceil(Math.max(first, 0) / SEGMENT_COUNT)}`,
+        `#EXT-X-DISCONTINUITY-SEQUENCE:${Math.ceil(Math.max(first, 0) / durations.length)}`,
     ];
     // Absolute segment paths, not relative names: the playlist is served from a
     // URL carrying the credentials, so a relative URI would both lose the
@@ -470,9 +478,10 @@ function livePlaylist(channel, now) {
         lines.push(`#EXT-X-MAP:URI="${base}/init.mp4"`);
     }
 
+    const count = durations.length;
     for (let offset = 0; offset < WINDOW_SEGMENTS; offset += 1) {
         const absolute = first + offset;
-        const index = ((absolute % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
+        const index = ((absolute % count) + count) % count;
         if (index === 0) {
             lines.push('#EXT-X-DISCONTINUITY');
         }
@@ -1049,12 +1058,23 @@ const server = createServer((request, response) => {
 
     // A sliding-window URI: `s-<absolute sequence>.<ext>` resolves to the loop
     // position it names. The client never sees the same URI twice, which is what
-    // keeps libmpv following the live edge, while the bytes on disk stay four
-    // segments per channel.
+    // a real panel does and what keeps a client keyed on the URI from deduping.
+    //
+    // The modulo is the channel's own segment count, read from the playlist
+    // FFmpeg wrote, because that count is emergent: eight loop passes of a four
+    // segment master gives 32 on most channels and 25 on channel 05, since
+    // `-hls_time` cuts at keyframes. A flat constant here served the wrong
+    // segment with a 200.
     const sliding = path.match(/^\/segments\/(\d+)\/s-(\d+)\.(ts|m4s)$/);
     if (sliding) {
         const [, channelId, sequence, extension] = sliding;
-        const index = Number(sequence) % SEGMENT_COUNT;
+        const channel = CHANNELS.find((candidate) => candidate.id === Number(channelId));
+        if (!channel) {
+            response.writeHead(404).end();
+            return;
+        }
+
+        const index = Number(sequence) % segmentDurations(channel).length;
         const name = `seg-${String(index).padStart(3, '0')}.${extension}`;
         sendFile(join(MEDIA, channelId, name), request, response);
         return;
