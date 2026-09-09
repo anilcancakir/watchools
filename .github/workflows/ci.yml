@@ -70,6 +70,26 @@ jobs:
       - name: Analyze
         run: flutter analyze --fatal-infos --fatal-warnings
 
+      # The root analysis excludes packages/, because recursing into a plugin's
+      # example app finds `package:` imports that are unresolved until somebody
+      # runs `pub get` inside it. So each package is resolved and analysed on
+      # its own here, and the exclusion narrows the root gate instead of
+      # dropping one. A package whose own analysis is red fails this job.
+      - name: Analyze the packages
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for manifest in packages/*/pubspec.yaml; do
+            package="$(dirname "$manifest")"
+            echo "::group::$package"
+            flutter pub get --directory "$package"
+            if [ -f "$package/example/pubspec.yaml" ]; then
+              flutter pub get --directory "$package/example"
+            fi
+            (cd "$package" && flutter analyze --fatal-infos --fatal-warnings)
+            echo "::endgroup::"
+          done
+
       - name: Test with coverage
         run: flutter test --coverage
 

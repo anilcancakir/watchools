@@ -22,6 +22,13 @@ analyzer:
     # The Laravel half. Nothing here is Dart, and leaving it in makes the
     # analysis server watch ten thousand vendor files for nothing.
     - backend/**
+    # Each package under packages/ analyses itself with its own options and its
+    # own resolved dependencies. Analysing them from here recurses into an
+    # example app whose `package:` imports are unresolved unless somebody has
+    # run `pub get` inside it, which passes on a developer's machine and fails
+    # in CI. The CI job resolves and analyses each package separately instead,
+    # so this exclusion narrows the root gate rather than dropping one.
+    - packages/**
 
   language:
     # "Type everything" as a compiler setting rather than a review comment.
