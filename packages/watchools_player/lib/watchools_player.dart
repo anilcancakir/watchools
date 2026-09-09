@@ -9,20 +9,42 @@ import 'package:flutter/widgets.dart';
 /// written once that is settled, and it will not look like this.
 class WatchoolsPlayer {
   static const MethodChannel _channel = MethodChannel('watchools_player');
+  static const EventChannel _events = EventChannel('watchools_player/events');
 
-  /// Opens [url] in the platform view.
+  /// Opens [url] in the platform view identified by [viewId].
+  ///
+  /// The identifier is required rather than implied because Flutter builds a
+  /// platform view before the widget owning it settles and rebuilds it on a
+  /// route change, so "the current view" points at whichever was created last,
+  /// which during a push is the one about to be discarded.
   ///
   /// [userAgent] is per provider rather than per app: panels behind Cloudflare
   /// challenge generic clients and allowlist player signatures, so a provider
   /// carries its own. Normalise the header key to exactly `User-Agent`
   /// elsewhere in the app; here it reaches mpv's own option and the casing does
   /// not matter.
-  static Future<void> play(String url, {String? userAgent}) {
+  static Future<void> play(int viewId, String url, {String? userAgent}) {
     return _channel.invokeMethod<void>('play', <String, Object?>{
+      'viewId': viewId,
       'url': url,
       'userAgent': userAgent,
     });
   }
+
+  /// mpv's own events, in place of polling [state].
+  ///
+  /// A poll cannot see what these carry, and for the fault that matters most it
+  /// sees nothing at all. Measured against a lapsing provider token: no
+  /// `endFile` ever arrives, and [state] keeps reporting a configured renderer
+  /// with a cache duration frozen at the value it held when the token died. The
+  /// only signal is a `log` event at `warn`, FFmpeg's own
+  /// `http: Will reconnect ... error=End of file`, followed by an `error` line
+  /// when it gives up.
+  static Stream<PlayerEvent> get events => _events.receiveBroadcastStream().map(
+    (Object? raw) => PlayerEvent.fromNative(
+      (raw as Map<Object?, Object?>?) ?? const <Object?, Object?>{},
+    ),
+  );
 
   /// What the renderer is doing.
   ///
@@ -30,22 +52,48 @@ class WatchoolsPlayer {
   /// underlying guess "very unreliable, and often the property will not be
   /// available at all". Read it as a hint, never as a gate.
   static Future<PlayerState> state() async {
-    final Map<Object?, Object?>? raw =
-        await _channel.invokeMethod<Map<Object?, Object?>>('state');
+    final Map<Object?, Object?>? raw = await _channel
+        .invokeMethod<Map<Object?, Object?>>('state');
 
     return PlayerState.fromNative(raw ?? const <Object?, Object?>{});
   }
 
   static Future<void> stop() => _channel.invokeMethod<void>('stop');
 
-  /// Captures the app's own window twice and reports how much moved.
+  /// Drops the native side's reference to [viewId] and tears the core down if
+  /// that view was the one being rendered into.
   ///
-  /// A spike affordance. An app may capture its own window without Screen
-  /// Recording permission, while a helper outside the process cannot, which is
-  /// why this has to live behind the channel to be usable at all.
-  static Future<Map<Object?, Object?>> captureSelf(String path) async {
+  /// Called from [WatchoolsPlayerView]'s `dispose`. Without it mpv keeps
+  /// rendering into a `CAMetalLayer` whose `NSView` Flutter has deallocated.
+  static Future<void> dispose(int viewId) {
+    return _channel.invokeMethod<void>('dispose', <String, Object?>{
+      'viewId': viewId,
+    });
+  }
+
+  /// Captures the app's own window twice and reports how much moved, inside the
+  /// platform view and in the Flutter chrome above it.
+  ///
+  /// A spike affordance, and a conditional one. Capture entitlement follows the
+  /// **responsible** process rather than the app, so the same bundle measures
+  /// real motion when launched from a terminal that holds Screen Recording
+  /// permission and returns a uniform white image when launched through
+  /// LaunchServices. The native side detects the uniform case and reports it as
+  /// an `error` key, because otherwise it reads as zero motion, which is
+  /// indistinguishable from a video that is not playing.
+  ///
+  /// Pass [viewId] for the scoped numbers. Call it once before [play] as the
+  /// control: with no core started nothing should move, and a video rect that
+  /// moves anyway means the measurement is reading something other than mpv.
+  static Future<Map<Object?, Object?>> captureSelf(
+    String path, {
+    int? viewId,
+  }) async {
     final Map<Object?, Object?>? raw = await _channel
-        .invokeMethod<Map<Object?, Object?>>('captureSelf', <String, Object?>{'path': path});
+        .invokeMethod<Map<Object?, Object?>>('captureSelf', <String, Object?>{
+          'path': path,
+          'viewId': viewId,
+        });
 
     return raw ?? const <Object?, Object?>{};
   }
@@ -97,13 +145,86 @@ class PlayerState {
   bool get hasPicture => videoOutput.isNotEmpty && width > 0 && height > 0;
 }
 
+/// What mpv reported, over [WatchoolsPlayer.events].
+@immutable
+class PlayerEvent {
+  /// One of `endFile`, `videoReconfig` or `log`. A name the native side chose
+  /// rather than an enum, because the set will grow with the variant ladder and
+  /// an unknown name has to survive the trip.
+  final String name;
+
+  /// mpv's `end-file` reason, present only on `endFile`.
+  ///
+  /// **`0` is EOF, not an error**, and a lapsed provider token that does end
+  /// playback ends it as exactly that, so a live stream reporting a clean end of
+  /// file is reporting a fault. Absence of this event is not health: a lapsed
+  /// token on an HLS playlist produces no `endFile` at all.
+  final int? reason;
+
+  /// mpv's `end-file` error code, present only on `endFile`. Zero when the end
+  /// was not an error.
+  final int? error;
+
+  /// The log line, present only on `log`.
+  final String? text;
+
+  /// The log level (`warn`, `error`, `fatal`), present only on `log`.
+  final String? level;
+
+  const PlayerEvent({
+    required this.name,
+    this.reason,
+    this.error,
+    this.text,
+    this.level,
+  });
+
+  factory PlayerEvent.fromNative(Map<Object?, Object?> raw) {
+    return PlayerEvent(
+      name: raw['event'] as String? ?? 'unknown',
+      reason: raw['reason'] as int?,
+      error: raw['error'] as int?,
+      text: raw['text'] as String?,
+      level: raw['level'] as String?,
+    );
+  }
+
+  /// Whether playback stopped, for any reason including a clean EOF.
+  bool get isEnd => name == 'endFile';
+}
+
 /// The surface mpv draws into.
+///
+/// Stateful only to own the platform view's identifier: Flutter mints it at
+/// creation and the native side needs it back at teardown, so the widget that
+/// owns the view is the only place with both halves.
 ///
 /// Gestures do not reach Flutter's arena through a macOS platform view, so every
 /// control belongs in Flutter above this widget rather than inside it. That is
 /// where they want to be anyway, for one design across touch, mouse and D-pad.
-class WatchoolsPlayerView extends StatelessWidget {
-  const WatchoolsPlayerView({super.key});
+class WatchoolsPlayerView extends StatefulWidget {
+  /// Fires once, with the identifier [WatchoolsPlayer.play] needs.
+  final ValueChanged<int>? onReady;
+
+  const WatchoolsPlayerView({super.key, this.onReady});
+
+  @override
+  State<WatchoolsPlayerView> createState() => _WatchoolsPlayerViewState();
+}
+
+class _WatchoolsPlayerViewState extends State<WatchoolsPlayerView> {
+  int? _viewId;
+
+  @override
+  void dispose() {
+    final int? viewId = _viewId;
+    if (viewId != null) {
+      // Unawaited on purpose: `dispose` cannot await, and the native side has
+      // to hear about the teardown even though this frame is already gone.
+      WatchoolsPlayer.dispose(viewId);
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +232,12 @@ class WatchoolsPlayerView extends StatelessWidget {
     // to: Flutter's gesture arena does not hand gestures to a macOS platform
     // view at all, so a tap here is the platform's business and every control
     // lives in Flutter above this widget.
-    return const AppKitView(viewType: 'watchools_player/view');
+    return AppKitView(
+      viewType: 'watchools_player/view',
+      onPlatformViewCreated: (int viewId) {
+        _viewId = viewId;
+        widget.onReady?.call(viewId);
+      },
+    );
   }
 }

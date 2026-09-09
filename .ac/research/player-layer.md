@@ -144,13 +144,61 @@ So the provider path stays on `--user-agent`, `--http-header-fields` and
 `--stream-lavf-o`. Reserve `stream_cb` for something that genuinely needs byte
 control, a local disk cache or a recording tap.
 
-**One `--stream-lavf-o` setting is not optional here.** mpv sets `reconnect=1`
-and `reconnect_delay_max=7` but leaves `reconnect_on_http_error` empty, and
-FFmpeg then refuses to reconnect on any 4xx or 5xx. When this panel's token
-lapses mid-playback and the CDN answers 403, playback simply ends. Pass
-`reconnect_on_http_error=4xx,5xx`, `reconnect_streamed=1` and
-`reconnect_max_retries=3`, and treat it as best-effort, because a live endpoint
-will not honour the byte offset a reconnect resumes from.
+**`--stream-lavf-o` is a key/value list, and its comma has to be bracketed.**
+mpv's `read_subparam` accepts `"..."`, `[...]` and `%n%`, and has no backslash
+escape, so `reconnect_on_http_error=4xx\,5xx` splits at the comma: read back as
+a node map it is `reconnect_on_http_error` = `4xx\` plus a garbage key
+`5xx,reconnect_max_retries` = `3`. A string readback cannot see this, because
+mpv's own `print_keyvalue_list` joins pairs with a bare comma and no quoting, so
+a mis-split value prints back identical to the input. Write
+`reconnect_on_http_error=[4xx,5xx]`.
+
+**And no reconnect option survives a lapsed token.** mpv leaves
+`reconnect_on_http_error` empty so FFmpeg refuses to reconnect on any 4xx or
+5xx, which reads like a missing setting, but adding it does not buy playback.
+Measured one variable at a time against the mock's lapsing token with a starved
+cache (`cache-secs=2`, `demuxer-readahead-secs=1`, `demuxer-max-bytes=8MiB`) and
+a 75 s deadline:
+
+| Arm | Outcome |
+|---|---|
+| mpv defaults only | ended after 23.7 s, `reason=0` |
+| `reconnect_streamed=1` alone | alive at 75 s, demuxer read 7.0 s of content |
+| `reconnect_on_http_error=[4xx,5xx]` alone | alive at 75 s, demuxer read 3.0 s of content |
+| both plus `reconnect_max_retries=3` | ended after 29.6 s, `reason=0` |
+
+The two surviving arms are the bad outcome. They retry a dead token
+indefinitely: the core stays up, the video output still reports `gpu-next` and a
+picture, and three to seven seconds of content arrive in seventy five. Nothing
+raises a fault, so the client cannot tell a stall from a slow channel.
+
+`reconnect_max_retries=3` therefore goes in **to restore a bounded failure**.
+There is nothing to reconnect to at that layer: mpv keeps the post-redirect URL
+as the playlist URL and refreshes that rather than the panel URL, so the token
+cannot be renewed by FFmpeg at all. Recovery belongs to us, and it is the same
+mechanism the variant ladder needs anyway: detect the stall from
+`demuxer-cache-state`, re-resolve through `player_api.php`, `loadfile`.
+
+**With a real-sized cache the stall is not bounded, and only the log stream
+names it.** Re-run inside the Flutter plugin with the shipped option set rather
+than the starved one, 75 s against the lapsing account: mpv fetched three
+segments, then re-requested only the playlist and took a 509 twelve times
+without ever asking for another segment. No `END_FILE`. `current-vo` stayed
+`gpu-next` with a decoded size, and `demuxer-cache-duration` **froze at 15.68 s**
+rather than falling, so the property that looks like the obvious stall detector
+reports health for as long as the stall lasts. What did arrive, at `warn`, was
+FFmpeg's own reconnect trace with its backoff (`http: Will reconnect at 0 in 1
+second(s), error=End of file`) and then an `error` line when it gave up.
+
+Three consequences for the interface:
+
+- The ladder reads `demuxer-cache-state` (`fw-bytes`) and `cache-speed`, never
+  `demuxer-cache-duration`.
+- Log messages are a **fault channel**, not diagnostics. Subscribe with
+  `mpv_request_log_messages("warn")` and forward them; `terminal=yes` writes the
+  same lines to a stdout no release build reads.
+- FFmpeg renders a 509 as `End of file`, which is the same silent shape as
+  `reason=0`. Every HTTP status this provider uses to refuse arrives as EOF.
 
 ## Connection budget, and what it kills
 
