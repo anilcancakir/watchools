@@ -229,7 +229,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 1
 
-- [ ] **Step 1**: Derive a playable live URL from the credential and the channel
+- [x] **Step 1**: Derive a playable live URL from the credential and the channel
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: before, no URL in this app carries a credential; after, every playback URL embeds the user's provider password in its **path**, and this step decides how it is built, what picks the extension, and which response fields may influence the host.
@@ -257,7 +257,7 @@ the segment after `player-reconnect/`.
         - Build a movie or series URL with a `vod` segment
         - Fall back to another extension when the requested one is unavailable; a 404 with a reason is the panel's answer and the caller decides
 
-- [ ] **Step 2**: Redact provider secrets from any string, not just from a Uri
+- [x] **Step 2**: Redact provider secrets from any string, not just from a Uri
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: before, the only redaction is `describe(Uri)`, which needs a parsed `Uri`; after, an arbitrary string from the native side can be made safe, and this is the single filter standing between mpv's log channel and a debug record that could hold a paid subscription's password.
@@ -281,7 +281,7 @@ the segment after `player-reconnect/`.
         - Skip the percent-encoded form
         - Log or include either secret in an exception message
 
-- [ ] **Step 3**: Wire the three dependencies, and prepare the Wind release
+- [x] **Step 3**: Wire the three dependencies, and prepare the Wind release
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: three `pubspec.yaml` lines plus a version bump and a changelog entry in another repository with its own CLAUDE.md and its own definition of done, which has to be read first.

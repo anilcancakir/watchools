@@ -45,8 +45,8 @@ class XtreamCredentials {
   /// The panel password, in plain text because the protocol sends it that way.
   ///
   /// Never reaches [toString] and never reaches an exception message. `Vault`
-  /// is the only place it is written and [describe] is the only way a URL
-  /// carrying it becomes printable.
+  /// is the only place it is written, and [describe] and [redact] are the only
+  /// two ways anything carrying it becomes printable.
   final String password;
 
   /// The `User-Agent` this provider is addressed with.
@@ -124,6 +124,81 @@ class XtreamCredentials {
       port: url.hasPort ? url.port : null,
       pathSegments: segments,
     ).toString();
+  }
+
+  /// The same guarantee as [describe], for prose that merely contains a URL.
+  ///
+  /// Returns [text] with every spelling of [password] and [username] replaced
+  /// by the marker, and everything else byte for byte as it arrived. This is
+  /// [describe]'s sibling rather than its replacement: a `Uri` can be taken
+  /// apart, a log line cannot, and the leak this closes arrives as a log line.
+  /// mpv is subscribed at `warn`
+  /// (`packages/watchools_player/macos/watchools_player/Sources/watchools_player/MpvEngine.swift:127`)
+  /// and its lines are forwarded verbatim (`:465`), FFmpeg's reconnect warning
+  /// names the URL it is retrying, and a stream URL carries the credential in
+  /// its path. That channel is the only signal a subscription token is lapsing,
+  /// so it cannot be switched off; it has to be cleaned instead.
+  ///
+  /// The text is never parsed for a URL. Prose of unknown shape has no URL
+  /// boundary to find, and a parser that guesses one wrong passes the secret
+  /// through, so a substring replacement is the honest tool.
+  ///
+  /// [password] goes before [username], because a password containing the
+  /// username (`bob-s3cret` for `bob`) survives the other order: the username
+  /// pass rewrites its first three characters and the password no longer
+  /// matches itself. An empty secret is skipped rather than replaced, because
+  /// `replaceAll('')` matches between every character and would return a string
+  /// of nothing but markers.
+  ///
+  /// Four spellings per secret, because a URL escapes what it embeds and the
+  /// three encoders that can produce one all disagree.
+  ///
+  /// [Uri.encodeComponent] keeps RFC 2396's marks and writes a space as `%20`.
+  /// [Uri.encodeQueryComponent] escapes `!*'()` as well and writes a space as
+  /// `+`. And `Uri(pathSegments:)`, which is what actually builds a stream URL
+  /// (`xtream_stream_url.dart`), escapes **less than either**: `@`, `:` and `&`
+  /// are all legal in an RFC 3986 path segment, so it leaves them alone. One
+  /// password shows all three apart: `p@ss word` is `p%40ss%20word` through
+  /// `encodeComponent`, `p%40ss+word` through `encodeQueryComponent`, and
+  /// `p@ss%20word` on the wire. Enumerating the first two and stopping is what
+  /// an earlier version of this method did, and a paired test against a URL the
+  /// builder had actually produced is what caught the third: a `@` in a
+  /// password reached a log line intact.
+  ///
+  /// The fourth form is therefore derived from the same constructor the builder
+  /// uses rather than hand-written, so the two cannot drift apart. There is no
+  /// public `encodePathSegment` in `dart:core`; a one-segment `Uri` is the only
+  /// way to ask for that escaping. Its `path` carries **no** leading separator,
+  /// because `Uri` only makes a path absolute when an authority is present, and
+  /// stripping one anyway ate the secret's first character and redacted a
+  /// nine-tenths match.
+  ///
+  /// One encoding pass is the ceiling. The URL is always built from the stored
+  /// field, so a doubly encoded form would require the stored field to already
+  /// be an encoding of the real secret, in which case the stored field is what
+  /// the URL carries and its single encoding is this set.
+  ///
+  /// A `Set` rather than a list: for an alphanumeric secret all four spellings
+  /// collapse to one, which is the ordinary case.
+  String redact(String text) {
+    String redacted = text;
+
+    for (final String secret in <String>[password, username]) {
+      if (secret.isEmpty) continue;
+
+      final Set<String> forms = <String>{
+        secret,
+        Uri.encodeComponent(secret),
+        Uri.encodeQueryComponent(secret),
+        Uri(pathSegments: <String>[secret]).path,
+      };
+
+      for (final String form in forms) {
+        redacted = redacted.replaceAll(form, _redaction);
+      }
+    }
+
+    return redacted;
   }
 
   @override
