@@ -416,21 +416,27 @@ function segmentDurations(channel) {
  * file's index, because that is what a real panel serves and a client that
  * dedupes by URI would otherwise see the same three segments forever.
  *
- * It does **not** fix the periodic stall this channel has, which was measured
- * and is worth knowing about before anything is measured against it: libmpv
- * buffers the three-segment window, drains it, and then sits with `fw-bytes` at
- * 0 and `demuxer-cache-state/underrun` true for **eight seconds** before the
- * timeline resets, and the cycle repeats every twenty four. Changing the URIs
- * moved nothing; `cache-end` still freezes at 11.9 s and then reads negative,
- * which points at the DISCONTINUITY below rather than at the naming. The cause
- * is that the loop is only SEGMENT_COUNT * SEGMENT_SECONDS long, so a genuine
- * timeline reset arrives inside every window.
+ * This window is **not** the source of the periodic freeze a libmpv probe sees
+ * against it, which is worth writing down because three plausible explanations
+ * were tried and all three were wrong: repeating URIs, a loop shorter than the
+ * window (SEGMENT_COUNT raised to 16), and a window too small to absorb a late
+ * reload (WINDOW_SEGMENTS raised to 6). None moved the freeze by a second, and
+ * the playlist already answers `Cache-Control: no-store`.
  *
- * The consequence for the player work: this channel cannot host a stall
- * measurement, because its healthy state is indistinguishable from the
- * token-lapse stall the variant ladder exists to detect. The RAW TS channel
- * (`streamEndless`) is genuinely continuous and measured clean over 39 s, so
- * use that one until the loop here is long enough for a wrap to be rare.
+ * What settled it was this server's own log rather than another guess. Over one
+ * 90 s run it served **52 playlist reloads and 23 segment fetches whose
+ * sequence numbers are consecutive with no gap and no repeat**, which is
+ * 23 * SEGMENT_SECONDS = 92 s of content in 90 s of wall clock. The client is
+ * reloading aggressively, fetching everything advertised, in order, in real
+ * time. The stream is correct; the freeze is in the probe's playback clock,
+ * which runs `vo=null, ao=null` and therefore has neither a display nor an
+ * audio clock to pace against.
+ *
+ * The consequence for the player work is the part to carry forward:
+ * `demuxer-cache-state/underrun` reads true both in that harness's healthy
+ * freeze and in a real token lapse, so **under a null-output harness it does
+ * not discriminate**. Whether it discriminates with a real video output is
+ * unmeasured, and that measurement belongs in the Flutter app rather than here.
  *
  * @param {import('./catalogue.mjs').Channel} channel
  * @param {number} now
