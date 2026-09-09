@@ -576,23 +576,49 @@ amount, and is currently not reading more data" (`input.rst:2495`) while
 `--demuxer-hysteresis-secs` makes the demuxer wait until "there is only 10
 seconds of content left" before reading again (`options.rst:4290`).
 
-**Candidate, not verified, and the reason is a trap worth carrying.** Every
-number above comes from a standalone harness running `vo=null, ao=null`, which
-has neither a display clock nor an audio clock. In that harness a **completely
-healthy** HLS stream freezes `time-pos` for eight seconds at a time with
-`fw-bytes` at 0 and `underrun` true. The mock's own request log disproves any
-fault: 52 playlist reloads and 23 segment fetches with consecutive sequence
-numbers, no gap and no repeat, which is 92 s of content in 90 s of wall clock.
-Three explanations were chased and falsified before the log was read.
+### Three ways a frozen clock happens, and what tells them apart
 
-So `underrun` does **not** discriminate under a null-output harness, and both
-tier 1 and tier 2 have to be re-measured in the Flutter app with `gpu-next`
-running before their thresholds mean anything. Two properties survive the
-caveat, because they are about the core rather than the clock: `core-idle` reads
-`no` through an entire lapse and flips only *after* `END_FILE`, so there is no
-event-driven fast path and the tick is the detector; and `playlist_entry_id` is
-populated on `END_FILE`, so it works as the session token that stops the ladder
-acting on the previous variant's event.
+All three measured. This is the table the detector is written against, because
+two of the three rows are not faults and one of them is indistinguishable from
+the fault by every field the tick carries.
+
+| Shape | `time-pos` | `underrun` | `demuxerIdle` | `fw-bytes` | Recovers |
+|---|---|---|---|---|---|
+| Idle display or screensaver | frozen | **false** | **true** | grows to the cap | on wake |
+| Live window starvation | frozen | true | false | 0 | yes, about 8 s |
+| Lapsed provider token | frozen | true | false | 0 | **never** |
+
+**The display case is distinguishable and must be excluded.** `gpu-next`
+presents through the display link, so an idle display stops playback entirely:
+`time-pos` froze at 0.08 across 106 ticks in the Flutter example and the
+standalone harness reported `moving picture in the layer: no`, on both delivery
+paths, with and without `hwdec`, until `caffeinate -u -d` was held and the same
+channel reported 24.2% of pixels differing. `underrun` false with a full buffer
+is the signature, and on a TV a screensaver reaches the same state, so this is a
+product case rather than a testing nuisance.
+
+**The other two rows are identical in every field, so duration is the only
+discriminator.** A three segment live window means a healthy client drains
+everything advertised and waits: measured at about eight seconds in every
+twenty four against the mock, recovering cleanly with `time-pos` continuing from
+where it stopped. A lapsed token presents the same way and never recovers. So
+tier 1's threshold has to **exceed the longest legitimate starvation**, which
+rules out the three seconds this table used to say, and the ladder needs the
+recovery to cancel it rather than a single sample to trigger it.
+
+Whether a real panel starves the same way is unmeasured; the mock's window size
+is a fixture choice.
+
+**Two things do survive as reliable**, because they are about the core rather
+than the clock. `core-idle` reads `no` through an entire lapse and flips only
+*after* `END_FILE`, so there is no event-driven fast path and the tick is the
+detector. And `playlist_entry_id` is populated on `END_FILE`, so it works as the
+session token that stops the ladder acting on the previous variant's event.
+
+**Measure playback under `caffeinate`, or measure a stopped clock.** Two
+harnesses produced a frozen `time-pos` for two different reasons on the same
+day: one because `vo=null, ao=null` has no clock at all, the other because the
+display had idled. Both read exactly like a provider fault.
 
 | Tier | Signal | Threshold | Action | Verified |
 |---|---|---|---|---|
