@@ -16,6 +16,13 @@ Laravel does no video. It is a metadata service.
 
 ## 1. The player layer
 
+**Superseded by `.ac/research/player-layer.md`**, which measured this against
+Anılcan's own provider on 2026-09-09 and reversed the engine split: libmpv is
+primary everywhere and AVFoundation is a capability-selected second engine, not
+the HLS default. The table below is kept because its individual claims are still
+accurate; what it gets wrong is the conclusion. Three specific corrections are
+marked inline in the sections that follow.
+
 | Platform | Engine | Reason |
 |---|---|---|
 | Android, Android TV | `video_player` (Media3 1.9.2) | Plays MPEG-TS natively as progressive and as HLS container. Best-tested on TV hardware. |
@@ -70,7 +77,9 @@ The distinction that decides it: the media_kit staleness is a problem we can fix
 
 ### media_kit licensing is fine
 
-The Dart package is MIT. The shipped libmpv binaries are built in LGPL mode, verified at source: the Windows build config sets `-Dgpl=false` and the macOS build script does the same. libmpv ships as dynamic frameworks, satisfying the LGPL relinking clause the ordinary way. Our app code stays closed. Ship the LGPL text and a notice that libmpv and FFmpeg are LGPL and replaceable, and never switch to a GPL-enabled build for encoding.
+The Dart package is MIT. The shipped libmpv binaries are built in LGPL mode, verified at source: the Windows build config sets `-Dgpl=false` and the macOS build script does the same. libmpv ships as dynamic frameworks, satisfying the LGPL relinking clause the ordinary way.
+
+**Correction, and it does not carry over to the base we chose.** The dynamic-framework claim is true of the binaries media_kit consumes. MPVKit's, which `player-layer.md` adopts, are static: `file` reports `current ar archive` on the macOS, iOS and tvOS slices alike. Either build dynamic frameworks ourselves or prepare the relinkable-object route, and decide before the first submission rather than after. Our app code stays closed. Ship the LGPL text and a notice that libmpv and FFmpeg are LGPL and replaceable, and never switch to a GPL-enabled build for encoding.
 
 On the Mac App Store tension specifically, the received wisdom is out of date. Apple's current [Licensed Application EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) carries an explicit carve-out: the no-modification restriction applies "except as and only to the extent that any foregoing restriction is prohibited by applicable law or to the extent as may be permitted by the licensing terms governing use of any open-sourced components included with the Licensed Application". VLC's removal was a GPL case, and VideoLAN relicensed libVLC to LGPL in 2012 specifically to unblock app stores. No LGPL rejection is on record.
 
@@ -95,7 +104,7 @@ This is a hard product requirement from real provider experience, and the answer
 | Target | Custom headers | User-Agent | Referer | Mechanism |
 |---|---|---|---|---|
 | Android, Android TV | Yes, every request | Yes, overrides the map entry | Yes | `DefaultHttpDataSource.Factory.setDefaultRequestProperties` |
-| iOS | Yes, on a private key | Yes | Yes | `AVURLAssetHTTPHeaderFieldsKey`, which Apple says not to use |
+| iOS | Only on a private key | **Yes, supported** | Yes, private key | `AVURLAssetHTTPUserAgentKey` is public since iOS 16; arbitrary headers still need `AVURLAssetHTTPHeaderFieldsKey`, which Apple says not to use |
 | macOS, Windows, Linux | Yes | Yes | Yes | mpv `http-header-fields` |
 | Web | **No** | **No** | **No** | Chrome silently drops `User-Agent`; `Referer` is a forbidden header; CORS preflight fails anyway |
 | Samsung Tizen | **Cookie and User-Agent only** | Yes | **No** | Plugin README line 158, verified |
@@ -114,7 +123,9 @@ with `userAgentKey = 'User-Agent'`. A provider config storing `user-agent` misse
 
 **Tizen cannot send `Referer` at all.** [video_player_avplay README line 158](https://github.com/flutter-tizen/plugins/blob/main/packages/video_player_avplay/README.md), verified: "The `httpHeaders` option of `VideoPlayerController.network` only support `Cookie` and `User-Agent`." The maintainer's reason in [flutter-tizen/plugins#749](https://github.com/flutter-tizen/plugins/issues/749) is that no public Tizen native API exists. Design the provider model so `Referer` is optional, not required.
 
-On iOS the only working mechanism is an unsupported private key. Apple staff, [forum thread 20421](https://developer.apple.com/forums/thread/20421): "`AVURLAssetHTTPHeaderFieldsKey` is not a supported API, so you should not use it." The supported route, `AVAssetResourceLoaderDelegate`, cannot attach a header to a `.ts` segment fetch: it only accepts a redirect response, failing otherwise with `CoreMediaErrorDomain Code=-12881`.
+On iOS the only working mechanism for **arbitrary** headers is an unsupported private key. Apple staff, [forum thread 20421](https://developer.apple.com/forums/thread/20421): "`AVURLAssetHTTPHeaderFieldsKey` is not a supported API, so you should not use it." The supported route, `AVAssetResourceLoaderDelegate`, cannot attach a header to a `.ts` segment fetch: it only accepts a redirect response, failing otherwise with `CoreMediaErrorDomain Code=-12881`. The private key is absent from the SDK headers entirely, so a plugin using it is reaching past the SDK.
+
+**Correction for the User-Agent specifically, which is the header this product actually needs.** A supported key exists and this file predates it: `AVURLAssetHTTPUserAgentKey`, `AVAsset.h:609`, `API_AVAILABLE(macos(13.0), ios(16.0), tvos(16.0))`. Verified in the macOS 26.5 SDK. Alongside it, `AVURLAssetOverrideMIMETypeKey` (`AVAsset.h:553`, `macos(14.0) ios(17.0) tvos(17.0)`) makes AVFoundation ignore both the path extension and the server's `Content-Type`, which is the fix for a panel that mislabels a playable stream. Both matter only on an AVFoundation path; see `.ac/research/player-layer.md`.
 
 ### DNS: not our problem to solve in the app
 
@@ -209,7 +220,7 @@ The architecture is identical to `flutter-tizen`, which we need anyway, so this 
 
 Three cautions:
 
-- **Raw MPEG-TS hits the same wall.** `video_player_tvos` wraps AVPlayer. media_kit's Darwin builds target iOS, simulator and macOS only, with no tvOS planned. The fix is native work: wrap TVVLCKit (LGPL-2.1) or AetherEngine (LGPL-3.0 with an explicit App Store exception) behind a federated `*_tvos` plugin. This is work we would do for a native app too, just behind a method channel.
+- **Raw MPEG-TS hits the same wall.** `video_player_tvos` wraps AVPlayer. media_kit's Darwin builds target iOS, simulator and macOS only, with no tvOS planned. ~~The fix is native work: wrap TVVLCKit (LGPL-2.1) or AetherEngine (LGPL-3.0 with an explicit App Store exception) behind a federated `*_tvos` plugin.~~ **Correction: no second native engine is needed.** media_kit is not the only route to libmpv. MPVKit 1.0.0's `Libmpv.xcframework` carries real `tvos-arm64_arm64e` and `tvos-arm64_x86_64-simulator` slices, shipping `client.h`, `render.h`, `render_gl.h` and `stream_cb.h` at API version 2.5, the same as every other slice. Downloaded and inspected; see `.ac/research/player-layer.md`.
 - **Unsupported plugins are silently skipped**, not errored on. The build goes green and throws `MissingPluginException` at runtime. Every `_tvos` package is `0.0.x` and `video_player_tvos` has not been updated since May 2026.
 - **Bus factor is one.** The org is five months old and nearly every commit is from one person. BSD-3 is the insurance, but forking means inheriting the engine build.
 
