@@ -194,7 +194,9 @@ Three consequences for the interface:
 
 - The ladder reads one `demuxer-cache-state` node plus `time-pos` and `pause`,
   never `demuxer-cache-duration`. See "The ladder" for why `fw-bytes` is the
-  wrong predicate and `cache-speed` is not a second reading.
+  wrong predicate, why `cache-speed` is not a second reading, and why the
+  thresholds are still unverified: the harness that produced them had no
+  playback clock, so a healthy stream froze in it too.
 - Log messages are a **fault channel**, not diagnostics. Subscribe with
   `mpv_request_log_messages("warn")` and forward them; `terminal=yes` writes the
   same lines to a stdout no release build reads.
@@ -562,23 +564,41 @@ alongside it: `input.rst:2483` at v0.41.0 says "This is the same as
 ``demuxer-cache-state/raw-input-rate``", so the pair this section used to
 prescribe was one read twice.
 
-The predicate is **`time-pos` not advancing while `pause` is false**, with the
-node's `underrun` and `idle` saying why. Three reasons it beats `fw-bytes`:
-the mini player needs `time-pos` anyway, so it costs no extra field; it is what
-actually stopped in the measured lapse, since `cache-end` and `reader-pts` both
-froze and their difference held at 15.68 s; and `fw-bytes` **cannot** carry the
-signal, because a satisfied cache stops reading by design.
-`demuxer-cache-idle` is "the demuxer cache is filled to the requested amount,
-and is currently not reading more data" (`input.rst:2495`) and
+The candidate predicate is **`time-pos` not advancing while `pause` is false**,
+with the node's `underrun` and `idle` saying why. Three reasons it beats
+`fw-bytes`: the mini player needs `time-pos` anyway, so it costs no extra field;
+it is what actually stopped in the measured lapse, since `cache-end` and
+`reader-pts` both froze and their difference held at 15.68 s; and `fw-bytes`
+**cannot** carry the signal, measured twice over. On a healthy continuous stream
+it sits at a steady 80 KB rather than growing, so "not advancing" is its normal
+state, and `demuxer-cache-idle` is "the demuxer cache is filled to the requested
+amount, and is currently not reading more data" (`input.rst:2495`) while
 `--demuxer-hysteresis-secs` makes the demuxer wait until "there is only 10
-seconds of content left" before reading again (`options.rst:4290`). On the
-800 MiB VOD path that is minutes of looking exactly like a stall.
+seconds of content left" before reading again (`options.rst:4290`).
 
-| Tier | Signal | Threshold | Action |
-|---|---|---|---|
-| 0 | `end-file` reason in {EOF 0, ERROR 4}, or open failure | immediate | switch |
-| 1 | `time-pos` not advancing and not user-paused | 3 s | switch |
-| 2 | 10 s mean `raw-input-rate` below the stream bitrate | 10 s | switch |
+**Candidate, not verified, and the reason is a trap worth carrying.** Every
+number above comes from a standalone harness running `vo=null, ao=null`, which
+has neither a display clock nor an audio clock. In that harness a **completely
+healthy** HLS stream freezes `time-pos` for eight seconds at a time with
+`fw-bytes` at 0 and `underrun` true. The mock's own request log disproves any
+fault: 52 playlist reloads and 23 segment fetches with consecutive sequence
+numbers, no gap and no repeat, which is 92 s of content in 90 s of wall clock.
+Three explanations were chased and falsified before the log was read.
+
+So `underrun` does **not** discriminate under a null-output harness, and both
+tier 1 and tier 2 have to be re-measured in the Flutter app with `gpu-next`
+running before their thresholds mean anything. Two properties survive the
+caveat, because they are about the core rather than the clock: `core-idle` reads
+`no` through an entire lapse and flips only *after* `END_FILE`, so there is no
+event-driven fast path and the tick is the detector; and `playlist_entry_id` is
+populated on `END_FILE`, so it works as the session token that stops the ladder
+acting on the previous variant's event.
+
+| Tier | Signal | Threshold | Action | Verified |
+|---|---|---|---|---|
+| 0 | `end-file` reason in {EOF 0, ERROR 4}, or open failure | immediate | switch | yes |
+| 1 | `time-pos` not advancing and not user-paused | 3 s | switch | no, harness had no clock |
+| 2 | 10 s mean `raw-input-rate` below the stream bitrate | 10 s | switch | no |
 
 Tier 0 includes **EOF**, which the first version of this table excluded by
 triggering on `ERROR` alone: the measured token lapse ends as `reason=0` when it
