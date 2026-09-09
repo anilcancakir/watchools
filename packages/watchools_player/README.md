@@ -1,0 +1,132 @@
+# watchools_player
+
+A spike, not the player. It answers one question, and the answer is yes:
+
+**libmpv renders into a `CAMetalLayer` inside a Flutter `AppKitView`, and
+Flutter composites its own widgets above it.**
+
+```sh
+node ../../tool/xtream-mock/server.mjs        # from the repo root
+cd example && flutter run -d macos
+```
+
+The example autoplays the mock panel's H.264 channel and writes what it sees to
+its sandbox container.
+
+## What was measured
+
+From inside the running Flutter app, reported over the channel:
+
+```json
+{"running":true,"videoOutput":"gpu-next","width":640,"height":360,"hasPicture":true}
+```
+
+`videoOutput` is empty until mpv's video output configures, so `gpu-next` there
+is the renderer coming up inside the platform view rather than merely a demuxer
+opening a URL. The mock's own log shows segments being fetched continuously
+alongside it.
+
+And from the app capturing its own window twice, 0.6 s apart: **21,648 of
+155,570 sampled bytes changed**. The written PNG shows the Flutter chrome, the
+video inside the platform view with a correct 16:9 letterbox, and a Flutter
+overlay drawn on top of the video. That overlay is the compositing proof: an
+externally drawn `CALayer` with Flutter's own layers above it, which is exactly
+what the base-layer-black bug used to break.
+
+The capture also shows the Flutter UI frozen on a stale frame while the video's
+own timecode advances, because `SelfCapture` spins the run loop on the platform
+thread. That is a wart in the affordance rather than in the architecture, and it
+happens to demonstrate the point: mpv drives its layer independently of
+Flutter's paint loop.
+
+### With the redirect in the way
+
+Re-run against the mock's tokenised redirect rather than a direct URL, because
+the first measurement was taken against a stale checkout whose mock did not
+redirect at all. Same result, `videoOutput: gpu-next` and 21,963 of 155,570
+sampled bytes moving, and the mock logged **seven requests to the tokenised
+path**, so libmpv follows the 302 from inside the platform view unaided.
+
+The request split is the interesting part: two requests to the panel URL and
+seven to the tokenised one. **mpv keeps the post-redirect URL as the playlist
+URL and refreshes that**, so it never goes back through the panel. When a token
+lapses there is nothing in mpv that re-resolves, which is why
+`reconnect_on_http_error` only buys time and the real recovery has to be ours:
+ask the API for a fresh URL and `loadfile` it.
+
+## What this taught, beyond the answer
+
+- **`gpu-context=moltenvk`, not upstream's `macvk`.** Upstream mpv reads `WinID`
+  in four files and no macOS file is among them, so `--wid` is a no-op there.
+  This works only because MPVKit carries a patch whose context casts `WinID` to
+  a `CAMetalLayer`.
+- **A sandboxed macOS app needs `com.apple.security.network.client`.** The
+  Flutter scaffold ships `network.server` and not the client, so libmpv reached
+  nothing at all and the failure looked like a rendering problem for a while.
+  The main app already has it; a freshly generated example does not.
+- **A sandboxed app cannot write to `/tmp`.** The first attempt at the state
+  file produced nothing and said nothing. It goes in the container.
+- **An app may capture its own window without Screen Recording permission, and
+  cannot capture another app's.** A helper binary outside the process found the
+  window, printed its size, and then got nil from the capture with no error, so
+  the capture had to move inside the plugin.
+- **MPVKit resolves through SPM into a Flutter plugin with no Podfile.** Flutter
+  3.47 has Swift Package Manager on by default and this repository is already
+  migrated, so the dependency is three lines in `Package.swift`.
+
+## The option set, verified rather than assumed
+
+Three things in `MpvEngine` were written from the research and then checked,
+because `--stream-lavf-o` "silently ignores" what it does not understand and
+mpv's own manual recommends a different API for values containing commas.
+
+- **The escaped comma works.** `reconnect_on_http_error=4xx\,5xx` sets cleanly
+  and reads back with the escape intact. A bare comma is *rejected* rather than
+  silently split, which is louder than the docs imply. And
+  `stream-lavf-o-append`, which the manual recommends for values that must not
+  be interpreted, does not exist as a settable option name through
+  `mpv_set_option_string` at all, so the escaped form is the right route here.
+- **`800MiB` is accepted** and reads back as `838860800`, exactly 800 MiB.
+- **`cache-pause=no` with `cache-pause-wait=0` is not a contradiction.** Both
+  set, and the wait is simply inert while pausing is off, which is the intent.
+
+And the one that matters most, tested end to end against the mock's `expiring`
+account, which reproduces the real panel's 509 after fifteen seconds:
+
+| Run | Outcome |
+|---|---|
+| without `reconnect_on_http_error` | played 3.5 s, then `end-file reason=0` |
+| with it | **still playing past the 40 s deadline** |
+
+So the flag is the difference between playback ending when a stream token lapses
+and surviving it. mpv's own `reconnect=1` default does not save it; the
+`on_http_error` part does.
+
+Note what mpv calls it: **`reason=0`, which is EOF, not an error.** A token lapse
+arrives as a clean end of file, so a client watching for error codes sees a
+normal finish. That is a fourth silent shape alongside the ones already in
+`.ac/research/player-layer.md`.
+
+## What is deliberately absent
+
+No `PlaybackEngine`. That interface belongs in Dart with buffer, live offset,
+position, telemetry and fault as first-class members, and it gets written now
+that this question is settled. `play`, `state`, `stop` and `captureSelf` are the
+smallest surface that could answer it.
+
+No resize handling beyond keeping `drawableSize` honest. The patched `moltenvk`
+context answers every VOCTRL with `VO_NOTIMPL`, so mpv is never told the layer
+resized and only a video reconfig re-reads the drawable. Measured: growing the
+layer leaves the swapchain at the old size, and forcing a reconfig through the
+client API does not fix it. The fix is a patch to `moltenvk_control` that we
+write and offer upstream; this view is already shaped so that lands without
+further change here.
+
+No gestures. Flutter's arena does not hand gestures to a macOS platform view, so
+every control belongs in Flutter above the view, which is where they want to be
+anyway for one design across touch, mouse and D-pad.
+
+The buffer options in `MpvEngine` are the ones the measurements chose: zap on the
+real provider's channel was 3040 ms on mpv's defaults and 1658 ms on this shape,
+with an 18 s mean buffer and zero stalls across 135 s. See
+`.ac/research/player-layer.md`.
