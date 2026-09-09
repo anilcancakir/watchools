@@ -39,6 +39,21 @@ thread. That is a wart in the affordance rather than in the architecture, and it
 happens to demonstrate the point: mpv drives its layer independently of
 Flutter's paint loop.
 
+### With the redirect in the way
+
+Re-run against the mock's tokenised redirect rather than a direct URL, because
+the first measurement was taken against a stale checkout whose mock did not
+redirect at all. Same result, `videoOutput: gpu-next` and 21,963 of 155,570
+sampled bytes moving, and the mock logged **seven requests to the tokenised
+path**, so libmpv follows the 302 from inside the platform view unaided.
+
+The request split is the interesting part: two requests to the panel URL and
+seven to the tokenised one. **mpv keeps the post-redirect URL as the playlist
+URL and refreshes that**, so it never goes back through the panel. When a token
+lapses there is nothing in mpv that re-resolves, which is why
+`reconnect_on_http_error` only buys time and the real recovery has to be ours:
+ask the API for a fresh URL and `loadfile` it.
+
 ## What this taught, beyond the answer
 
 - **`gpu-context=moltenvk`, not upstream's `macvk`.** Upstream mpv reads `WinID`
