@@ -1,0 +1,13 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/components/provider_notice_test.dart
+00:00 +0: every fault says something different, and says it in three parts
+00:00 +1: a lapsed subscription sends the user to their credentials, not to a retry
+00:00 +2: a host that did not answer offers a retry
+00:00 +3: so does a provider that is refusing for now
+00:00 +4: a device holding the connection also offers a retry, but one that names its cost
+00:00 +5: the technical line shows exactly what the provider said
+00:00 +6: and is absent rather than empty when the provider said nothing
+00:00 +7: All tests passed!
+COLOR-CHECK: clean
+[32m✓[0m Refreshed 9 preview(s) -> lib/_previews.g.dart
+50:      label: 'ProviderNotice',
+52:      builder: (_) => const ProviderNoticePreview(),

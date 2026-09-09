@@ -96,9 +96,16 @@ class ProviderNotice extends StatelessWidget {
       ProviderFault.throttled => (
         Icons.hourglass_empty_outlined,
         'Sağlayıcı şu an yanıt vermiyor',
+        'Sağlayıcı isteklerinizi hız sınırına takıldığı için reddediyor. '
+            'Birkaç saniye içinde tekrar deneyin.',
+        'Yeniden dene',
+      ),
+      ProviderFault.evicted => (
+        Icons.devices_other_outlined,
+        'Aboneliğiniz başka bir cihazda açık',
         'Bağlantı sınırına ulaşıldı. Aboneliğiniz başka bir cihazda açık '
             'olabilir; bilgilerinizde bir sorun yok.',
-        'Yeniden dene',
+        'Bağlantıyı devral',
       ),
     };
 

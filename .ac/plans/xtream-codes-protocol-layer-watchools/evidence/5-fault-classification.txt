@@ -1,0 +1,21 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_account_test.dart
+00:00 +0: XtreamAccount.fromHandshake / active demo: auth 1, status Active, future exp_date is active
+00:00 +1: XtreamAccount.fromHandshake / active expired: auth 1, status Expired, future exp_date is not active
+00:00 +2: XtreamAccount.fromHandshake / active lapsed: auth 1, status Active, past exp_date is not active
+00:00 +3: XtreamAccount.fromHandshake / active lifetime: auth 1, status Active, exp_date null is active, the trap a naive date comparison fails
+00:00 +4: XtreamAccount.fromHandshake / active a lowercase "active" status is active
+00:00 +5: XtreamAccount.fromHandshake / active banned: auth 1, status Banned is not active
+00:00 +6: XtreamAccount.fromHandshake / active disabled: auth 1, status Disabled is not active
+00:00 +7: XtreamAccount.fromHandshake / active unknown credentials: a single-key {auth: 0} user_info parses without throwing and is not active
+00:00 +8: XtreamAccount.fromHandshake / active a missing status with a truthy auth is active
+00:00 +9: XtreamAccount.atConnectionLimit is at the limit when active connections meet the maximum
+00:00 +10: XtreamAccount.atConnectionLimit is not at the limit while under the maximum
+00:00 +11: classifyProviderFault statusCode 0 is unreachable, regardless of account or body
+00:00 +12: classifyProviderFault no account at all is expired
+00:00 +13: classifyProviderFault an account that failed the disjunction is expired
+00:00 +14: classifyProviderFault a healthy account behind the generic non-JSON denial, under its connection limit, is throttled
+00:00 +15: classifyProviderFault a healthy account behind the generic non-JSON denial, at its connection limit, is evicted rather than throttled
+00:00 +16: classifyProviderFault a dead account behind the same generic denial stays expired, never throttled
+00:00 +17: classifyProviderFault a healthy account with a well-formed JSON object body has no fault
+00:00 +18: classifyProviderFault a healthy account with a JSON array body (a catalogue call) has no fault, never inferred as a denial
+00:00 +19: All tests passed!

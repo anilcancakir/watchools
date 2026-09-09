@@ -38,7 +38,7 @@ class ProviderNoticePreview extends StatelessWidget {
           ),
         ),
         const WText(
-          'Üçü yan yana: her biri ne olduğunu, neden olduğunu ve tek eylemi söyler',
+          'Dördü yan yana: her biri ne olduğunu, neden olduğunu ve tek eylemi söyler',
           className: 'text-xs text-fg-muted',
         ),
         // `items-start`, never `items-stretch`. Stretch hands each panel the
@@ -53,6 +53,7 @@ class ProviderNoticePreview extends StatelessWidget {
             _panel(ProviderFault.unreachable),
             _panel(ProviderFault.expired, detail: 'HTTP 401, tr.example-provider.com'),
             _panel(ProviderFault.throttled),
+            _panel(ProviderFault.evicted),
           ],
         ),
       ],

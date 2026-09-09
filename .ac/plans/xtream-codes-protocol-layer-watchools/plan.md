@@ -255,7 +255,7 @@ repo-relative from the segment after `player-reconnect/`.
 
 ### Wave 2
 
-- [ ] **Step 4**: Give provider traffic its own driver, then write the client over the handshake and nine actions
+- [x] **Step 4**: Give provider traffic its own driver, then write the client over the handshake and nine actions
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: before, every request through `Http` carries the user's watchools bearer token because `AuthInterceptor` is attached to the one shared driver with no host test; after, provider requests resolve a separate interceptor-free driver and no watchools credential can reach a third-party host. This step decides which hosts receive our auth token.
@@ -284,7 +284,7 @@ repo-relative from the segment after `player-reconnect/`.
         - Classify a fault, decide a retry, or touch `ProviderFault`
         - Interpolate or `toString()` a `Uri`, `RequestOptions`, `MagicRequest` or `MagicError`, all of which carry the full URI
 
-- [ ] **Step 5**: Model the account and classify the four faults
+- [x] **Step 5**: Model the account and classify the four faults
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-none: the disjunction is three lines of boolean logic whose failure mode is showing a full line-up for a dead subscription, and the inputs drift in type and nullability, so it is small code carrying a large consequence.
@@ -393,7 +393,7 @@ repo-relative from the segment after `player-reconnect/`.
         - Request an EPG for a channel whose `epg_channel_id` is null
         - Import the full XMLTV guide; that is deferred and this is the on-screen minimum
 
-- [ ] **Step 9**: Render the `evicted` fault the account model introduced
+- [x] **Step 9**: Render the `evicted` fault the account model introduced (run in wave 2, not wave 4: see Dependency Notes)
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: one rendered arm across a component, its recipe and its preview, following three existing arms exactly.
