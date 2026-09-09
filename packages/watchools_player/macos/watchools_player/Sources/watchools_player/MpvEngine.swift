@@ -282,6 +282,14 @@ final class MpvEventPump {
         case MPV_EVENT_VIDEO_RECONFIG:
             return ["event": "videoReconfig"]
 
+        // The one event that means "you did not see some events". mpv's own
+        // header: it fires when the per-handle ring buffer overflows "and at
+        // least 1 event had to be dropped", which on a fault channel is the
+        // difference between a quiet stream and a lost fault. Forwarded so Dart
+        // distrusts its own history rather than concluding nothing happened.
+        case MPV_EVENT_QUEUE_OVERFLOW:
+            return ["event": "eventsLost"]
+
         case MPV_EVENT_LOG_MESSAGE:
             guard let data = UnsafeMutablePointer<mpv_event_log_message>(OpaquePointer(event.pointee.data)) else {
                 return nil

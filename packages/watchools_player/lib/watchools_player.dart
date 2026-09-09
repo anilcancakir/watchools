@@ -40,11 +40,27 @@ class WatchoolsPlayer {
   /// only signal is a `log` event at `warn`, FFmpeg's own
   /// `http: Will reconnect ... error=End of file`, followed by an `error` line
   /// when it gives up.
-  static Stream<PlayerEvent> get events => _events.receiveBroadcastStream().map(
-    (Object? raw) => PlayerEvent.fromNative(
-      (raw as Map<Object?, Object?>?) ?? const <Object?, Object?>{},
-    ),
-  );
+  ///
+  /// One field rather than a getter, and that is load-bearing rather than tidy.
+  /// `receiveBroadcastStream` builds a **new** `StreamController` on every call
+  /// whose `onListen` runs `binaryMessenger.setMessageHandler(name, ...)`
+  /// (`platform_channel.dart:697`), and a binary messenger holds exactly one
+  /// handler per channel name. So a second call's first listener silently
+  /// steals the stream from the first: measured, the original listener then
+  /// received nothing at all. Either one's `onCancel` also sets the handler to
+  /// null and tears it down for both. The variant ladder and a mini player are
+  /// two consumers by construction, so a getter here would have been a fault
+  /// channel that goes quiet the moment a second reader arrives.
+  ///
+  /// `static final` is lazy in Dart, so the channel is not touched until
+  /// somebody listens.
+  static final Stream<PlayerEvent> events = _events
+      .receiveBroadcastStream()
+      .map(
+        (Object? raw) => PlayerEvent.fromNative(
+          (raw as Map<Object?, Object?>?) ?? const <Object?, Object?>{},
+        ),
+      );
 
   /// What the renderer is doing.
   ///
@@ -148,9 +164,9 @@ class PlayerState {
 /// What mpv reported, over [WatchoolsPlayer.events].
 @immutable
 class PlayerEvent {
-  /// One of `endFile`, `videoReconfig` or `log`. A name the native side chose
-  /// rather than an enum, because the set will grow with the variant ladder and
-  /// an unknown name has to survive the trip.
+  /// One of `endFile`, `videoReconfig`, `log` or `eventsLost`. A name the native
+  /// side chose rather than an enum, because the set will grow with the variant
+  /// ladder and an unknown name has to survive the trip.
   final String name;
 
   /// mpv's `end-file` reason, present only on `endFile`.
@@ -191,6 +207,12 @@ class PlayerEvent {
 
   /// Whether playback stopped, for any reason including a clean EOF.
   bool get isEnd => name == 'endFile';
+
+  /// Whether mpv dropped events before this one reached us.
+  ///
+  /// A reader that has seen this cannot conclude anything from the absence of
+  /// an event, which on this channel is how a fault presents.
+  bool get isGap => name == 'eventsLost';
 }
 
 /// The surface mpv draws into.
