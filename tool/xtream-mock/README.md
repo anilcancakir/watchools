@@ -74,26 +74,42 @@ is why this survived: the server always served correctly, the client always
 fetched correctly, and every codec probe passed because `ffprobe` reads the
 streams rather than playing them. And a longer loop is not on its own a fix,
 which `SEGMENT_COUNT` at 16 demonstrated before the timestamps were understood.
+## Measure playback under `caffeinate`, or measure nothing
 
-## Open: nothing presents a second frame right now
+**An idle display stops libmpv presenting, and the signature is identical to a
+network stall.** This cost an hour and four wrong hypotheses, so it is written
+down rather than left as folklore.
 
-Unresolved, and it is not in this tool. After the timestamp fix the demuxer is
-healthy on both delivery paths (`fw-bytes` climbing 2.6 MB to 11.7 MB,
-`underrun` false, `demuxerIdle` false), and **playback still does not advance**:
-`time-pos` sits at 0.08 across 106 ticks in the Flutter example, and the
-standalone libmpv harness reports `moving picture in the layer: no` with 0.0%
-of pixels differing between two frames 0.6 s apart.
+Running unattended, every playback measurement froze at `time-pos` 0.08: in the
+Flutter example across 106 ticks, and in the standalone libmpv harness with its
+own `NSWindow`, which reported `moving picture in the layer: no` and 0.0% of
+pixels differing between two frames 0.6 s apart. Both delivery paths, with and
+without `hwdec`. `pmset -g assertions` explained it: `UserIsActive 0` and no
+display-sleep assertion, because nobody was at the machine. `gpu-next` presents
+through the display link, so with the display idle it presents nothing, the
+playback clock stops at the first frame, and the demuxer fills to its cap.
 
-Ruled out by measurement: the mock's timestamps (fixed, and the raw endless
-channel never had them), the delivery path (both HLS and raw TS fail),
-`hwdec=videotoolbox` (fails with `hwdec=no` too), the tick's queue, window
-occlusion, and stray processes holding the device. Segment delivery itself is
-fine: 777,568 bytes with keep-alive, confirmed with `curl`.
+With `caffeinate -u -d` held, the same harness on the same channel reports
+`differing pixels 24.2%` and `RESULT the video output presented frames`.
 
-The same harness reported successful presentation earlier the same day, so
-something regressed and this note exists so the next session does not start from
-the assumption that rendering works. `.ac/research/player-layer.md` and the
-plugin's own README both claim it does, on that earlier evidence.
+For the stall detector this is a case rather than a nuisance: an asleep display
+produces frozen `time-pos`, `underrun` false and `demuxerIdle` true, and must
+never be classified as a provider fault. On a TV a screensaver reaches the same
+state.
+
+## A healthy channel still starves for eight seconds in twenty four
+
+With the display awake and the timestamps fixed, `time-pos` advances
+monotonically (0.1 to 26.4 with no reset, where it used to jump back to 0 at the
+wrap) and `cache-end` climbs 11.9, 15.9, 27.9. But there is still a window,
+about eight seconds in every twenty four, where the client has drained
+everything advertised and waits: `fw-bytes` 0, `underrun` **true**, `time-pos`
+frozen, then playback resumes cleanly from where it left off.
+
+That is a fetch-cadence property of a three segment window, not a fault. It is
+the reason the variant ladder's stall threshold cannot be three seconds: it
+would fire on a healthy channel here. Whether a real panel's window behaves the
+same way is unmeasured.
 
 ## Accounts
 
