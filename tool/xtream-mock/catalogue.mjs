@@ -90,9 +90,18 @@ export const SHORT_TOKEN_SECONDS = 15;
 
 /**
  * @typedef {object} Account
- * @property {AccountKind} kind      How the panel answers this credential pair.
- * @property {string} [status]       `user_info.status` when kind is 'status'.
- * @property {string} note           Why the account exists, echoed by the README and the index page.
+ * @property {AccountKind} kind              How the panel answers this credential pair.
+ * @property {string} [status]               `user_info.status` when kind is 'status'.
+ * @property {boolean} [epgPlain]             EPG title/description sent as plain text, never base64.
+ *                                            Panels disagree on this; `iptvnator`'s `decodeBase64Unicode`
+ *                                            falls back to the raw string on a decode failure.
+ * @property {boolean} [expiryZero]           `exp_date` sent as the string "0" rather than null.
+ *                                            Also means no expiry, per `tvarr` `xtream_account.go:56-58`.
+ * @property {boolean} [dateTypoOnly]         Only the typo'd `get_simple_date_table` answers; the
+ *                                            documented spelling answers an empty result, the shape an
+ *                                            unimplemented action takes rather than an error.
+ * @property {boolean} [refusesHandshake]     Refuses the bare handshake; only `get_account_info` answers.
+ * @property {string} note                   Why the account exists, echoed by the README and the index page.
  */
 
 /** @type {Record<string, Account>} */
@@ -135,6 +144,26 @@ export const ACCOUNTS = {
     'hang:hang': {
         kind: 'hang',
         note: 'Accepts the connection and never answers. Unreachable without a refused connection.',
+    },
+    'plaintext:plaintext': {
+        kind: 'active',
+        epgPlain: true,
+        note: 'EPG title/description sent as plain text, the panel disagreement a base64 decode falls back on.',
+    },
+    'zeroexpiry:zeroexpiry': {
+        kind: 'active',
+        expiryZero: true,
+        note: 'exp_date "0" instead of null. A naive date comparison reads it as 1970, not no-expiry.',
+    },
+    'datetypo:datetypo': {
+        kind: 'active',
+        dateTypoOnly: true,
+        note: 'Implements only the typo\'d get_simple_date_table; the documented spelling answers empty.',
+    },
+    'accountinfo:accountinfo': {
+        kind: 'active',
+        refusesHandshake: true,
+        note: 'Refuses the bare handshake outright; only get_account_info answers.',
     },
 };
 

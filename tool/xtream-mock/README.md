@@ -124,6 +124,10 @@ same way is unmeasured.
 | `disabled:disabled` | `auth: 1`, `status: "Disabled"`. |
 | `throttled:throttled` | HTTP 200 carrying the bare word `blocked`. Not JSON. |
 | `hang:hang` | Accepts the connection and never answers. |
+| `plaintext:plaintext` | Works, but `get_short_epg` and `get_simple_data_table` send title/description as plain text, never base64. |
+| `zeroexpiry:zeroexpiry` | `auth: 1`, `status: "Active"`, `exp_date: "0"`. A naive date comparison reads this as 1970, not no-expiry. |
+| `datetypo:datetypo` | Works, but only the typo'd `get_simple_date_table` answers EPG; the documented spelling answers `epg_listings: []`. |
+| `accountinfo:accountinfo` | Refuses the bare handshake with `{}`; only `action=get_account_info` carries `user_info`. |
 | anything else | HTTP 200 with `{"auth": 0}` and no other key. Never a 401. |
 
 `expired`, `lapsed` and `lifetime` are three expiry states that no single field
@@ -183,7 +187,26 @@ tidying it would let a client pass here and break on a provider:
 - `epg_channel_id` is nullable, and channel 06 is null on purpose. Both EPG
   surfaces agree about it: `get_short_epg` returns no listings and `xmltv.php`
   omits the channel.
-- `exp_date` is nullable, meaning lifetime, on the `lifetime` account.
+- `exp_date` is nullable, meaning lifetime, on the `lifetime` account, and
+  `"0"` is the other no-expiry spelling, on `zeroexpiry`. `Number('0')` is 0,
+  so a naive comparison against `now` reads a live subscription as expired in
+  1970 rather than as never expiring.
+- EPG `title` and `description` are base64 on every account except
+  `plaintext`, where they arrive unencoded. Base64 is not universal:
+  `iptvnator`'s `decodeBase64Unicode` falls back to the raw string on a decode
+  failure, because panels disagree, and until `plaintext` existed only the
+  decode half of that fallback was reachable.
+- `get_simple_data_table` is a genuine typo away from `get_simple_date_table`
+  ("date", not "data"), and some real panels implement only the misspelled
+  one. `datetypo` models that panel: the documented spelling answers
+  `epg_listings: []`, the shape an unimplemented action takes, and only the
+  typo answers for real.
+- The bare handshake (no `action` at all) is refused outright by some panels,
+  which is why `iptvnator` probes `get_account_info` next. `accountinfo`
+  answers `{}` to the bare call and the real `user_info` only to
+  `action=get_account_info`. The Dart client sends only the bare call today
+  and has no such fallback, so this account records the wire shape a fallback
+  would need rather than one the client currently survives.
 
 What the corpus proves and this does **not** reproduce, all worth adding later:
 `stream_type` is `radio_streams` on 23 per cent of one panel's entries and

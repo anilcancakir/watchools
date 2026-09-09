@@ -1,0 +1,95 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Şimdi renders the notice and keeps the toolbar when the session carries a fault
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:00 +1: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:00 +1: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Şimdi renders the notice alone when the fault AND the result are both empty
+00:00 +2: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:00 +2: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Şimdi still renders the empty state when there is no fault
+00:00 +3: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:00 +3: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Şimdi routes the notice action through GuideController.reload
+00:00 +4: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:00 +4: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Zaman renders the notice and keeps the toolbar when the session carries a fault
+00:01 +5: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 1440
+00:01 +5: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Zaman renders the notice alone when the fault AND the result are both empty
+00:01 +6: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +6: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders an empty result set at 1440
+00:01 +7: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +7: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders an empty result set at 1440
+00:01 +7: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Zaman still renders the empty state when there is no fault
+00:01 +8: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +8: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: the live views (Şimdi, Zaman) Zaman routes the notice action through GuideController.reload
+00:01 +9: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +9: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders an empty favourites filter at 1440
+00:01 +10: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +10: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Vitrin renders the notice and keeps the toolbar when the session carries a fault
+00:01 +11: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +11: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a starred line-up at 1440
+00:01 +12: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Şimdi survives the query that empties the line-up
+00:01 +12: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Vitrin renders the notice alone when the fault AND the result are both empty
+00:01 +13: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a starred line-up at 1440
+00:01 +13: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Vitrin renders the notice alone when the fault AND the result are both empty
+00:01 +13: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +14: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a starred line-up at 1440
+00:01 +14: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Vitrin still renders the empty state when there is no fault
+00:01 +15: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +16: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +16: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a channel with no guide selected at 1440
+00:01 +16: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Vitrin routes the notice action through LibraryController.reload
+00:01 +17: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +17: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Perde renders the notice when the session carries a fault, even with a title selected
+00:01 +18: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +18: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Perde renders the notice alone when the fault AND the catalogue are both empty
+00:01 +19: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +19: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Perde still renders the no-selection arm when there is no fault
+00:01 +20: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +20: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/provider_fault_test.dart: Perde routes the notice action through LibraryController.reload
+00:01 +21: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +22: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: and survives the way back to results
+00:01 +22: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders with the other view selected at 1440
+00:01 +23: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders with the other view selected at 1440
+00:01 +23: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Vitrin survives it too
+00:01 +24: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Vitrin survives it too
+00:01 +24: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders the whole line-up at 1440
+00:01 +25: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders the whole line-up at 1440
+00:01 +25: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Zaman, the control, was never affected
+00:01 +26: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Zaman, the control, was never affected
+00:01 +26: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders an empty result set at 1440
+00:02 +27: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Zaman, the control, was never affected
+00:02 +27: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders an empty favourites filter at 1440
+00:02 +28: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/search_focus_test.dart: Zaman, the control, was never affected
+00:02 +29: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders a starred line-up at 1440
+00:02 +30: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders a channel with no guide selected at 1440
+00:02 +31: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders with the other view selected at 1440
+00:02 +32: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders the whole line-up at 414
+00:02 +33: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders an empty result set at 414
+00:02 +34: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders an empty favourites filter at 414
+00:02 +35: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a starred line-up at 414
+00:02 +36: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders a channel with no guide selected at 414
+00:02 +37: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Şimdi renders with the other view selected at 414
+00:02 +38: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders the whole line-up at 414
+00:03 +39: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders an empty result set at 414
+00:03 +40: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders an empty favourites filter at 414
+00:03 +41: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders a starred line-up at 414
+00:03 +42: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders a channel with no guide selected at 414
+00:03 +43: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the live views Zaman renders with the other view selected at 414
+00:03 +44: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders the whole catalogue at 1440
+00:03 +45: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders an empty result set at 1440
+00:03 +46: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders series only at 1440
+00:03 +47: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders an empty continue-watching at 1440
+00:03 +48: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders the whole catalogue at 414
+00:03 +49: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders an empty result set at 414
+00:03 +50: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders series only at 414
+00:03 +51: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the catalogue Vitrin renders an empty continue-watching at 414
+00:03 +52: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a series at 1440
+00:03 +53: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a film at 1440
+00:04 +54: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a title with nothing filled in at 1440
+00:04 +55: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a series at 414
+00:04 +56: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a film at 414
+00:04 +57: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen Perde renders a title with nothing filled in at 414
+00:04 +58: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/ui/layouts/screens_test.dart: the title screen every season of a series renders
+00:04 +59: All tests passed!
+lib/ui/layouts/curtain_layout.dart:54:        child: ProviderNotice(
+lib/ui/layouts/now_layout.dart:97:      return ProviderNotice(
+lib/ui/layouts/showcase_layout.dart:85:      return ProviderNotice(
+lib/ui/layouts/time_layout.dart:226:      return ProviderNotice(

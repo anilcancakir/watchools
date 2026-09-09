@@ -114,6 +114,29 @@ void main() {
     expect(fired.settings, isEmpty);
   });
 
+  testWidgets('a device holding the connection also offers a retry, but one that names its cost', (tester) async {
+    // Both faults offer a retry, so the button label is the only thing that
+    // can tell a viewer these are different situations: retrying `throttled`
+    // is free and retrying `evicted` takes the slot another device is using.
+    // A label shared with `throttled` would make the split invisible on
+    // screen, which is exactly what step 5 introduced the member to fix.
+    final ({List<String> retries, List<String> settings}) evictedFired = await pump(tester, ProviderFault.evicted);
+    final String evictedLabel = tester.widget<WText>(find.descendant(of: action(), matching: find.byType(WText))).data;
+
+    await tester.tap(action());
+    await tester.pump();
+
+    expect(evictedFired.retries, <String>['evicted']);
+    expect(evictedFired.settings, isEmpty);
+
+    await pump(tester, ProviderFault.throttled);
+    final String throttledLabel = tester
+        .widget<WText>(find.descendant(of: action(), matching: find.byType(WText)))
+        .data;
+
+    expect(evictedLabel, isNot(equals(throttledLabel)), reason: 'the retry cost has to be visible in the label');
+  });
+
   testWidgets('the technical line shows exactly what the provider said', (tester) async {
     // Doctrine rule 7. The user cannot act on `HTTP 502` but the person they
     // ask for help can, and a panel that hides it makes that conversation start

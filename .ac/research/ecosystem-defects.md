@@ -211,3 +211,116 @@ form-factor axis. Add to those a fifth, found here: **Wind has no custom
 gradient stops**, so a three-stop scrim ramp cannot be expressed in a className
 and the eight scrims in this app are raw `LinearGradient`s with the dark half of
 `bg-surface` hand-copied into them.
+
+---
+
+## From the Xtream protocol layer
+
+Four findings, one shipped as a fix and three open. Filed while building
+`lib/app/protocol/xtream/` and `lib/app/provider/`.
+
+### Defect, fixed: the Dio driver lowercases every header on the wire
+
+`magic/lib/src/network/drivers/dio_network_driver.dart` never set Dio's
+`preserveHeaderCase`, whose default is `false` (`dio-5.9.2/lib/src/headers.dart:11`,
+`options.dart:151`), and the IO adapter forwards the flag
+(`io_adapter.dart:109`). So every header the `Http` facade sent was lowercased,
+including `User-Agent`, which `CLAUDE.md` requires exact-case because
+ExoPlayer's lookup is case sensitive and a lowercase key silently ships
+`User-Agent: ExoPlayer` instead. Not fixable at the call site: the facade
+accepts only `Map<String, String>` and never exposes Dio `Options`.
+
+Fixed in `fluttersdk/magic#151` by setting `preserveHeaderCase: true` on the
+driver's `BaseOptions`. CI green. **Not yet published**, so this app's
+`magic: ^0.0.9` constraint still resolves a version without it, and
+`test/app/protocol/xtream/xtream_client_test.dart`'s exact-case assertion is
+`skip:`ped citing that PR until the publish and the constraint bump.
+
+Two things learned proving it, both worth reusing. An `HttpHeaders`-based
+assertion **cannot** see header case, because the receiving side lowercases on
+parse whatever went out; only a raw socket read can, which is what
+`magic/test/network/preserve_header_case_test.dart` does. And the flag reaches
+only the **IO** adapter: `dio_web_adapter` writes headers through
+`xhr.setRequestHeader`, a browser API with no case-preservation hook at all, so
+the requirement is unmeetable on web by construction. That is a platform limit
+rather than a magic gap.
+
+### Defect, open, and the most serious of the four: `AuthInterceptor` has no host test
+
+`magic/lib/src/auth/auth_interceptor.dart:20-30` attaches the caller's bearer
+token to **every** request with no host, scheme or origin test, and
+`auth_service_provider.dart:85` adds it to the single `'network'` driver that
+`Http` resolves (`facades/http.dart:23`). So any app making an absolute-URL call
+to a third party through `Http` leaks its own auth token. Worse,
+`auth_interceptor.dart:40-73` reads a 401 from that third party as a refresh
+signal: it calls `refreshToken()`, attaches the **new** token and replays the
+request to the same host, and a failed refresh calls `Auth.logout()`. A hostile
+or merely misconfigured host can therefore harvest a freshly minted token and
+log the user out.
+
+Measured in this app: with a token cached, a request through the shared driver
+puts `authorization: bearer <token>` on the wire to an arbitrary panel over
+plaintext HTTP. Captured off a loopback socket in
+`test/app/protocol/xtream/xtream_client_test.dart`, which keeps that leaky
+driver as the **positive control** for the assertion that the app's own provider
+driver does not leak.
+
+Local opt-out: this app registers a dedicated interceptor-free
+`provider_network` driver in `lib/app/providers/app_service_provider.dart` and
+the Xtream client resolves that key rather than `Http`. It needs no sibling
+release, because `NetworkDriver` and `DioNetworkDriver` are already exported
+(`magic/lib/magic.dart:104-105`).
+
+Sibling fix: a host allowlist on the interceptor, and
+`NetworkServiceProvider` honouring `network.default`.
+`network_service_provider.dart:15` hardcodes `Config.get('network.drivers.api')`
+and is the only reader, so the config's `'default'` key, its `drivers` map and
+its per-driver `'driver': 'dio'` key promise a multi-driver surface that
+silently does not exist.
+
+### Gap: no `DB.prepare`, and `insertAll` costs two statements a row
+
+`DB` exposes `statement`, `select`, `insert`, `update`, `delete`, `transaction`
+and the transaction primitives, and no `prepare`
+(`magic/lib/src/facades/db.dart`). `insertAll`
+(`magic/lib/src/database/query/query_builder.dart:302-306`) is a `for` loop over
+`insert`, and each `insert` costs an `INSERT` plus a
+`SELECT last_insert_rowid()`, so a real provider's 38,247 VOD titles are 76,494
+statements.
+
+Measured alternative: one prepared statement reused per row inside one
+transaction writes 2,976 channels in 30 ms and 38,247 titles in 137 ms
+(in-memory, debug, macOS). The local opt-out was reaching
+`Magic.make<DatabaseManager>('db').connection.prepare` directly, which is what
+forced a direct `sqlite3` dependency into this application's `pubspec.yaml`.
+
+Sibling fix: `DB.prepare(sql)` on the facade, or an `insertMany` that reuses one
+prepared statement.
+
+### Improvement: `DB.transaction` brackets an async callback with a sync BEGIN/COMMIT
+
+`magic/lib/src/facades/db.dart:183-193` takes `Future<T> Function()` and awaits
+it, while `beginTransaction`, `commit` and `rollback` (`:159`, `:164`, `:169`)
+are synchronous on a single connection. So any `await` inside the callback
+leaves the transaction open for another query in the app to join and be rolled
+back with, and even a fully synchronous body leaves one microtask between the
+last write and the COMMIT.
+
+Local opt-out: `lib/app/provider/catalogue_store.dart` passes callbacks that are
+deliberately **not** `async` and return `Future<void>.value()`, which makes
+adding an `await` a compile error rather than a silently open transaction.
+
+Sibling fix: a `DB.transactionSync<T>(T Function())` beside the async one.
+
+### Two smaller notes
+
+`./bin/fsa previews:refresh` writes `lib/_previews.g.dart` in a shape
+`dart format --output=none --set-exit-if-changed lib test` rejects, so running
+the generator breaks this repo's own format gate until the file is re-formatted.
+The content is identical once it is, so this is friction rather than a defect.
+
+`sqlite3_flutter_libs: ^0.6.0+eol` in `magic/pubspec.yaml:40` carries an `+eol`
+suffix marking the package end-of-life, and `magic/CLAUDE.md:92` says
+"Web = in-memory SQLite" while `connection_factory_web.dart:41` opens an
+`IndexedDbFileSystem`-backed database. The doc is probably stale; worth one
+probe before anything designs around either claim.

@@ -1,0 +1,144 @@
+Step 7 evidence: CatalogueStore injection round trip, binding gates, rollback and scale
+Captured 2026-09-09 on darwin 25.6.0, `flutter test` against sqlite3.openInMemory()
+
+
+== Settled BEFORE any design: no Flutter test in this repo had ever touched the Magic ORM ==
+
+It works headless. `DatabaseManager().setConnection(sqlite3.openInMemory())` is magic's own
+documented seam (`magic/lib/src/database/database_manager.dart:75`) and `DB.statement`,
+`DB.select`, `DB.transaction` and a `prepare` off the connection all reach it under
+`flutter test` on macOS with no plugin registrant and no `sqlite3_flutter_libs`.
+
+  sqlite3 dart package resolved: 3.5.2 (pubspec.lock:900)
+  libsqlite3 reported by the engine: Version(libVersion: 3.53.4, number: 3053004)
+
+
+== The four depth claims, verified rather than trusted ==
+
+1. `DB` facade (`magic/lib/src/facades/db.dart`). `statement` (:105), `select` (:86),
+   `beginTransaction` (:159), `commit` (:164), `rollback` (:169) are all synchronous. There is
+   NO `prepare` on the facade, which is why the store reaches the connection.
+   `transaction` (:183) is `Future<T> transaction<T>(Future<T> Function() callback)`: a sync
+   BEGIN, `await callback()`, a sync COMMIT, and a `rollback()` plus rethrow on throw.
+
+2. The `sqlite3_exec` routing claim HOLDS at the resolved version.
+   `sqlite3-3.5.2/lib/src/implementation/database.dart:286-311`:
+     if (parameters.isEmpty) {
+       // No parameters? Use sqlite3_exec since that can run multiple statements at once.
+       ...
+     } else {
+       final stmt = prepare(sql, checkNoTail: true);
+   The cited line range (287-310) is one line off at the top (the `if` is at :287, the method
+   opens at :286) and the behaviour is exactly as cited. So passing a non-empty params list IS
+   the anti-stacking defence: it routes to `prepare(checkNoTail: true)`, which rejects a
+   trailing statement.
+
+3. `Magic.make<DatabaseManager>('db').connection` is a `CommonDatabase`
+   (`database_manager.dart:61`), and `database_service_provider.dart:17` binds
+   `() => DatabaseManager()`, whose factory constructor returns the singleton, so the container
+   and a bare `DatabaseManager()` are the same object. `prepare`'s signature at 3.5.2
+   (`lib/src/database.dart:158`) is
+     CommonPreparedStatement prepare(String sql, {bool persistent = false, bool vtab = true,
+                                     bool checkNoTail = false});
+   and `CommonPreparedStatement.execute([List<Object?> parameters])` (`lib/src/statement.dart:93`)
+   is reusable per row.
+
+4. The bound-variable cap is NOT 999 on this build. Measured by preparing N placeholders:
+     999    -> OK
+     1000   -> OK
+     32766  -> 'too many columns in result set'   (the SELECT column cap, hit first)
+     32767  -> 'too many SQL variables'
+   So SQLITE_MAX_VARIABLE_NUMBER is 32766 here. The store binds 9 (channel) or 15 (title)
+   variables per `execute`, so the cap is unreachable and no chunk size is computed from it.
+
+
+== Mutation checks: both load-bearing gates were broken on purpose and both went red ==
+
+Mutation A: interpolate the account into the DELETE and drop the params list.
+    DB.statement("DELETE FROM catalogue_channels WHERE account = '$account'");
+  RED, and it names the statement:
+    Expected: ('BEGIN' or 'COMMIT' or 'ROLLBACK' or 'CREATE')
+      Actual: 'DELETE'
+    DELETE FROM catalogue_channels WHERE account = 'http%3A%2F%2Fpanel.example%3A8080/demo'
+  Failing: 'binds every value: no parameterised statement runs with an empty params list'
+
+Mutation B: interpolate the provider's channel name into the INSERT, one prepare per row.
+    "VALUES (?, ?, ?, '${channel.name}', ?, ?, ?, ?, ?)"
+  RED on FOUR gates at once:
+    - stores injection-shaped provider strings literally and both tables survive
+    - never lets a provider string reach a SQL string
+    - binds every value: no parameterised statement runs with an empty params list
+    - writes 1000 channels through exactly one prepared INSERT
+        Expected: an object with length of <1>
+          Actual: Set:[...]  Which: has length of <686>
+
+Both mutations were reverted and the suite returned to green. This replaces the grep an earlier
+draft used: the gates read the SQL the store actually handed the connection, through a
+`CommonDatabase` double, so multi-line `'''` SQL and SQL assembled on an earlier line are both
+visible to them.
+
+
+== The two injection strings, written through the real writer ==
+
+  channel name / category / synopsis / logoUrl:
+    Robert'); DROP TABLE catalogue_channels;--
+  channel group / title name / a genres element / a facts element:
+    ?), (1, (SELECT name FROM catalogue_titles)), (2
+
+Both are stored and read back as the literal strings, and both tables still answer a read after
+the write. The first breaks out of a single-quoted literal; the second closes a bound row and
+opens a second one, which is the multi-row `VALUES` attack the 38,247-row write invites.
+
+
+== flutter test test/app/provider/catalogue_store_test.dart ==
+
+00:00 +0: loading test/app/provider/catalogue_store_test.dart
+00:00 +0: CatalogueStore, the schema and the round trip round-trips 1000 channels as equal value objects
+00:00 +1: CatalogueStore, the schema and the round trip round-trips titles as equal value objects
+00:00 +2: CatalogueStore, the schema and the round trip restores a channel with an empty schedule and an idle status
+00:00 +3: CatalogueStore, the schema and the round trip restores a title with no cast and no episodes
+00:00 +4: CatalogueStore, the schema and the round trip scopes every row to its account key
+00:00 +5: CatalogueStore, binding rather than interpolation stores injection-shaped provider strings literally and both tables survive
+00:00 +6: CatalogueStore, binding rather than interpolation never lets a provider string reach a SQL string
+00:00 +7: CatalogueStore, binding rather than interpolation binds every value: no parameterised statement runs with an empty params list
+00:00 +8: CatalogueStore, binding rather than interpolation writes 1000 channels through exactly one prepared INSERT
+00:00 +9: CatalogueStore, a refresh replaces the previous contents for that account
+00:00 +10: CatalogueStore, a refresh preserves a channel favourite across a full refresh
+00:00 +11: CatalogueStore, a refresh preserves a title favourite and progress across a full refresh
+00:00 +12: CatalogueStore, a refresh rolls the whole write back when it throws mid-write
+00:00 +13: CatalogueStore, user state writes a channel favourite and takes it away again
+00:00 +14: CatalogueStore, user state writes a title favourite and a title progress independently
+00:00 +15: CatalogueStore.accountKey keys on the panel URL and the username, never the password
+00:00 +16: CatalogueStore.accountKey separates two accounts on one panel and one account on two panels
+00:00 +17: CatalogueStore.accountKey cannot be collided by a username carrying the separator
+00:00 +18: All tests passed!
+
+The rollback gate is a genuine mid-write throw: the recording prepared statement throws a
+StateError on row 500 of 1,000, and the assertion is that the single channel written before the
+refresh is still the only row afterwards. That proves the DELETE rolls back with the inserts,
+which is the half a per-row transaction would lose.
+
+
+== flutter test test/app/provider/catalogue_store_scale_test.dart --plain-name 'writes the real catalogue size' ==
+
+Shell: SCALE channels: 2976 rows in 30 ms
+Shell: SCALE titles:   38247 rows in 137 ms
+Shell: SCALE combined: 167 ms (redesign threshold, not asserted: ~2000 ms)
+00:00 +1: All tests passed!
+
+167 ms combined, an order of magnitude under the ~2 s escalation trigger, so the synchronous
+write stays survivable behind a progress state and no background isolate is needed.
+
+Read it as a floor rather than a device number: in-memory, so no file system and no disk sync,
+and a debug build. What it measures honestly is the statement SHAPE. A regression to `insertAll`
+would be 76,494 statements against 38,247 and would show here as an order of magnitude rather
+than as noise.
+
+
+== flutter analyze --fatal-infos --fatal-warnings ==
+
+No issues found!
+
+== flutter test (whole suite) ==
+
+00:07 +311 ~1: All tests passed!

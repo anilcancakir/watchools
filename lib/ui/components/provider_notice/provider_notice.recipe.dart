@@ -24,10 +24,12 @@ import 'package:magic/magic.dart';
 /// reserves that amber for the primary action, progress and live status, and
 /// this is the case that shows the palette leaves no room to bend it.
 ///
-/// Only `expired` is tinted. The other two keep the neutral disc, because they
-/// are conditions rather than faults in the user's setup and a red panel for a
-/// provider that dropped a connection is the app blaming the user for the
-/// weather.
+/// Only `expired` is tinted. The other three keep the neutral disc, because
+/// they are conditions rather than faults in the user's setup and a red panel
+/// for a provider that dropped a connection is the app blaming the user for
+/// the weather. `evicted` falls on that same side: the credential is fine and
+/// the account is fully alive, just booked on another device right now, so it
+/// reads as busy rather than as broken.
 WindSlotRecipe providerNoticeRecipe() {
   return const WindSlotRecipe(
     slots: <String, String>{
@@ -56,6 +58,7 @@ WindSlotRecipe providerNoticeRecipe() {
         'unreachable': <String, String>{'disc': 'bg-surface-container-high'},
         'expired': <String, String>{'disc': 'bg-destructive-container'},
         'throttled': <String, String>{'disc': 'bg-surface-container-high'},
+        'evicted': <String, String>{'disc': 'bg-surface-container-high'},
       },
     },
     defaultVariants: <String, String>{'fault': 'unreachable'},

@@ -5,12 +5,14 @@ import 'package:magic/magic.dart';
 import '../../app/controllers/guide_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../../app/models/provider_fault.dart';
 import '../components/artwork/index.dart';
 import '../components/channel_mark/index.dart';
 import '../components/fact_chip/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/live_tile/index.dart';
 import '../components/play_progress/index.dart';
+import '../components/provider_notice/index.dart';
 import '../components/rail/index.dart';
 import '../components/scrim/index.dart';
 import '../components/section_header/index.dart';
@@ -76,28 +78,48 @@ class NowLayout extends StatelessWidget {
             // matching. `Zaman` puts it in this exact place.
             CategoryStrip(controller: controller),
             PageGutter.gap,
-            WDiv(
-              className: 'flex-1 w-full',
-              child: controller.matches.isEmpty
-                  ? _emptyBody()
-                  : CustomScrollView(
-                      slivers: <Widget>[
-                        SliverToBoxAdapter(child: _hero(wide)),
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                        SliverList.builder(
-                          itemCount: controller.rails.length,
-                          itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
-                        ),
-                        // One gutter, not the 96 that used to clear the
-                        // floating switcher. The switch is in the toolbar now,
-                        // so a tail that size is just an unexplained hole under
-                        // the last rail.
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                      ],
-                    ),
-            ),
+            WDiv(className: 'flex-1 w-full', child: _body(wide)),
           ],
         ),
+      ],
+    );
+  }
+
+  /// The body: a provider fault, an empty result, or the hero plus the rails.
+  ///
+  /// A fault takes precedence over an empty result, because they are
+  /// different statements: an empty [matches] can mean a search found
+  /// nothing while the line-up is healthy, while a fault means the provider
+  /// itself is the problem, and the fault is the more specific of the two.
+  Widget _body(bool wide) {
+    final ProviderFault? fault = controller.fault;
+    if (fault != null) {
+      return ProviderNotice(
+        fault: fault,
+        onRetry: controller.reload,
+        onOpenSettings: () => MagicRoute.to('/saglayici'),
+      );
+    }
+
+    if (controller.matches.isEmpty) return _emptyBody();
+
+    // Non-null: `matches` is a filtered subset of `channels`, so a non-empty
+    // match list guarantees `channels` is non-empty and `channel` (which
+    // falls back to `channels.first`) cannot be null on this branch.
+    final Channel channel = controller.channel!;
+
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverToBoxAdapter(child: _hero(channel, wide)),
+        const SliverToBoxAdapter(child: PageGutter.gap),
+        SliverList.builder(
+          itemCount: controller.rails.length,
+          itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
+        ),
+        // One gutter, not the 96 that used to clear the floating switcher.
+        // The switch is in the toolbar now, so a tail that size is just an
+        // unexplained hole under the last rail.
+        const SliverToBoxAdapter(child: PageGutter.gap),
       ],
     );
   }
@@ -117,8 +139,7 @@ class NowLayout extends StatelessWidget {
   }
 
   /// The hero: what is on the selected channel right now.
-  Widget _hero(bool wide) {
-    final Channel channel = controller.channel;
+  Widget _hero(Channel channel, bool wide) {
     final Programme? live = controller.programme;
     final Programme? next = channel.nextAfter(controller.now);
 

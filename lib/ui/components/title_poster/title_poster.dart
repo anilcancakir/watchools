@@ -82,7 +82,9 @@ class TitlePoster extends StatelessWidget {
                 // its own semantics node and its own target.
                 WAnchor(
                   onTap: onTap,
-                  semanticLabel: '${title.name} ${title.year}',
+                  // The year only when there is one: a provider entry has
+                  // none, and `Kanal D 0` reads worse than `Kanal D`.
+                  semanticLabel: title.year > 0 ? '${title.name} ${title.year}' : title.name,
                   child: Artwork(src: title.posterUrl, fallback: _blank(), slotWidth: _edges[size]),
                 ),
                 if (title.progress > 0.03 && title.progress < 0.92)
@@ -149,11 +151,16 @@ class TitlePoster extends StatelessWidget {
     );
   }
 
-  /// Year, length, and the rating when there is one.
+  /// Year, length, and the rating, each only when the provider sent it.
+  ///
+  /// Composed from the parts rather than interpolated, because a provider's
+  /// `get_vod_streams` entry carries no year and no runtime and
+  /// [TitleItem.metaLabel] is therefore empty far more often than a fixture
+  /// suggested. A caption of `0 · 0 dk · ★ 7,5` claims two things the provider
+  /// never said.
   String _meta() {
     final String? rating = title.ratingLabel;
-    final String head = '${title.year} · ${title.lengthLabel}';
 
-    return rating == null ? head : '$head · ★ $rating';
+    return <String>[if (title.metaLabel.isNotEmpty) title.metaLabel, if (rating != null) '★ $rating'].join(' · ');
   }
 }
