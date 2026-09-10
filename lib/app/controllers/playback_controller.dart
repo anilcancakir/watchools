@@ -414,6 +414,14 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   /// Its own command rather than a side effect of leaving the screen, because
   /// the measured connection budget on a real subscription is **one**: a
   /// session left open is the reason the next device in the house cannot watch.
+  ///
+  /// Reads [_resolvedEngine] rather than [_engine], the same guard [detach],
+  /// [togglePause] and [onClose] take. It was the one of the four without it,
+  /// and a sign-out is what made that reachable: the composition root wires
+  /// `ProviderSetupController`'s stop seam to this method, so signing out with
+  /// nothing playing would BUILD an `MpvPlaybackEngine`, and its constructor
+  /// subscribes to the plugin's `EventChannel`, to stop a core that never
+  /// existed.
   @override
   Future<void> stop() async {
     _channel = null;
@@ -425,7 +433,7 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
     _notified = PlaybackHealth.idle;
     _unplayable = false;
 
-    await _engine.stop();
+    await _resolvedEngine?.stop();
 
     refreshUI();
   }

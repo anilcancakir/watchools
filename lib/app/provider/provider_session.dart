@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:magic/magic.dart';
 
 import '../models/channel.dart';
 import '../models/programme.dart';
@@ -309,6 +310,83 @@ class ProviderSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Accepts [credentials] as this session's provider at runtime, replacing
+  /// whatever was loaded before. **Local only, like [start]: this does not
+  /// touch the network.**
+  ///
+  /// 1. Persist to `Vault`, so the credential survives the next launch.
+  /// 2. Swap in a fresh [XtreamClient]: the old one still addresses the
+  ///    previous panel, and nothing here may keep using it.
+  /// 3. Drop [_account] and [_fault]. Neither one has been established
+  ///    against the new panel, and carrying the old panel's account into
+  ///    [classifyProviderFault] would compare a denial from the new panel
+  ///    against a handshake from the old one.
+  /// 4. Restore the cached catalogue for the new [CatalogueStore.accountKey],
+  ///    the same shape [start] uses, so a screen has something to render
+  ///    before the caller decides to [refresh].
+  ///
+  /// **Does not call [refresh] and does not call [start].** The connection
+  /// gate exists so a network round trip only ever happens on the caller's
+  /// decision, and `start()` also runs [CatalogueStore.migrate], which is
+  /// schema work this method has no reason to repeat.
+  Future<void> adopt(XtreamCredentials credentials) async {
+    await credentials.save();
+
+    _credentials = credentials;
+    _client = XtreamClient(credentials);
+    _account = null;
+    _fault = null;
+
+    final String account = CatalogueStore.accountKey(credentials);
+    _channels = _store.channelsFor(account);
+    _titles = _store.titlesFor(account);
+
+    notifyListeners();
+  }
+
+  /// Forgets the current provider: the vault entry, the handshake, the
+  /// clock, and the held catalogue.
+  ///
+  /// **Order matters twice here.**
+  ///
+  /// [XtreamCredentials.clear] runs FIRST, because it is a `Vault.delete`
+  /// and every `Vault` operation can throw [MagicVaultException] (see
+  /// [_loadCredentials]'s own read arm): clearing before touching any field
+  /// means a failed delete leaves this session exactly as it was, rather
+  /// than having already discarded the credential it could not remove from
+  /// storage.
+  ///
+  /// [_clock] is disposed before it is nulled, not after: a
+  /// [TickingGuideClock] re-arms its timer unconditionally
+  /// (`guide_clock.dart:104-107`), so a detached instance keeps firing for
+  /// the life of the process if it is dropped without disposing first.
+  ///
+  /// **`catalogue_channels` and `catalogue_titles` are left untouched.**
+  /// [CatalogueStore.accountKey] excludes the password on purpose
+  /// (`catalogue_store.dart:118-121`), so a user who signs out to correct a
+  /// rotated password returns under the same key, and `replaceChannels`
+  /// reads the starred rows back before its own `DELETE`
+  /// (`catalogue_store.dart:182-184`). Deleting the rows here would throw
+  /// away every favourite and every watch progress in exactly the situation
+  /// most likely to cause a sign-out.
+  Future<void> signOut() async {
+    await XtreamCredentials.clear();
+
+    _credentials = null;
+    _client = null;
+    _account = null;
+    _fault = null;
+
+    _clock?.dispose();
+    _clock = null;
+    _midnight = null;
+
+    _channels = const <Channel>[];
+    _titles = const <TitleItem>[];
+
+    notifyListeners();
+  }
+
   /// The stored credential, or null when there is none or it cannot be read.
   ///
   /// Sets [fault] on an unreadable payload rather than swallowing it: the
@@ -333,6 +411,19 @@ class ProviderSession extends ChangeNotifier {
       return kDebugMode ? _developmentCredential() : null;
     } on FormatException {
       _fault = ProviderFault.expired;
+
+      return null;
+    } on MagicVaultException {
+      // The keychain read itself failed rather than the stored payload
+      // parsing badly: `MagicVaultService.get` wraps every `PlatformException`
+      // as this exception on reads (`magic_vault_service.dart:48-54`), and the
+      // darwin plugin turns every non-success `OSStatus` into one. `start()`
+      // is awaited inside `Magic.init()`, which `main()` awaits before
+      // `runApp()`, so letting this propagate boots the app to nothing.
+      // `unreachable`, not `expired`: the credential itself is not known bad,
+      // the store that holds it is, and `expired` is the one fault whose
+      // panel withholds the retry and sends the user to settings instead.
+      _fault = ProviderFault.unreachable;
 
       return null;
     }
@@ -496,6 +587,15 @@ class ProviderSession extends ChangeNotifier {
     final Map<String, String> categoryNames = await _categoryNames(client.liveCategories);
     final List<Map<String, dynamic>> rawChannels = (await client.liveStreams()).data ?? const <Map<String, dynamic>>[];
     final GuideClock guideClock = _clock!;
+    // Captured beside the clock, and for the same reason it is: both are nulled
+    // by `signOut`, and the EPG loop below awaits a network round trip per
+    // channel, so reading either through `!` inside the loop crashes when a
+    // sign-out lands mid-iteration. The loop's own break cannot cover that,
+    // because the break guards the NEXT iteration and the sign-out arrives
+    // while the current one is awaiting. Measured: the test for this failed
+    // with `Null check operator used on a null value` at the schedule build
+    // until both were captured before the loop.
+    final DateTime referenceMidnight = _midnight!;
 
     final List<Channel> built = <Channel>[
       for (final Map<String, dynamic> entry in rawChannels)
@@ -523,7 +623,14 @@ class ProviderSession extends ChangeNotifier {
       // below writes whatever `built` holds at that point; a channel whose EPG
       // was not reached restores with an empty schedule, which is the ordinary
       // state of 91 percent of them anyway.
-      if (_isPlaying()) break;
+      // The second clause is a sign-out landing mid-loop, and it is a crash
+      // rather than a stale write: `signOut` nulls `_midnight`, which the
+      // schedule build below reads with `!`, so without this the in-flight
+      // refresh throws `Null check operator used on a null value`. `boot()`
+      // fires this refresh unawaited and deliberately does not catch it
+      // (`app_service_provider.dart`), so that throw reaches the zone as an
+      // unhandled async error a few seconds into launch.
+      if (_isPlaying() || _credentials == null) break;
 
       final int streamId = built[index].streamId!;
 
@@ -531,7 +638,8 @@ class ProviderSession extends ChangeNotifier {
           (await client.shortEpg(streamId)).data ?? const <Map<String, dynamic>>[];
       final List<Programme> schedule = <Programme>[
         for (final Map<String, dynamic> listing in listings)
-          if (Programme.fromXtream(listing, referenceMidnight: _midnight!) case final Programme programme) programme,
+          if (Programme.fromXtream(listing, referenceMidnight: referenceMidnight) case final Programme programme)
+            programme,
       ];
       if (schedule.isEmpty) continue;
 
@@ -549,6 +657,17 @@ class ProviderSession extends ChangeNotifier {
     ];
 
     await _store.replaceChannels(account: account, channels: withFavourites);
+
+    // Not held if this session has been signed out while the fetch was in
+    // flight. `boot()` fires `refresh()` unawaited at cold start, so a user who
+    // signs out a few seconds in leaves a batch of requests still running
+    // against the account they just left, and this assignment would put that
+    // account's line-up back into a session that no longer has its credential.
+    // The rows are written either way, deliberately: they are keyed by account
+    // and `signOut` leaves them alone on purpose, so the fetch's work is not
+    // wasted if the same credential is adopted again.
+    if (_credentials == null) return;
+
     _channels = withFavourites;
   }
 
@@ -577,6 +696,12 @@ class ProviderSession extends ChangeNotifier {
     ];
 
     await _store.replaceTitles(account: account, titles: built);
+
+    // Same guard as the channel half, for the same reason: a sign-out during an
+    // in-flight refresh must not have the previous account's catalogue written
+    // back over it.
+    if (_credentials == null) return;
+
     _titles = _store.titlesFor(account);
   }
 

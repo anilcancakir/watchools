@@ -9,7 +9,10 @@ import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/models/title_item.dart';
 import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
+import 'package:watchools/app/provider/catalogue_store.dart';
 import 'package:watchools/app/provider/provider_session.dart';
+
+import '../../support/throwing_vault.dart';
 
 /// A scriptable double for the Xtream panel.
 ///
@@ -631,6 +634,23 @@ void main() {
       expect(panel.handshakeCalls, 2);
     });
 
+    test('a keychain read failure becomes unreachable, not a boot failure', () async {
+      // `MagicVaultService.get` wraps every PlatformException as
+      // MagicVaultException on reads (`magic_vault_service.dart:48-54`), and
+      // `FakeVaultService` cannot simulate that: every one of its overrides is
+      // a no-throw body. `ThrowingVaultService` is the double built for this
+      // exact shape. `start()` is awaited inside `Magic.init()`, which
+      // `main()` awaits before `runApp()`, so an uncaught exception here
+      // means no UI at all.
+      ThrowingVaultService.install();
+
+      final ProviderSession session = ProviderSession();
+
+      await expectLater(session.start(), completes);
+      expect(session.fault, ProviderFault.unreachable);
+      expect(session.hasCredentials, isFalse);
+    });
+
     test('an unreadable stored credential becomes a fault, not a boot failure', () async {
       // `start()` is awaited inside `Magic.init()`, which `main()` awaits
       // before `runApp()`. A `FormatException` propagating from here aborts
@@ -711,6 +731,107 @@ void main() {
 
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.series).favourite, isTrue);
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.movie).favourite, isFalse);
+    });
+  });
+
+  group('adopt(), accepting a credential at runtime', () {
+    test('hasCredentials becomes true, the vault holds the record, and streamUrlFor works once refreshed', () async {
+      Vault.fake();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 10002, number: 2, name: '02 H.264 AAC | RAW TS', categoryId: '1'),
+      ];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      expect(session.hasCredentials, isFalse);
+
+      await session.adopt(credentials);
+      // adopt() never touches the network: the account is still unknown, so
+      // streamUrlFor stays null until the caller decides to refresh.
+      expect(session.hasCredentials, isTrue);
+      await session.refresh();
+
+      final Channel channel = session.channels.firstWhere((Channel each) => each.streamId != null);
+      expect(session.streamUrlFor(channel), isNotNull);
+      expect(await Vault.get(XtreamCredentials.vaultKey), isNotNull);
+    });
+  });
+
+  group('signOut(), forgetting the current provider', () {
+    test('a refresh already in flight cannot write the catalogue back afterwards', () async {
+      // `AppServiceProvider.boot()` fires `refresh()` unawaited at cold start,
+      // so a user who signs out a few seconds in leaves a batch of requests
+      // running against the account they just left. Without a guard before the
+      // held-catalogue assignment, the fetch completes and puts that account's
+      // line-up back into a session that no longer has its credential:
+      // `hasCredentials` false while `channels` is full, which is the half
+      // state `signOut` exists to prevent.
+      //
+      // The sign-out is triggered from inside the EPG loop through the panel
+      // double's own seam, which is the only point in a refresh where a test
+      // can interleave.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 801, number: 1, name: 'Kanal 1', categoryId: '1', epgChannelId: 'ch1'),
+      ];
+      panel.shortEpgByStreamId[801] = <Map<String, dynamic>>[
+        _shortEpgListing(start: '2024-01-01 20:00:00', end: '2024-01-01 21:00:00', title: 'Programme'),
+      ];
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      panel.onShortEpg = (int _) => session.signOut();
+
+      await session.refresh();
+
+      expect(session.hasCredentials, isFalse, reason: 'the sign-out happened');
+      expect(session.channels, isEmpty, reason: 'the in-flight refresh must not write back');
+      expect(session.titles, isEmpty);
+    });
+
+    test('clears the credential, the vault entry, and the held catalogue', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveStreams = <Map<String, dynamic>>[_liveEntry(streamId: 701, number: 1, name: 'Kanal', categoryId: '1')];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+      expect(session.channels, isNotEmpty);
+
+      await session.signOut();
+
+      expect(session.hasCredentials, isFalse);
+      expect(session.channels, isEmpty);
+      expect(session.titles, isEmpty);
+      expect(await Vault.get(XtreamCredentials.vaultKey), isNull);
+    });
+
+    test('leaves the cached catalogue rows in place, because accountKey excludes the password', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveStreams = <Map<String, dynamic>>[_liveEntry(streamId: 801, number: 1, name: 'Kanal', categoryId: '1')];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+
+      final String account = CatalogueStore.accountKey(credentials);
+      expect(const CatalogueStore().channelsFor(account), isNotEmpty);
+
+      await session.signOut();
+      // Read the store directly rather than through the session: this is the
+      // assertion that discriminates a real survival from adopt() simply
+      // restoring whatever an empty table gives back.
+      expect(const CatalogueStore().channelsFor(account), isNotEmpty);
+
+      await session.adopt(credentials);
+      expect(session.channels, isNotEmpty);
     });
   });
 }

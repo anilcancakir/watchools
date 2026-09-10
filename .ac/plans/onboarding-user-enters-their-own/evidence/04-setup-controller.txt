@@ -1,0 +1,131 @@
+=== Step 4: confirm a typed credential with a handshake before storing it ===
+
+--- 1. RED phase: the suite before lib/app/controllers/provider_setup_controller.dart existed ---
+
+$ flutter test test/app/controllers/provider_setup_controller_test.dart
+  test/app/controllers/provider_setup_controller_test.dart:110:13: Error: 'ProviderSetupController' isn't a type.
+      final ProviderSetupController controller = controllerFor(session);
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  (the same error at :152, :175, :195, :219, :246, :281, plus the unresolved import)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  test/app/controllers/provider_setup_controller_test.dart: loading test/app/controllers/provider_setup_controller_test.dart
+
+--- 2. GREEN: the implemented ordering (validate, handshake, classify, store) ---
+
+$ flutter test test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: submit(), the moment a typed credential becomes a stored one stores the credential the panel accepted, and sends the user agent it was given
+00:00 +1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+00:00 +2: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+00:00 +3: submit(), the moment a typed credential becomes a stored one a scheme-less panel URL is a field error, and no request leaves at all
+00:00 +4: submit(), the moment a typed credential becomes a stored one a second submit while one is in flight sends nothing
+00:00 +5: submit(), the moment a typed credential becomes a stored one clears the previous verdict before asking again
+00:00 +6: signOut() stops playback before the session clears
+00:00 +7: (tearDownAll)
+00:00 +7: All tests passed!
+
+--- 3. DISCRIMINATION: session.adopt() moved ABOVE the fault check ---
+
+The auth:0 test must now fail, or "nothing was stored" was a vacuous assertion.
+
+$ flutter test test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: submit(), the moment a typed credential becomes a stored one stores the credential the panel accepted, and sends the user agent it was given
+00:00 +1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+00:00 +1 -1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored [E]
+  Expected: false
+    Actual: <true>
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test/app/controllers/provider_setup_controller_test.dart 163:7  main.<fn>.<fn>
+  
+00:00 +1 -1: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+00:00 +1 -2: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored [E]
+  Expected: false
+    Actual: <true>
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test/app/controllers/provider_setup_controller_test.dart 185:7  main.<fn>.<fn>
+  
+00:00 +1 -2: submit(), the moment a typed credential becomes a stored one a scheme-less panel URL is a field error, and no request leaves at all
+00:00 +2 -2: submit(), the moment a typed credential becomes a stored one a second submit while one is in flight sends nothing
+00:00 +3 -2: submit(), the moment a typed credential becomes a stored one clears the previous verdict before asking again
+00:00 +4 -2: signOut() stops playback before the session clears
+00:00 +5 -2: (tearDownAll)
+00:00 +5 -2: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+
+--- 3 (rerun): the vault assertion moved ahead of hasCredentials, so the ---
+--- discrimination lands on the line that proves nothing was stored     ---
+
+$ flutter test test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: submit(), the moment a typed credential becomes a stored one stores the credential the panel accepted, and sends the user agent it was given
+00:00 +1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+00:00 +1 -1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored [E]
+  Expected: null
+    Actual: '{"base_url":"http://panel.example:8080","username":"demo","password":"wrong","user_agent":"watchools/test"}'
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test/app/controllers/provider_setup_controller_test.dart 168:7  main.<fn>.<fn>
+  
+00:00 +1 -1: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+00:00 +1 -2: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored [E]
+  Expected: null
+    Actual: '{"base_url":"http://panel.example:8080","username":"demo","password":"demo","user_agent":"watchools/test"}'
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test/app/controllers/provider_setup_controller_test.dart 187:7  main.<fn>.<fn>
+  
+00:00 +1 -2: submit(), the moment a typed credential becomes a stored one a scheme-less panel URL is a field error, and no request leaves at all
+00:00 +2 -2: submit(), the moment a typed credential becomes a stored one a second submit while one is in flight sends nothing
+00:00 +3 -2: submit(), the moment a typed credential becomes a stored one clears the previous verdict before asking again
+00:00 +4 -2: signOut() stops playback before the session clears
+00:00 +5 -2: (tearDownAll)
+00:00 +5 -2: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+
+--- 4. RESTORED: the store back below the fault check ---
+
+$ flutter test test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/controllers/provider_setup_controller_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: submit(), the moment a typed credential becomes a stored one stores the credential the panel accepted, and sends the user agent it was given
+00:00 +1: submit(), the moment a typed credential becomes a stored one a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored
+00:00 +2: submit(), the moment a typed credential becomes a stored one a transport failure reports unreachable, and is not stored
+00:00 +3: submit(), the moment a typed credential becomes a stored one a scheme-less panel URL is a field error, and no request leaves at all
+00:00 +4: submit(), the moment a typed credential becomes a stored one a second submit while one is in flight sends nothing
+00:00 +5: submit(), the moment a typed credential becomes a stored one clears the previous verdict before asking again
+00:00 +6: signOut() stops playback before the session clears
+00:00 +7: (tearDownAll)
+00:00 +7: All tests passed!
+
+--- 5. Gates, restored state ---
+
+$ flutter analyze --fatal-infos --fatal-warnings
+No issues found! (ran in 6.5s)
+
+$ flutter test   (whole suite)
+00:18 +513 ~1: All tests passed!
+
+$ ! rg -q "^import.*playback|^import.*watchools_player" lib/app/controllers/provider_setup_controller.dart
+rg exit 1 (no match), so the guarded form exits 0
+
+Conclusion: the auth:0 test fails with the rejected credential printed out of
+the vault when the store runs before the fault check, and passes only with the
+store below it. The "nothing was stored" assertion is not vacuous.

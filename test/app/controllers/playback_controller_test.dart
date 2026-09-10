@@ -575,6 +575,27 @@ void main() {
 
       await controller.detach();
     });
+
+    test('stop is safe before any engine has been built, which is what a sign-out does', () async {
+      // The fourth of the four, and the one that was missing the guard until a
+      // sign-out made it reachable: `AppServiceProvider` wires
+      // `ProviderSetupController`'s stop seam to `PlaybackController.stop`, so
+      // signing out with nothing playing called it on a controller that had
+      // never resolved an engine. `stop` read `_engine`, which BUILDS one, and
+      // `MpvPlaybackEngine`'s constructor subscribes to the plugin's
+      // `EventChannel`. `health`, `detach`, `togglePause` and `onClose` all
+      // guard with `_resolvedEngine?`; this asserts `stop` does too.
+      final ProviderSession session = await readySession();
+      final PlaybackController controller = PlaybackController(
+        engine: () => throw StateError('the engine must not be built by stop'),
+        session: session,
+      );
+
+      await controller.stop();
+
+      expect(controller.channel, isNull);
+      expect(controller.health, PlaybackHealth.idle);
+    });
   });
 
   group('the fault the screen renders', () {
