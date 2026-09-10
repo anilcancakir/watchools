@@ -169,7 +169,11 @@ Any HTTP call to a user's IPTV provider carries a per-provider `User-Agent`. Nor
 
 Custom DNS is an onboarding problem, not a feature. No player engine exposes a resolver hook and no app in this category ships an in-app DNS setting.
 
-Never log a provider credential, never put one in a job payload, never commit one. `.env.local` is reserved and gitignored for real test credentials; nothing reads it yet.
+Never log a provider credential, never put one in a job payload, never commit one. `.env.local` is gitignored and holds a development credential, four keys: `XTREAM_BASE_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` and the optional `XTREAM_USER_AGENT`.
+
+Nothing in the app reads that file. `tool/dev/run_with_provider.sh` reads it and passes the values as `--dart-define`, which `XtreamCredentials.fromEnvironment` picks up in **debug builds only** and **only when `Vault` is empty**, so a real stored credential always wins. The indirection is forced rather than chosen: magic loads exactly one env file and reads it as a Flutter asset, and a declared asset that is missing fails the build outright, so declaring `.env.local` would make every fresh checkout require one.
+
+**`Vault` cannot write on macOS.** It is the Keychain, a sandboxed build has no `keychain-access-groups` entitlement, and adding one makes the build demand a development certificate (`"Runner" has entitlements that require signing with a development certificate`). Every `Vault.put` fails with OSStatus -34018; measured through the running app with the sandbox both on and off. So on the one platform that has a player there is no way to store a credential at all, which is why the development path above exists and why onboarding cannot ship on macOS until signing is set up.
 
 ## The player abstraction
 

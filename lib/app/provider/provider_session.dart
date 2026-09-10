@@ -114,6 +114,14 @@ class ProviderSession extends ChangeNotifier {
   /// Where the cached and the replaced catalogue live.
   final CatalogueStore _store;
 
+  /// What [start] falls back to when `Vault` holds no credential.
+  ///
+  /// A seam for the same reason [_isPlaying] is one: the real default reads
+  /// compile-time defines, a `flutter test` run has none, and without this
+  /// there is no way to exercise the fallback at all. A test passes a closure
+  /// returning a credential it built; the app passes nothing.
+  final XtreamCredentials? Function() _developmentCredential;
+
   /// Whether a caller may not invoke [refresh] right now.
   ///
   /// An injectable predicate rather than a direct read of the engine, and it
@@ -156,8 +164,13 @@ class ProviderSession extends ChangeNotifier {
 
   /// Creates a session. [store] defaults to a fresh, stateless
   /// [CatalogueStore]; [isPlaying] defaults to "never playing".
-  ProviderSession({this._store = const CatalogueStore(), bool Function()? isPlaying, this.epgFetchLimit = 20})
-    : _isPlaying = isPlaying ?? _neverPlaying;
+  ProviderSession({
+    this._store = const CatalogueStore(),
+    bool Function()? isPlaying,
+    XtreamCredentials? Function()? developmentCredential,
+    this.epgFetchLimit = 20,
+  }) : _isPlaying = isPlaying ?? _neverPlaying,
+       _developmentCredential = developmentCredential ?? XtreamCredentials.fromEnvironment;
 
   /// Whether the user has a provider configured at all.
   ///
@@ -303,7 +316,21 @@ class ProviderSession extends ChangeNotifier {
   /// renders, which is the opposite of a silent catch.
   Future<XtreamCredentials?> _loadCredentials() async {
     try {
-      return await XtreamCredentials.load();
+      final XtreamCredentials? stored = await XtreamCredentials.load();
+
+      if (stored != null) return stored;
+
+      // The compile-time credential, and only in a debug build. It is the
+      // development way in and currently the ONLY way in on macOS, where
+      // `Vault` is the Keychain and a sandboxed build cannot write to it at
+      // all (OSStatus -34018); see [XtreamCredentials.fromEnvironment].
+      //
+      // After the vault rather than before it, so a real stored credential
+      // always wins and a define left in a shell profile can never silently
+      // replace the one a user configured. `kDebugMode` on top of that,
+      // because a release build has no business reading one even if somebody
+      // passes it.
+      return kDebugMode ? _developmentCredential() : null;
     } on FormatException {
       _fault = ProviderFault.expired;
 

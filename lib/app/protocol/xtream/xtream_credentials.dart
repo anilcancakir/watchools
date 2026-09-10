@@ -91,6 +91,63 @@ class XtreamCredentials {
   /// Writes the record over whatever [vaultKey] held before.
   Future<void> save() => Vault.put(vaultKey, jsonEncode(_toJson()));
 
+  /// A credential handed in at compile time, or null when none was.
+  ///
+  /// The development way in, and it exists because there is currently **no
+  /// other one on macOS**. `Vault` is the Keychain, a sandboxed macOS build
+  /// has no `keychain-access-groups` entitlement, and adding one makes the
+  /// build demand a development certificate, so every `Vault.put` fails with
+  /// OSStatus -34018 ("A required entitlement isn't present"). Measured
+  /// through the running app, with and without the sandbox. The consequence is
+  /// the whole product: no credential can be stored, so `hasCredentials` is
+  /// false forever, all four screens fall back to the fixture, and a fixture
+  /// channel has no `streamId`, so nothing is playable on the one platform
+  /// that has a player.
+  ///
+  /// `--dart-define` rather than a file, and the choice is forced rather than
+  /// preferred. `.env.local` is the file `CLAUDE.md` reserves for this, but
+  /// magic loads exactly one env file and reads it as a **Flutter asset**, and
+  /// a declared asset that is missing fails the build outright, so declaring
+  /// `.env.local` would make every fresh checkout require one. The values
+  /// still live in `.env.local`; `tool/dev/run_with_provider.sh` reads them
+  /// from there and passes them as defines, so nothing new is committed and
+  /// the file keeps the job it was reserved for.
+  ///
+  /// A define is also the safest shape available: it is compile-time, so a
+  /// build that was not given one cannot carry a credential at all, and there
+  /// is no runtime path that could read a stale value out of a shipped bundle.
+  ///
+  /// Returns null unless the base URL, the user name and the password are
+  /// **all three** present. A partial define set is a mistake at the launch
+  /// command rather than a configuration to honour, and guessing a default for
+  /// a password is the one thing this must never do. The user agent does have a
+  /// default, because it is not a secret and every request needs one.
+  ///
+  /// The three values are named parameters defaulting to their defines rather
+  /// than read inline, which is what makes any of this testable. A define is
+  /// compile-time, so a `flutter test` run has none and an inline read would
+  /// leave every branch here but the null one unreachable from a test. The
+  /// same seam shape as `MpvPlaybackEngine.toggleWakelock` and
+  /// `PlaybackLayout.onBack`: the default is the real thing, and a test passes
+  /// its own.
+  static XtreamCredentials? fromEnvironment({
+    String baseUrl = const String.fromEnvironment(_envBaseUrl),
+    String username = const String.fromEnvironment(_envUsername),
+    String password = const String.fromEnvironment(_envPassword),
+    String userAgent = const String.fromEnvironment(_envUserAgent, defaultValue: 'Watchools/1.0'),
+  }) {
+    if (baseUrl.isEmpty || username.isEmpty || password.isEmpty) return null;
+
+    return XtreamCredentials(baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+  }
+
+  /// The define names, spelled once. `String.fromEnvironment` needs a constant,
+  /// so these are `const` and not a list a loop could walk.
+  static const String _envBaseUrl = 'XTREAM_BASE_URL';
+  static const String _envUsername = 'XTREAM_USERNAME';
+  static const String _envPassword = 'XTREAM_PASSWORD';
+  static const String _envUserAgent = 'XTREAM_USER_AGENT';
+
   /// The stored credential, or null when the user has none configured.
   ///
   /// Throws [FormatException] when [vaultKey] holds something that is not this

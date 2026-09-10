@@ -139,6 +139,61 @@ void main() {
     });
   });
 
+  group('fromEnvironment', () {
+    test('a build given no define carries no credential', () {
+      // The property that matters for a shipped build, and it is asserted with
+      // no arguments deliberately: this call reads the real defines, a test
+      // process has none, so this is exactly what a release build without them
+      // does. If this ever returns a record, a credential has been compiled in.
+      expect(XtreamCredentials.fromEnvironment(), isNull);
+    });
+
+    test('builds the record when all three are given', () {
+      final XtreamCredentials? credentials = XtreamCredentials.fromEnvironment(
+        baseUrl: 'http://panel.example:8080/',
+        username: 'bob',
+        password: 's3cret',
+      );
+
+      expect(credentials, isNotNull);
+      // Normalised on the way in, like any other construction: the trailing
+      // slash goes, because the endpoints are built by concatenation.
+      expect(credentials!.baseUrl, 'http://panel.example:8080');
+      expect(credentials.username, 'bob');
+      expect(credentials.password, 's3cret');
+    });
+
+    test('defaults the user agent, which is not a secret and is always needed', () {
+      final XtreamCredentials? credentials = XtreamCredentials.fromEnvironment(
+        baseUrl: 'http://h:8080',
+        username: 'bob',
+        password: 's3cret',
+      );
+
+      expect(credentials!.userAgent, 'Watchools/1.0');
+    });
+
+    test('refuses a partial set rather than half-honouring it', () {
+      // Each of the three missing in turn. A partial set is a mistake at the
+      // launch command, and the one thing this must never do is invent a
+      // default for a password.
+      expect(XtreamCredentials.fromEnvironment(username: 'bob', password: 's3cret'), isNull);
+      expect(XtreamCredentials.fromEnvironment(baseUrl: 'http://h:8080', password: 's3cret'), isNull);
+      expect(XtreamCredentials.fromEnvironment(baseUrl: 'http://h:8080', username: 'bob'), isNull);
+    });
+
+    test('a bad base URL throws rather than addressing the wrong server', () {
+      // Not softened to a null. `_normaliseBaseUrl`'s rejection exists because
+      // Dio prepends its configured base to any path not matching `https?:`,
+      // so a scheme-less panel URL silently addresses the wrong host, and a
+      // define is typed by hand at a shell prompt.
+      expect(
+        () => XtreamCredentials.fromEnvironment(baseUrl: 'panel.example:8080', username: 'bob', password: 's3cret'),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('toString', () {
     test('names the provider and the user, and redacts the password', () {
       final String text = _record().toString();
