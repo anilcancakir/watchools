@@ -51,28 +51,91 @@ run's character class: the match reached backwards through a query parameter's
 nothing and was returned verbatim. Padding is now its own trailing group,
 which is what base64 means by it.
 
-### Referred out rather than decided
+### Referred out, then decided
 
-The chrome's panel is `bg-scrim-strong`, 72 percent
-(`watchools_status_tokens.dart:109`). `DESIGN.md:441-442` says never heavier
-than 40. The theme ships exactly two scrim weights, 45 and 72, and its own
-comment records 72 as what a line of text needs to clear AA over a frame whose
-brightness we do not control. One of the two numbers is wrong and only a
-design call settles which. What this plan could honour is the part that keeps
-the picture: nothing washes the frame, and the contrast is bounded to where
-the text is.
+Two went to the user rather than being guessed, and both came back.
 
-### Noted, not this plan's to fix
+**The scrim ceiling.** The chrome's panel is `bg-scrim-strong`, 72 percent,
+against `DESIGN.md`'s 40. Decision: **fix the rule, not the tokens.** What
+keeps Plex's artwork legible is that nothing covers it, and 40 percent was the
+document's guess at how to say so; the theme has no token that satisfies the
+cap and its own comment records 72 as the minimum for legible text. `DESIGN.md`
+now states the half that matters, no scrim spans the frame, and cites
+`playback_layout.dart` as the example. No code changed.
 
-`/saglayici` is registered nowhere. All six references in `lib/` are call
-sites and `lib/routes/app.dart` has no such page, so the fault panel's
-settings button on all five layouts currently falls through to `/`. It is the
-onboarding screen `CLAUDE.md` records as not existing yet; being consistent
-with the four siblings is still the right call for this layout.
+**`/saglayici`, registered nowhere.** Decision: **ship a minimal placeholder.**
+`lib/ui/layouts/provider_settings_layout.dart` plus a thin view and the route.
+No form, deliberately: onboarding is undesigned, and a field writing to `Vault`
+from there would be it shipped by accident on the one flow where a mistake
+costs the user their subscription details. A route-table test now fails if any
+path a layout navigates to is registered nowhere.
 
-### Gates after the fixes
+**Wind publishing** was the third question and the answer was not now, so the
+`ActivateIntent` binding stays unreleased and the doc block that says so stands.
 
-`flutter analyze --fatal-infos --fatal-warnings` clean. 477 tests pass, 1
-deliberate skip. `dart format` clean. Coverage 2425/2524 = 96.1% against the
+## Oracle round (`ac:oracle`), before merge
+
+Six premises tested. Three refuted, all three above the interface, which is the
+part that would have been expensive to get wrong.
+
+| Premise | Verdict |
+|---|---|
+| No seek, duration or position is right for the interface | confirmed, but the caller that will demand one is already on screen |
+| `detach` from the view's `dispose` is the right shape | confirmed for the route pop, refuted as stated |
+| `PlaybackFacade` is not speculative | refuted in the branch's favour: two implementations, two consumers |
+| The redaction guarantee is structural | confirmed for the interface, two uncovered doors |
+| The connection gate is safe | **refuted outright** |
+| The branch ships as one PR | confirmed |
+
+Acted on, each verified against the file it cited first:
+
+- **The gate only guarded its own door.** `refresh` tested the predicate once
+  and then ran a handshake, four list fetches and up to `epgFetchLimit`
+  sequential EPG calls unguarded, while `boot()` fires that batch unawaited at
+  every cold start. Now checked between the halves and between EPG round trips,
+  never inside a `DB.transaction`. The test for it was proved to discriminate:
+  without the loop guard it reads `[301, 302, 303]`, with it `[301]`.
+- **`onReady` was a discarded future**, and the worst one on the screen, since
+  `attach` is what triggers the `load`. Through `_run` now.
+- **Promise 7 added to the interface**: `stop` and `dispose` are idempotent and
+  safe after the surface is gone. `detach` relies on it and it currently holds
+  only because `MpvEngine.swift:195-196` opens with a nil guard.
+- **The refused members gained their arriving caller**: `showcase_layout.dart:98`
+  renders an `İzlemeye devam et` rail off `TitleItem.progress`, and
+  `setTitleProgress` has no caller in `lib/`, so resume is unwired rather than
+  deferred. The shape to give it is written down (a separate capability
+  interface, not nullable members here).
+- **A doc overclaim of mine corrected**: `dispose` is not the only signal Dart
+  gets that playback ended, because backgrounding does not dispose a `State`.
+  Issue #27 opened for the lifecycle observer, which belongs with the engine.
+- **The redaction guarantee is now enforced**: `test/app/playback/redaction_boundary_test.dart`
+  asserts exactly one file reads `WatchoolsPlayer.events`, no screen references
+  it or `PlayerEvent`, and no `String` crosses `PlaybackEngine` outside the user
+  agent.
+
+Not acted on: the oracle's note that `pubspec.yaml:59` claims telescope sees
+every provider HTTP call while `xtream_client.dart:208` resolves its own
+`provider_network` driver. It flagged this as unsettled and it errs in the safe
+direction (fewer places a credential is inspectable), so it stays a note.
+
+### Found by looking at the running app, twice
+
+Neither was reachable by any test that existed.
+
+The placeholder shipped with its back affordance stretched into a pill across
+the whole window: a column stretches its children across the cross axis, and
+`findsOneWidget` on a semantics label passes at either width. Fixed with
+`items-start`, now asserted as a 40 by 40 size, and that assertion was proved
+to discriminate (1392 by 40 without the fix).
+
+And the earlier `_channel`-through-a-refusal fix had bought nothing visible,
+because the layout's `unplayable` branch replaced the channel name instead of
+adding to it.
+
+### Gates after everything
+
+`flutter analyze --fatal-infos --fatal-warnings` clean. 487 tests pass, 1
+deliberate skip. `dart format` clean. Coverage 2434/2534 = 96.1% against the
 90% floor, computed with CI's own script. Plugin 16/16. Mock verifier all
 checks passed. Committed lock carries 1 `source: path` entry, equal to HEAD's.
+Both CI jobs green on PR #26.

@@ -30,8 +30,8 @@ implementations lie about it.
 | Gate | Result |
 |---|---|
 | `flutter analyze --fatal-infos --fatal-warnings` | clean |
-| `flutter test` | 477 pass, 1 deliberate skip |
-| Coverage (CI's own script, scaffold excluded) | 2425/2524 = 96.1%, floor 90% |
+| `flutter test` | 487 pass, 1 deliberate skip |
+| Coverage (CI's own script, scaffold excluded) | 2434/2534 = 96.1%, floor 90% |
 | `dart format lib test` | clean |
 | Plugin tests | 16/16 |
 | Mock panel verifier | all checks passed |
@@ -58,14 +58,30 @@ first: a binary signature made the strict UTF-8 decode throw, and the run
 class admitted `=` so the match reached back through `token=` and decoded to
 nothing. Both reproduced before they were patched.
 
-## Referred out
+## The three decisions the user took
 
-The chrome's panel is 72 percent black, the theme's own `bg-scrim-strong`.
-`DESIGN.md:441-442` says never heavier than 40. The theme ships exactly two
-scrim weights, 45 and 72, and records 72 as what a line of text needs over a
-frame whose brightness we do not control, so one of the two numbers is wrong
-and only a design call settles which. What this plan honoured is the half it
-could: nothing washes the frame.
+**The scrim ceiling: fix the rule, not the tokens.** `DESIGN.md` capped a
+player scrim at 40 percent, the theme's own minimum for legible text is 72, and
+no token satisfied the cap. What keeps Plex's artwork legible is that nothing
+covers it; 40 percent was the document's guess at how to say so. The rule now
+says no scrim spans the frame and cites `playback_layout.dart`. No code changed.
+
+**`/saglayici`: ship a minimal placeholder.** Six call sites, no route. There is
+now a screen that names what is happening and offers the way back, with no
+form, and a route-table test that fails if any path a layout navigates to is
+registered nowhere.
+
+**Wind publishing: not now.** The `ActivateIntent` binding stays unreleased, so
+what CI builds has the focus ring and not the D-pad activation.
+
+## The oracle round
+
+Six premises tested before merge, three refuted, all three above the interface.
+The gate was the sharp one: `refresh` checked its predicate at the door and
+then ran roughly 26 requests unguarded, while `boot()` fires that batch
+unawaited at every cold start, so a user tapping a channel seconds into launch
+played straight through it on a one-connection account. `review-log.md` carries
+the table and what each fix was.
 
 ## Reported out of the ecosystem
 
@@ -76,9 +92,11 @@ could: nothing washes the frame.
   release build's threshold. Mapped locally in `MpvPlaybackEngine._receive`.
 - `.gitignore`'s `.swiftpm/` does not match Xcode's `xcshareddata/swiftpm/`,
   which is why two untracked directories sit in the tree after a macOS build.
-- `/saglayici` is registered nowhere. All six references in `lib/` are call
-  sites, so the fault panel's settings button on five layouts falls through to
-  `/`. It is the onboarding screen `CLAUDE.md` records as not existing yet.
+- `/saglayici` was registered nowhere, with six call sites in `lib/`. Fixed in
+  this branch with a placeholder screen and a route-table test.
+- No `WidgetsBindingObserver` exists anywhere, so on the mobile targets that
+  are coming, backgrounding leaves the core, the single connection slot and the
+  wakelock held. Issue #27; it belongs with the engine, not the screen.
 
 ## Not done, deliberately
 
