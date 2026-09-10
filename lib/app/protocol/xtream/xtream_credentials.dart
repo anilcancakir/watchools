@@ -181,7 +181,7 @@ class XtreamCredentials {
   /// A `Set` rather than a list: for an alphanumeric secret all four spellings
   /// collapse to one, which is the ordinary case.
   String redact(String text) {
-    String redacted = text;
+    String redacted = _redactEncodedSegments(text);
 
     for (final String secret in <String>[password, username]) {
       if (secret.isEmpty) continue;
@@ -199,6 +199,66 @@ class XtreamCredentials {
     }
 
     return redacted;
+  }
+
+  /// Replaces any run that decodes from base64 into something naming a secret.
+  ///
+  /// The four literal spellings above cannot reach this, and it is not a
+  /// hypothetical shape: the panel answers a stream request with a `302` whose
+  /// target embeds a token, and the token measured against the fixture decodes
+  /// to `username:password:issuedAt`
+  /// (`evidence/12-token-remint.txt`). Base64 is encoding rather than
+  /// encryption, so the credential is fully present and none of the literal
+  /// forms appears anywhere in the encoded run.
+  ///
+  /// Reachable on the one channel that cannot be switched off: `reconnect=1`
+  /// is set in the plugin's `stream-lavf-o`
+  /// (`MpvEngine.swift:68`), mpv follows the redirect, and FFmpeg's reconnect
+  /// warning names the URL it is retrying, which by then is the tokenised one.
+  ///
+  /// Matched on a **decoding** rather than on a pattern, because a token's
+  /// layout is the panel's choice and the next one will not look like this one.
+  /// Three guards keep it from rewriting innocent text: a minimum length, a
+  /// successful base64 decode, and a UTF-8 decoding that actually contains a
+  /// secret. A run that fails any of the three is left exactly as it arrived.
+  /// No `/` in the run, deliberately. It is part of the standard base64
+  /// alphabet, and including it made the match greedily swallow path
+  /// separators: `/live/play/<token>/10001` came back as one run that decodes
+  /// to nothing and so was left alone, with the token inside it. A token
+  /// embedded in a URL path cannot contain `/` anyway, because that would end
+  /// the segment, and the URL-safe alphabet spells the same two characters
+  /// `-` and `_`.
+  String _redactEncodedSegments(String text) => text.replaceAllMapped(
+    RegExp(r'[A-Za-z0-9+_=-]{16,}'),
+    (Match match) => _namesASecret(match[0]!) ? _redaction : match[0]!,
+  );
+
+  /// Whether [run] decodes from base64 into text containing either secret.
+  bool _namesASecret(String run) {
+    final String? decoded = _decodeBase64(run);
+
+    if (decoded == null) return false;
+
+    return (password.isNotEmpty && decoded.contains(password)) || (username.isNotEmpty && decoded.contains(username));
+  }
+
+  /// [run] as UTF-8 out of base64, or null when it is not both.
+  ///
+  /// Tries the URL alphabet as well as the standard one, because a panel that
+  /// puts a token in a path has reason to prefer it, and pads to a multiple of
+  /// four because a token in a URL usually has its padding stripped.
+  String? _decodeBase64(String run) {
+    final String padded = run.padRight(run.length + (4 - run.length % 4) % 4, '=');
+
+    for (final Codec<List<int>, String> codec in <Codec<List<int>, String>>[base64Url, base64]) {
+      try {
+        return utf8.decode(codec.decode(padded));
+      } on FormatException {
+        continue;
+      }
+    }
+
+    return null;
   }
 
   @override

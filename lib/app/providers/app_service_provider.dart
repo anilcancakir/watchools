@@ -50,17 +50,36 @@ class AppServiceProvider extends ServiceProvider {
     // is what makes the binding order below irrelevant: `PlaybackController` is
     // bound after this line and does not exist yet.
     //
-    // `!= idle` rather than `== playing`, and the difference is the whole point
-    // of the gate. A paused, starving, stalled or not-presenting core is still
-    // an open core holding the one connection the measured account allows; only
-    // `idle` means the slot is free. Reading `== playing` would let a refresh
-    // evict a viewer who had merely paused.
-    Magic.put(ProviderSession(isPlaying: () => Magic.find<PlaybackController>().health != PlaybackHealth.idle));
+    // Two clauses, because health alone has a hole. `!= idle` covers the four
+    // states a naive `== playing` would miss: a paused, starving, stalled or
+    // not-presenting core is still an open core holding the one connection the
+    // measured account allows. But `health` reports `idle` from the `load` call
+    // until the first tick, and `StallDetector` extends that to every tick
+    // before the first decoded frame, so a core that is still connecting, and a
+    // core that opens and never yields a frame, both read "not playing" while
+    // holding the slot. `channel != null` closes that window: the controller
+    // holds the channel from the moment it is chosen.
+    //
+    // Over-reporting costs a skipped catalogue refresh, which the next refresh
+    // fixes. Under-reporting costs the viewer their stream.
+    Magic.put(
+      ProviderSession(
+        isPlaying: () {
+          final PlaybackController playback = Magic.find<PlaybackController>();
 
-    // Bound after the session, because the controller reads it for a stream
-    // URL and for the fault. Order is not load-bearing (the controller resolves
-    // the session lazily through a getter), but reading in dependency order is
-    // what makes the next reader believe the right thing.
+          return playback.channel != null || playback.health != PlaybackHealth.idle;
+        },
+      ),
+    );
+
+    // Bound after the session, and the order IS load-bearing rather than
+    // tidiness, which an earlier version of this comment got wrong.
+    // `PlaybackController`'s constructor subscribes to the session eagerly, and
+    // it resolves one through `Magic.findOrPut`, which **creates** an instance
+    // when none is registered (`magic.dart:262-267`). So binding the controller
+    // first would build a second `ProviderSession` carrying the default
+    // never-playing gate, and the controller would then listen to an orphan
+    // while the app used the one bound above.
     //
     // This is the only place that knows HOW to build the engine, which is the
     // composition root doing its job: the controller takes a factory so it can

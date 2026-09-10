@@ -44,6 +44,8 @@ class _FakePlayback implements PlaybackFacade {
   int toggles = 0;
   int stops = 0;
   int attaches = 0;
+  int retries = 0;
+  final List<Channel> played = <Channel>[];
 
   @override
   Future<void> togglePause() async => toggles++;
@@ -53,6 +55,12 @@ class _FakePlayback implements PlaybackFacade {
 
   @override
   Future<void> attach(PlaybackSurface surface) async => attaches++;
+
+  @override
+  Future<void> play(Channel channel) async => played.add(channel);
+
+  @override
+  Future<void> retry() async => retries++;
 }
 
 void main() {
@@ -190,6 +198,23 @@ void main() {
         expect(find.bySemanticsLabel('Geri'), findsOneWidget);
       });
     }
+
+    testWidgets('the notice retries the load rather than toggling a pause', (WidgetTester tester) async {
+      // `ProviderNotice.onRetry` means "make the request again". For
+      // `unreachable` and `evicted` there is no core to toggle, so an earlier
+      // version wired this to `togglePause` and the only action a fault offered
+      // was pausing a stream that had never opened.
+      final _FakePlayback playback = _FakePlayback(fault: ProviderFault.evicted);
+      await pumpLayout(tester, playback);
+
+      // `evicted`'s own action label, which is the notice's copy rather than
+      // this layout's.
+      await tester.tap(find.bySemanticsLabel('Bağlantıyı devral'));
+      await tester.pump();
+
+      expect(playback.retries, 1);
+      expect(playback.toggles, 0);
+    });
 
     testWidgets('an unplayable channel says so rather than showing a fault', (WidgetTester tester) async {
       await pumpLayout(tester, _FakePlayback(unplayable: true));

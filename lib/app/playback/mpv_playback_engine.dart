@@ -23,13 +23,24 @@ import 'playback_engine.dart';
 /// only signal a subscription token is lapsing, so it cannot be switched off;
 /// it has to be cleaned instead, and this class is where.
 ///
-/// Two properties make that a guarantee rather than a habit. Native text enters
-/// this class at exactly **one** place, [_receive], and the redactor is the
-/// first thing applied to it. And it leaves at exactly one place, a [Log] call:
-/// **no member of [PlaybackEngine] carries text at all**, so a redacted line
-/// has nowhere else to go. That is stronger than "redacted before forwarding",
-/// and a later reader adding a text member to the interface would be the change
-/// that weakens it.
+/// Native text arrives two ways, and both are cleaned. The log channel enters
+/// at [_receive], where the redactor is the first thing applied to it, and
+/// leaves at a [Log] call. A failure enters as a `PlatformException.message`
+/// from any of the plugin's five methods, and every one of them is routed
+/// through [_native], which rebuilds the exception with the message redacted
+/// and drops `details`.
+///
+/// An earlier version of this doc claimed text entered at exactly **one**
+/// place, and wrapped only `play` on the reasoning that it is the only call
+/// carrying the URL. That reasoning was about today's Swift rather than about
+/// the contract: `stop`, `setPaused` and `dispose` all return a message this
+/// class does not author. No leak shipped, because none of those messages names
+/// a URL today, but the guarantee was a habit rather than a property until
+/// every call went through one door.
+///
+/// What does hold structurally: **no member of [PlaybackEngine] carries text at
+/// all**, so a cleaned line has nowhere else to go, and a later reader adding a
+/// text member to the interface would be the change that weakens it.
 ///
 /// The redactor arrives as a function rather than as an `XtreamCredentials`,
 /// because a redactor is the one provider concept an engine may hold and a
@@ -189,21 +200,18 @@ class MpvPlaybackEngine implements PlaybackEngine {
     //    its factory and its running core standing while the Dart side starts
     //    over, and a core this object never opened refuses `play` just the
     //    same. With no core it is a no-op.
-    await WatchoolsPlayer.stop();
+    await _native(WatchoolsPlayer.stop);
 
     // 2. Before the platform call, so the first ticks of the new core are
     //    attributed rather than dropped: the sampler starts inside `start`.
     _loaded = ++_generation;
     _reading = false;
 
-    // 3. The only call that hands the secret to the native side, so it is the
-    //    only one whose failure could hand it back. Nothing in the plugin's
-    //    messages names the URL today; this is what keeps that true when
-    //    somebody adds `"could not open \(url)"`. `details` is dropped rather
-    //    than forwarded because it is not text and cannot be cleaned, and the
-    //    native side sends none.
+    // 3. The one call that hands the secret to the native side, so it is the
+    //    one whose failure is most likely to hand it back. Through [_native]
+    //    like every other, because "most likely" is not "only".
     try {
-      await WatchoolsPlayer.play(surface.platformViewId, source.toString(), userAgent: userAgent);
+      await _native(() => WatchoolsPlayer.play(surface.platformViewId, source.toString(), userAgent: userAgent));
 
       // 4. Only once play has actually succeeded: a failed load leaves no core
       //    alive, and enabling here first would hold the display awake for a
@@ -212,9 +220,29 @@ class MpvPlaybackEngine implements PlaybackEngine {
         _awake = true;
         await _toggleWakelock(enable: true);
       }
-    } on PlatformException catch (failure) {
+    } on PlatformException {
       _loaded = null;
 
+      rethrow;
+    }
+  }
+
+  /// Runs [call] and cleans anything it throws back.
+  ///
+  /// Every plugin call goes through here, not just `play`. An earlier version
+  /// wrapped only `play`, on the reasoning that it is the only call carrying
+  /// the URL, and that reasoning is about today's Swift rather than about the
+  /// contract: `stop`, `setPaused` and `dispose` all return a
+  /// `PlatformException` whose `message` this class does not author, and the
+  /// day somebody writes `"could not stop \(url)"` the narrow version leaks.
+  /// Cheaper to route all of them than to re-audit the Swift on every change.
+  ///
+  /// `details` and `stacktrace` are dropped rather than cleaned, because
+  /// neither is text this class can inspect and the native side sends neither.
+  Future<T> _native<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } on PlatformException catch (failure) {
       final String? message = failure.message;
 
       throw PlatformException(code: failure.code, message: message == null ? null : _redact(message));
@@ -229,10 +257,10 @@ class MpvPlaybackEngine implements PlaybackEngine {
   /// which is how mpv behaves and therefore what every consumer must be written
   /// against.
   @override
-  Future<void> pause() => WatchoolsPlayer.setPaused(true);
+  Future<void> pause() => _native(() => WatchoolsPlayer.setPaused(true));
 
   @override
-  Future<void> resume() => WatchoolsPlayer.setPaused(false);
+  Future<void> resume() => _native(() => WatchoolsPlayer.setPaused(false));
 
   /// Closes the session and releases the provider connection.
   ///
@@ -251,7 +279,7 @@ class MpvPlaybackEngine implements PlaybackEngine {
       await _toggleWakelock(enable: false);
     }
 
-    await WatchoolsPlayer.stop();
+    await _native(WatchoolsPlayer.stop);
   }
 
   /// Tears the engine down from Dart, on nothing the native side says.
@@ -291,7 +319,7 @@ class MpvPlaybackEngine implements PlaybackEngine {
     }
 
     await _upstream.cancel();
-    await WatchoolsPlayer.stop();
+    await _native(WatchoolsPlayer.stop);
     await _ticks.close();
   }
 

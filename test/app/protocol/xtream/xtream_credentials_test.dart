@@ -281,6 +281,37 @@ void main() {
       expect(line, 'http: Will reconnect to http://h:8080/live/***/***/10002.ts, error=End of file');
     });
 
+    test('strips the base64 token a 302 puts in the path, which no literal spelling reaches', () {
+      // The token measured against the fixture, verbatim from
+      // `evidence/12-token-remint.txt`. It decodes to `demo:demo:1789003017`,
+      // so the credential is fully present while none of the four literal
+      // spellings appears anywhere in the encoded run. Reachable on the one
+      // channel that cannot be switched off: mpv follows the redirect and
+      // FFmpeg's reconnect warning names the URL it is retrying.
+      final XtreamCredentials record = XtreamCredentials(
+        baseUrl: 'http://127.0.0.1:3300',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'Watchools/1.0',
+      );
+
+      const String line =
+          'http: Will reconnect to '
+          'http://127.0.0.1:3300/live/play/ZGVtbzpkZW1vOjE3ODkwMDMwMTc/10001.ts, error=End of file';
+
+      expect(record.redact(line), isNot(contains('ZGVtbzpkZW1vOjE3ODkwMDMwMTc')));
+      expect(record.redact(line), contains('/live/play/***/10001.ts'));
+    });
+
+    test('leaves an encoded run that names no secret exactly as it arrived', () {
+      // The guard that stops this from rewriting innocent text: a run has to
+      // decode AND the decoding has to contain a secret. A base64 blob that is
+      // somebody else's identifier is not ours to redact.
+      const String line = 'cplayer: cache dump aGVsbG8gd29ybGQgdGhpcyBpcyBmaW5l written';
+
+      expect(_record().redact(line), line);
+    });
+
     test('an empty secret is skipped, because replaceAll of it matches between every character', () {
       final XtreamCredentials record = XtreamCredentials(
         baseUrl: 'http://h:8080',

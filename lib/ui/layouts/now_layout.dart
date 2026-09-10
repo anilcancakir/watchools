@@ -46,31 +46,35 @@ class NowLayout extends StatelessWidget {
   /// The shared line-up state.
   final GuideController controller;
 
-  /// What the hero's play affordance does, defaulting to the real thing.
+  /// Where the hero's play affordance goes, defaulting to pushing the route.
   ///
-  /// A seam because the real one resolves a controller from the container and
-  /// pushes a route, and a widget test has neither. Without it the one control
-  /// that makes this screen reach playback would be the only untested control
-  /// on it.
-  final void Function(Channel channel)? onPlay;
+  /// Only the **navigation** is a seam, because `MagicRouter` throws `Router
+  /// not initialized` without a `MaterialApp.router` above it and a widget test
+  /// has none. Everything else the affordance does (select, then hand the
+  /// channel to the playback controller) runs in a test as it runs in the app,
+  /// which is the correction to a first version where the whole sequence sat in
+  /// an untested default branch.
+  final VoidCallback? onNavigate;
+
+  /// The playback handle, or null to resolve one from the container.
+  final PlaybackFacade? playbackOverride;
 
   /// Creates the [NowLayout].
-  const NowLayout({super.key, required this.controller, this.onPlay});
+  const NowLayout({super.key, required this.controller, this.onNavigate, this.playbackOverride});
 
   /// Starts [channel] and goes to the playback screen.
   ///
   /// Selects first, so returning from playback finds the hero showing what was
   /// just watched rather than whatever was selected before it.
+  ///
+  /// `play` before the push and not after, which reads backwards and is
+  /// correct: the controller **holds** a channel chosen before a surface
+  /// exists and opens it when the screen's `attach` arrives. Pushing first and
+  /// playing after would race the platform view's creation instead.
   void _play(Channel channel) {
-    if (onPlay != null) {
-      onPlay!(channel);
-
-      return;
-    }
-
     controller.selectChannel(channel);
-    Magic.find<PlaybackController>().play(channel);
-    MagicRoute.to('/izle');
+    (playbackOverride ?? Magic.find<PlaybackController>()).play(channel);
+    (onNavigate ?? () => MagicRoute.to('/izle'))();
   }
 
   @override

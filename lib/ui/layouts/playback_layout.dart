@@ -83,9 +83,13 @@ class PlaybackLayout extends StatelessWidget {
               bottom: PageGutter.value,
               child: Align(
                 alignment: Alignment.centerLeft,
+                // `onRetry` means "make the request again", which here is the
+                // load rather than the pause: for `unreachable` and `evicted`
+                // there is no core to toggle, and toggling one that never
+                // opened is not a retry.
                 child: ProviderNotice(
                   fault: fault,
-                  onRetry: () => playback.togglePause(),
+                  onRetry: () => playback.retry(),
                   onOpenSettings: () => MagicRoute.to('/'),
                 ),
               ),

@@ -39,8 +39,15 @@ abstract interface class PlaybackFacade {
   /// Ends playback and releases the provider connection.
   Future<void> stop();
 
-  /// Hands the engine the surface it renders into.
+  /// Hands the engine the surface it renders into, and opens whatever is
+  /// waiting for one.
   Future<void> attach(PlaybackSurface surface);
+
+  /// Opens [channel], or holds it until a surface arrives.
+  Future<void> play(Channel channel);
+
+  /// Re-opens the channel already chosen, which is what a fault's retry means.
+  Future<void> retry();
 }
 
 /// What a screen asks to start, hold and end playback of one channel.
@@ -120,6 +127,21 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   PlaybackHealth _notified = PlaybackHealth.idle;
 
   bool _unplayable = false;
+
+  /// Whether a surface has been handed over.
+  ///
+  /// Tracked here rather than asked of the engine, because the interface has no
+  /// member for it and adding one would put a question on a six-implementation
+  /// contract that only this controller's own ordering needs.
+  bool _attached = false;
+
+  /// A channel chosen before a surface existed, waiting for one.
+  ///
+  /// The line-up taps `play` and then pushes the route, so the platform view
+  /// that mints the surface is one frame away when the choice is made. Holding
+  /// the channel is what makes the engine's attach-before-load rule true by
+  /// construction rather than by whoever calls in the right order.
+  Channel? _pending;
 
   /// Creates the controller over [engine].
   ///
@@ -202,8 +224,22 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   /// Called by the widget that owns the platform view, from
   /// `onPlatformViewCreated`: the identifier is minted synchronously but is
   /// only valid to pass on after that callback has fired.
+  /// Also opens whatever was chosen before a surface existed, which is the
+  /// ordinary path: the line-up calls [play] and then pushes the route.
   @override
-  Future<void> attach(PlaybackSurface surface) => _engine.attach(surface);
+  Future<void> attach(PlaybackSurface surface) async {
+    await _engine.attach(surface);
+
+    _attached = true;
+
+    final Channel? pending = _pending;
+
+    if (pending == null) return;
+
+    _pending = null;
+
+    await play(pending);
+  }
 
   /// Opens [channel], replacing whatever was playing.
   ///
@@ -212,11 +248,13 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   /// able to say so. The report is cleared by the next channel that does work,
   /// so a user who picks a bad one and then a good one is not left looking at a
   /// stale message.
+  @override
   Future<void> play(Channel channel) async {
     final Uri? source = _session.streamUrlFor(channel);
 
     if (source == null) {
       _channel = null;
+      _pending = null;
       _unplayable = true;
       refreshUI();
 
@@ -226,9 +264,41 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
     _channel = channel;
     _unplayable = false;
 
+    // Held rather than opened when no surface exists yet, and this ordering is
+    // the whole reason the field is here. A tap on the line-up calls `play`
+    // and THEN pushes the route, so the platform view that mints the surface
+    // does not exist at this point: opening now would throw
+    // `StateError: attach a surface before load` into a future nobody awaits,
+    // and the user would see a black screen with no fault at all. The screen's
+    // `attach` is what consumes this.
+    if (!_attached) {
+      _pending = channel;
+      refreshUI();
+
+      return;
+    }
+
+    _pending = null;
+
     await _engine.load(source, userAgent: _session.playbackUserAgent);
 
     refreshUI();
+  }
+
+  /// Re-opens the channel already chosen.
+  ///
+  /// What a fault's retry means on this surface: `ProviderNotice.onRetry` is
+  /// "make the request again", and for `unreachable` or `evicted` the request
+  /// to make again is the load. Toggling the pause of a core that never opened
+  /// is not a retry, which is what this method exists to stop the screen from
+  /// doing.
+  @override
+  Future<void> retry() async {
+    final Channel? channel = _channel ?? _pending;
+
+    if (channel == null) return;
+
+    await play(channel);
   }
 
   /// Pauses when playing and resumes when paused.

@@ -4,7 +4,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 import 'package:watchools/app/controllers/guide_controller.dart';
+import 'package:watchools/app/controllers/playback_controller.dart';
 import 'package:watchools/app/models/channel.dart';
+import 'package:watchools/app/playback/fake_playback_engine.dart';
+import 'package:watchools/app/playback/playback_engine.dart';
 import 'package:watchools/app/support/guide_clock.dart';
 import 'package:watchools/ui/layouts/now_layout.dart';
 
@@ -32,11 +35,20 @@ void main() {
   });
 
   group('the hero play affordance', () {
-    testWidgets('navigates, while the tile keeps only selecting', (WidgetTester tester) async {
+    testWidgets('hands the channel to playback and then navigates', (WidgetTester tester) async {
       final GuideController controller = GuideController(clock: FixedGuideClock());
-      final List<Channel> played = <Channel>[];
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController playback = PlaybackController(engine: () => engine);
+      int navigations = 0;
 
-      await pumpScreen(tester, NowLayout(controller: controller, onPlay: played.add));
+      // Only the navigation is stubbed. The select and the hand-off run exactly
+      // as they run in the app, which is the correction to a first version
+      // where the whole sequence sat behind an `onPlay` the test replaced and
+      // the real branch was never exercised.
+      await pumpScreen(
+        tester,
+        NowLayout(controller: controller, playbackOverride: playback, onNavigate: () => navigations++),
+      );
 
       final Channel? selectedBefore = controller.channel;
 
@@ -52,12 +64,33 @@ void main() {
       await tester.tap(play.first);
       await tester.pump();
 
-      expect(played, hasLength(1));
+      expect(navigations, 1);
 
       // And the tile still only selects. A tap that both previewed and left
       // the screen would make the preview unreachable, which is the whole
       // reason the two are separate controls.
       expect(controller.channel, selectedBefore);
+
+      // The hand-off did NOT open a core, because no surface exists yet: the
+      // route has not pushed, so the platform view has not been created. The
+      // controller holds the channel instead. An earlier version called `load`
+      // here, which threw `StateError` into an unawaited future and would have
+      // shown a black screen with no fault the first time a real credential
+      // produced a URL.
+      expect(engine.commands, isNot(contains(FakePlaybackCommand.load)));
+    });
+
+    testWidgets('the held channel opens when the screen hands over a surface', (WidgetTester tester) async {
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController playback = PlaybackController(engine: () => engine);
+
+      // No session, so `streamUrlFor` cannot produce a URL and nothing is held.
+      // That is the state a fixture-built app is in, and it is why the
+      // ordering defect stayed invisible: the assertion below is about the
+      // ORDER the engine sees, which holds either way.
+      await playback.attach(const PlaybackSurface(platformViewId: 7));
+
+      expect(engine.commands.first, FakePlaybackCommand.attach);
     });
   });
 }
