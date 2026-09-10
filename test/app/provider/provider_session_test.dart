@@ -341,6 +341,75 @@ void main() {
     });
   });
 
+  group('the development credential', () {
+    // The way in on macOS, where `Vault` is the Keychain and a sandboxed build
+    // cannot write to it at all: every `Vault.put` fails with OSStatus -34018
+    // ("A required entitlement isn't present"), measured through the running
+    // app with and without the sandbox. Without a fallback there is no
+    // credential, so `hasCredentials` is false forever, all four screens show
+    // the fixture, and nothing is playable because a fixture channel carries
+    // no `streamId`.
+    final XtreamCredentials development = XtreamCredentials(
+      baseUrl: 'http://127.0.0.1:3300',
+      username: 'demo',
+      password: 'demo',
+      userAgent: 'Watchools/1.0',
+    );
+
+    test('is used when the vault is empty', () async {
+      Vault.fake();
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => development);
+      await session.start();
+
+      expect(session.hasCredentials, isTrue);
+      expect(session.playbackUserAgent, 'Watchools/1.0');
+    });
+
+    test('loses to a stored credential, so it can never replace a real one', () async {
+      // The ordering is the security half. A define left in a shell profile
+      // must not silently take over from the credential a user configured, so
+      // the vault is read first and the fallback only fires on a null.
+      await seedCredentials();
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => development);
+      await session.start();
+
+      expect(session.hasCredentials, isTrue);
+      // `seedCredentials` writes the suite's own record, whose user agent
+      // differs from the development one. Asserting the agent rather than the
+      // password, because nothing here may read a password back.
+      expect(session.playbackUserAgent, isNot('Watchools/1.0'));
+    });
+
+    test('an unreadable stored payload is still a fault, not a fallback', () async {
+      // `expired` is the honest reading of a payload this build cannot parse,
+      // and it must stay that way: falling back to a development credential
+      // here would hide a real user's broken vault entry behind a working
+      // local panel, on the one path whose button goes to provider settings.
+      Vault.fake();
+      await Vault.put(XtreamCredentials.vaultKey, '{"base_url": 42}');
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => development);
+      await session.start();
+
+      expect(session.fault, ProviderFault.expired);
+      expect(session.hasCredentials, isFalse);
+    });
+
+    test('defaults to the compile-time defines, which a test process does not have', () async {
+      // The app's own wiring, with no seam passed. A `flutter test` run carries
+      // no `--dart-define`, so this is also the assertion that a build given
+      // none has no credential.
+      Vault.fake();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      expect(session.hasCredentials, isFalse);
+    });
+  });
+
   group('refresh(), gated on playback', () {
     // `start()` is local only, so `refresh()` has to be invoked explicitly
     // here or the assertion below could not fail: nothing would have tried
