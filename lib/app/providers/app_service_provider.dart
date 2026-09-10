@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:magic/magic.dart';
+import 'package:watchools_player/watchools_player.dart';
 
 import '../controllers/guide_controller.dart';
 import '../controllers/library_controller.dart';
+import '../controllers/playback_controller.dart';
+import '../playback/mpv_playback_engine.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../provider/provider_session.dart';
 
@@ -35,7 +38,44 @@ class AppServiceProvider extends ServiceProvider {
     // built lazily on first read: nothing else in the app loads the stored
     // credential or the cached catalogue, so this is the one place that has
     // to.
-    Magic.put(ProviderSession());
+    //
+    // The connection gate, closed here and nowhere else. This is the whole
+    // reason the predicate is injectable: the protocol layer must not depend on
+    // the playback layer, and the playback layer must not ask the protocol
+    // layer for permission, because a recovery load competing with a refresh
+    // for the single connection slot is the deadlock the gate exists to
+    // prevent. Only the composition root is allowed to know both.
+    //
+    // A closure, so the read happens at `refresh()` time rather than now. That
+    // is what makes the binding order below irrelevant: `PlaybackController` is
+    // bound after this line and does not exist yet.
+    //
+    // `!= idle` rather than `== playing`, and the difference is the whole point
+    // of the gate. A paused, starving, stalled or not-presenting core is still
+    // an open core holding the one connection the measured account allows; only
+    // `idle` means the slot is free. Reading `== playing` would let a refresh
+    // evict a viewer who had merely paused.
+    Magic.put(ProviderSession(isPlaying: () => Magic.find<PlaybackController>().health != PlaybackHealth.idle));
+
+    // Bound after the session, because the controller reads it for a stream
+    // URL and for the fault. Order is not load-bearing (the controller resolves
+    // the session lazily through a getter), but reading in dependency order is
+    // what makes the next reader believe the right thing.
+    //
+    // This is the only place that knows HOW to build the engine, which is the
+    // composition root doing its job: the controller takes a factory so it can
+    // be bound here without touching a platform, and a test passes one that
+    // returns the fake. The redactor is the one provider concept an engine may
+    // hold, and passing the session's method rather than the credential is what
+    // keeps `lib/app/playback/` free of Xtream entirely.
+    //
+    // A factory rather than an instance because `MpvPlaybackEngine`'s
+    // constructor subscribes to the plugin's `EventChannel`. Building one here
+    // threw `Binding has not yet been initialized` in every test that boots the
+    // providers, the provider driver's own security test included.
+    final ProviderSession session = Magic.find<ProviderSession>();
+
+    Magic.put(PlaybackController(engine: () => MpvPlaybackEngine(redact: session.redactProviderSecrets)));
 
     // Provider traffic gets its own driver, and this is a security boundary
     // rather than tidiness. The shared `network` driver carries magic's

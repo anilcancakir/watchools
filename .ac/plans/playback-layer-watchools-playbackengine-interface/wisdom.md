@@ -132,3 +132,49 @@
    `timePos: 10` became `10.0` with a note that nine fields are required. Kept rather than reverted,
    because the original example was a sketch containing `...` and the new one is more accurate, but
    it is recorded here because the attribution check is what found it and nothing else would have.
+
+## Wave 4
+
+1. **A step's `Description` can require a method the plan never gave anyone permission to write.**
+   Step 8 was told to derive the URL "from `ProviderSession`'s credentials and account", and that
+   class holds both as private fields with no accessor, while `provider_session.dart` was in no
+   step's Files list. The worker found it, reported `[CONTRADICTION]` and wrote nothing, which is
+   exactly right: the next attempt hits the same wall, so re-spawning cannot fix a gap that is in
+   the plan. The resolution was a user decision between two shapes, and the one chosen keeps the
+   credential inside the session: `streamUrlFor(Channel)` hands out a finished `Uri`, so the
+   playback layer imports no Xtream at all and the secret's blast radius does not widen.
+
+2. **[REMEDIATION] I wrote a redactor that redacted nothing.** Wiring the engine at the composition
+   root, I produced an expression whose two branches were both identity functions. It analyzed
+   clean, it would have passed every test, and it would have shipped the exact hole this plan exists
+   to close: mpv's log lines reaching a diagnostic with the subscription password intact. The fix is
+   `ProviderSession.redactProviderSecrets`, so the session hands out the redaction **behaviour**
+   while the credential stays private, and the engine takes it as a function it cannot see behind.
+   A security control that is wired rather than tested is a control that is assumed.
+
+3. **[REMEDIATION] I wrote `// ignore: prefer_initializing_formals`.** `CLAUDE.md` forbids linter
+   suppression outright, and I had spent the whole run holding workers to it. Reverted and fixed
+   properly with `required this._engine`. The rule is not harder to follow than the suppression; it
+   is just less immediate.
+
+4. **Constructing a platform-touching object in `register()` breaks every test that boots the
+   providers.** `MpvPlaybackEngine`'s constructor subscribes to the plugin's `EventChannel`, which
+   reaches `ServicesBinding.instance`, so an eager build threw `Binding has not yet been
+   initialized` in `xtream_client_test.dart`, which is the provider driver's own **security** test
+   and has no widget binding by design. The controller now takes a `PlaybackEngine Function()` and
+   resolves it on first use, which also moved the tick subscription out of the constructor. Two
+   getters (`health`, and the stop inside `onClose`) read the **resolved** engine rather than
+   forcing a build, because a getter that subscribes to a platform channel is the side effect the
+   step's own Must NOT forbids.
+
+5. **A cached health verdict is wrong for a microtask.** The engine settles its verdict when it
+   accepts a tick, but `ticks` is a broadcast stream and the listener runs a microtask later, so a
+   controller that cached the value reported the previous verdict to anything reading in between.
+   `health` reads through to the engine and the remembered value exists only to decide whether to
+   repaint. The same asymmetry is why the notification test has to drain the queue: without it the
+   count measures scheduling rather than the controller.
+
+6. **The connection gate reads `!= idle`, not `== playing`.** A paused, starving, stalled or
+   not-presenting core is still an open core holding the one connection the measured account allows.
+   `== playing` would let a catalogue refresh evict a viewer who had merely paused, which is the
+   precise failure the injectable predicate was built to prevent.

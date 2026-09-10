@@ -417,7 +417,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 4
 
-- [ ] **Step 8**: A controller that owns the engine and the channel being watched
+- [x] **Step 8**: A controller that owns the engine and the channel being watched
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-none: it is the object that turns a channel into a URL, a URL into a load, and a tick stream into something a screen rebuilds on, and every wrong answer it gives is a plausible one. **Rule 5 deliberately does not fire here even though a password-bearing `Uri` passes through**, and the distinction is worth stating so a later reader does not read it as an oversight: steps 1, 2 and 6 each *decide* something about that secret (how the URL is built, what the redactor removes, which native strings reach Dart), while this step only carries an opaque `Uri` from one call to the next. Its Must NOT keeps it that way.
@@ -444,7 +444,7 @@ the segment after `player-reconnect/`.
         - Perform I/O from a getter
         - Throw on a channel that cannot be played
 
-- [ ] **Step 9**: Wire the connection-cap predicate at the composition root
+- [x] **Step 9**: Wire the connection-cap predicate at the composition root
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-2-context: two lines, but they are the two lines that stop a catalogue refresh from killing the stream the user is watching, and the direction the dependency points matters more than the code.
@@ -459,7 +459,7 @@ the segment after `player-reconnect/`.
     - **Done when**:
         - `flutter test test/app/provider/provider_session_test.dart` passes with its existing assertions unchanged
         - a test asserts a session whose predicate reports playing sends **no** request on `refresh()`, provable by `assertSentCount(0)`, which is the existing gate now reached through the real wiring
-        - `! grep -q 'playback' lib/app/provider/provider_session.dart`, proving the protocol layer still knows nothing about playback
+        - `! grep -qE "^import .*/playback/" lib/app/provider/provider_session.dart`, matched on an **import shape** rather than on the bare word, which is what the criterion actually means: the protocol layer must not depend on the playback layer. The bare-word form was tried and it fails on a doc block that states the independence in prose, which is the same collision this plan corrected four times elsewhere. An import is also the only thing that would create the dependency
     - **QA**: `flutter test test/app/provider/`. Assert: with the predicate true, `refresh()` sends nothing; with it false, the refresh proceeds; the predicate is read at call time rather than captured at construction, provable by flipping it between two calls.
     - **Must NOT**:
         - Import anything from `lib/app/playback/` into `lib/app/provider/`

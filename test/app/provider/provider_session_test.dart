@@ -258,6 +258,72 @@ void main() {
     });
   });
 
+  group('streamUrlFor, which is how a URL leaves without the credential doing so', () {
+    test('derives the live URL from the credential and the account it already holds', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 10002, number: 2, name: '02 H.264 AAC | RAW TS', categoryId: '1'),
+      ];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+
+      final Channel channel = session.channels.firstWhere((Channel each) => each.streamId != null);
+
+      // Asked of the builder rather than typed out, because a hand-written
+      // expectation agrees with itself instead of with the thing under test.
+      // Wave 1 leaked a password through exactly that gap.
+      expect(session.streamUrlFor(channel), isNotNull);
+      expect(session.streamUrlFor(channel)?.pathSegments.first, 'live');
+      expect(session.streamUrlFor(channel)?.pathSegments, contains('demo'));
+    });
+
+    test('is null before a handshake, because no account has said what it permits', () async {
+      await seedCredentials();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      const Channel channel = Channel(
+        number: 2,
+        name: '02 H.264 AAC | RAW TS',
+        group: 'RAW TS',
+        status: ChannelStatus.live,
+        streamId: 10002,
+      );
+
+      expect(session.hasCredentials, isTrue);
+      expect(session.streamUrlFor(channel), isNull);
+    });
+
+    test('is null for a channel with no provider identity, rather than throwing', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+
+      const Channel fixtureBuilt = Channel(number: 2, name: 'TRT 1', group: 'Ulusal', status: ChannelStatus.live);
+
+      expect(session.streamUrlFor(fixtureBuilt), isNull);
+    });
+
+    test('is null with no credential at all, which is the fixture path', () {
+      Vault.fake();
+
+      expect(
+        ProviderSession().streamUrlFor(
+          const Channel(number: 1, name: 'x', group: 'y', status: ChannelStatus.live, streamId: 1),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('refresh(), gated on playback', () {
     // `start()` is local only, so `refresh()` has to be invoked explicitly
     // here or the assertion below could not fail: nothing would have tried

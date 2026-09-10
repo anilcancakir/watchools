@@ -8,6 +8,7 @@ import '../protocol/xtream/xtream_account.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../protocol/xtream/xtream_credentials.dart';
 import '../protocol/xtream/xtream_json.dart';
+import '../protocol/xtream/xtream_stream_url.dart';
 import '../support/guide_clock.dart';
 import 'catalogue_store.dart';
 
@@ -102,11 +103,19 @@ class ProviderSession extends ChangeNotifier {
   /// Where the cached and the replaced catalogue live.
   final CatalogueStore _store;
 
-  /// Whether a caller may not invoke [refresh] right now. Modelled as an
-  /// injectable predicate rather than a real player check, because there is
-  /// no `PlaybackEngine` in this repository yet (`CLAUDE.md`): defaulting to
-  /// "not playing" keeps the rule expressed and testable now, ready to be
-  /// wired to the real thing once that interface exists.
+  /// Whether a caller may not invoke [refresh] right now.
+  ///
+  /// An injectable predicate rather than a direct read of the engine, and it
+  /// stays one now that `PlaybackEngine` exists: this layer must not depend on
+  /// the playback layer, and the playback layer must not ask this one for
+  /// permission, because a recovery load competing with a refresh for the
+  /// single connection slot is the deadlock the predicate exists to prevent.
+  /// The composition root is what closes the loop, so neither side imports the
+  /// other. Defaults to "not playing", which is what the fixture path wants.
+  ///
+  /// The measured account's `max_connections` is **1**, and a second concurrent
+  /// stream killed the first at 5.79 s, so this is the difference between a
+  /// refresh being safe and a refresh evicting the viewer.
   final bool Function() _isPlaying;
 
   XtreamCredentials? _credentials;
@@ -148,6 +157,65 @@ class ProviderSession extends ChangeNotifier {
 
   /// The VOD catalogue, in provider order.
   List<TitleItem> get titles => _titles;
+
+  /// [text] with every spelling of this provider's secrets replaced.
+  ///
+  /// The session's answer to "who can clean a log line", and the reason the
+  /// playback engine needs no credential of its own: it takes this method as a
+  /// function and cannot tell what is behind it. mpv forwards FFmpeg's log
+  /// verbatim, a stream URL carries the password in its path, and that channel
+  /// is the only signal a subscription token is lapsing, so it has to be
+  /// cleaned rather than switched off.
+  ///
+  /// Returns [text] unchanged when no credential is loaded. That is not a
+  /// swallowed failure: with no credential there is no secret in the text to
+  /// find, and the fixture path never builds a URL at all.
+  String redactProviderSecrets(String text) => _credentials?.redact(text) ?? text;
+
+  /// The `User-Agent` this provider is addressed with, or null before a
+  /// credential is loaded.
+  ///
+  /// Public where the credential is not, because it is not a secret and the
+  /// playback engine has to send it: resellers key access control to the header,
+  /// and `CLAUDE.md` records that ExoPlayer's lookup is case sensitive, so
+  /// whatever builds the request must spell the name exactly `User-Agent`.
+  String? get playbackUserAgent => _credentials?.userAgent;
+
+  /// The playable URL for [channel], or null when this session cannot produce
+  /// one.
+  ///
+  /// Derived here rather than by handing the credential out, and that is a
+  /// security decision rather than a convenience. The URL carries the
+  /// subscription password in its **path**, so every caller that can read
+  /// `XtreamCredentials` is another place the secret can reach a log, and the
+  /// point of this shape is that the playback layer receives a `Uri` and never
+  /// sees the fields it was built from. `XtreamCredentials.describe` remains
+  /// the only sanctioned way to name one of these in a diagnostic.
+  ///
+  /// Null in four cases, which callers must treat alike because none of them is
+  /// a fault: no credential is loaded, no handshake has answered yet, the
+  /// channel carries no `streamId` (a fixture-built channel has none by
+  /// design), or no container satisfies both the account and [channelFormats].
+  /// The last of those is `XtreamStreamUrl.live`'s own answer and the reason it
+  /// returns null rather than guessing an extension.
+  ///
+  /// [channelFormats] is what THIS channel serves, from its live entry.
+  /// `Channel` carries no format field, so the empty default is the ordinary
+  /// case (any channel read back from the store) and means "unknown": the
+  /// account's list then decides alone.
+  Uri? streamUrlFor(Channel channel, {List<String> channelFormats = const <String>[]}) {
+    final XtreamCredentials? credentials = _credentials;
+    final XtreamAccount? account = _account;
+
+    if (credentials == null || account == null) return null;
+
+    return XtreamStreamUrl.live(
+      credentials: credentials,
+      account: account,
+      channel: channel,
+      channelFormats: channelFormats,
+    );
+  }
 
   /// Loads the stored credential and the cached catalogue. **Local only: this
   /// does not touch the network.** Call once, from
