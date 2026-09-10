@@ -328,7 +328,18 @@ class ProviderSession extends ChangeNotifier {
   /// **Does not call [refresh] and does not call [start].** The connection
   /// gate exists so a network round trip only ever happens on the caller's
   /// decision, and `start()` also runs [CatalogueStore.migrate], which is
-  /// schema work this method has no reason to repeat.
+  /// schema work this method has no reason to repeat. The caller that decides
+  /// is [ProviderSetupController.submit], and it has to: a first credential's
+  /// account key has never existed, so step 4 restores an empty catalogue and
+  /// the screen the user lands on would say there are no results to a user who
+  /// has just signed in and searched for nothing.
+  ///
+  /// [_inFlight] is dropped rather than awaited, which is what makes that
+  /// caller's refresh reach the network at all. A refresh already running
+  /// belongs to the previous credential and stops writing the moment it sees
+  /// this one, so handing its future back to the next `refresh()` caller, as
+  /// the re-entry guard otherwise would, would report a pass that fetched
+  /// nothing for this account.
   Future<void> adopt(XtreamCredentials credentials) async {
     await credentials.save();
 
@@ -336,6 +347,7 @@ class ProviderSession extends ChangeNotifier {
     _client = XtreamClient(credentials);
     _account = null;
     _fault = null;
+    _inFlight = null;
 
     final String account = CatalogueStore.accountKey(credentials);
     _channels = _store.channelsFor(account);
@@ -376,6 +388,12 @@ class ProviderSession extends ChangeNotifier {
     _client = null;
     _account = null;
     _fault = null;
+
+    // Dropped for the reason [adopt] drops it, and it matters here even
+    // though nothing signed out will refresh: the future left standing would
+    // be handed to the next `refresh()` after the NEXT credential is adopted,
+    // and it belongs to the account this call is leaving.
+    _inFlight = null;
 
     _clock?.dispose();
     _clock = null;
@@ -456,8 +474,22 @@ class ProviderSession extends ChangeNotifier {
   /// by double-tapping the fault panel's retry, which cannot repaint into a
   /// disabled state because the controller's `reload()` only notifies after
   /// this returns.
+  ///
+  /// The completion handler clears [_inFlight] only if it is still this pass's
+  /// own future. [adopt] and [signOut] drop it while a pass may still be
+  /// running, so a plain `_inFlight = null` here would let a finishing old
+  /// pass clear the new one's guard and admit a third overlapping refresh.
   Future<void> refresh() {
-    return _inFlight ??= _refresh().whenComplete(() => _inFlight = null);
+    final Future<void>? running = _inFlight;
+    if (running != null) return running;
+
+    late final Future<void> started;
+    started = _refresh().whenComplete(() {
+      if (identical(_inFlight, started)) _inFlight = null;
+    });
+    _inFlight = started;
+
+    return started;
   }
 
   Future<void> _refresh() async {
@@ -468,6 +500,17 @@ class ProviderSession extends ChangeNotifier {
     if (credentials == null || client == null) return;
 
     final XtreamResponse<Map<String, dynamic>> handshake = await client.handshake();
+
+    // Nothing below this line is true of the session any more if the
+    // credential moved while the handshake was out, and everything below it
+    // writes to the session: the fault, the account, the clock. A sign-out in
+    // that window would otherwise leave a fault and an account standing on a
+    // session with no credential, which `GuideController` and
+    // `LibraryController` both read, and `_anchorClock` would build a fresh
+    // `TickingGuideClock` on the session that has just disposed and nulled
+    // one, leaving a one-minute timer nothing will ever dispose.
+    if (!identical(_credentials, credentials)) return;
+
     final XtreamAccount? parsed = handshake.data == null ? null : XtreamAccount.fromHandshake(handshake.data!);
 
     _fault = classifyProviderFault(account: parsed ?? _account, statusCode: handshake.statusCode, body: handshake.body);
@@ -480,6 +523,15 @@ class ProviderSession extends ChangeNotifier {
     }
 
     _anchorClock();
+
+    // Read here, where `_anchorClock()` has just assigned them and no await
+    // stands between, then passed down rather than read again. Both fields are
+    // nulled by `signOut`, and every read of one through `!` below an await is
+    // a crash into the future `boot()` fires unawaited; taking them once at
+    // the only point they are certainly present is what removes the window
+    // rather than narrowing it.
+    final GuideClock clock = _clock!;
+    final DateTime referenceMidnight = _midnight!;
 
     final String account = CatalogueStore.accountKey(credentials);
 
@@ -496,15 +548,25 @@ class ProviderSession extends ChangeNotifier {
     // `replace*` that runs a `DB.transaction`, and abandoning mid-transaction
     // would leave the catalogue half written. The EPG loop has its own check
     // for the same reason, placed between round trips.
-    await _refreshChannels(client: client, account: account);
+    await _refreshChannels(
+      client: client,
+      account: account,
+      credentials: credentials,
+      clock: clock,
+      referenceMidnight: referenceMidnight,
+    );
 
-    if (_isPlaying()) {
+    // The credential is re-checked here beside the playback gate, and for the
+    // adjacent reason: the VOD half is four more requests, the largest half by
+    // request count, and after a sign-out or a new credential every one of
+    // them is spent on an account nobody is looking at.
+    if (_isPlaying() || !identical(_credentials, credentials)) {
       notifyListeners();
 
       return;
     }
 
-    await _refreshTitles(client: client, account: account);
+    await _refreshTitles(client: client, account: account, credentials: credentials);
 
     notifyListeners();
   }
@@ -578,7 +640,24 @@ class ProviderSession extends ChangeNotifier {
   /// The built list is held directly rather than read back from
   /// [CatalogueStore.channelsFor]: that method restores an empty schedule by
   /// design, which would erase the merge this method just did.
-  Future<void> _refreshChannels({required XtreamClient client, required String account}) async {
+  ///
+  /// [clock] and [referenceMidnight] arrive as arguments rather than being
+  /// read off the fields, and [credentials] arrives so the write-back can name
+  /// which credential this pass was for. Every one of the three would
+  /// otherwise be read across one of the two awaits below, and
+  /// `client.liveStreams()` is the longest response in a refresh: 2,976 rows
+  /// on a real subscription. A sign-out inside it nulls the clock and the
+  /// midnight, and a `!` read at that point crashes into the future `boot()`
+  /// fires unawaited. Two earlier attempts narrowed that window rather than
+  /// closing it, first by extending the EPG loop's own break, then by
+  /// capturing before the loop but still after these awaits.
+  Future<void> _refreshChannels({
+    required XtreamClient client,
+    required String account,
+    required XtreamCredentials credentials,
+    required GuideClock clock,
+    required DateTime referenceMidnight,
+  }) async {
     final Map<int, bool> previousFavourites = <int, bool>{
       for (final Channel channel in _channels)
         if (channel.streamId != null) channel.streamId!: channel.favourite,
@@ -586,20 +665,10 @@ class ProviderSession extends ChangeNotifier {
 
     final Map<String, String> categoryNames = await _categoryNames(client.liveCategories);
     final List<Map<String, dynamic>> rawChannels = (await client.liveStreams()).data ?? const <Map<String, dynamic>>[];
-    final GuideClock guideClock = _clock!;
-    // Captured beside the clock, and for the same reason it is: both are nulled
-    // by `signOut`, and the EPG loop below awaits a network round trip per
-    // channel, so reading either through `!` inside the loop crashes when a
-    // sign-out lands mid-iteration. The loop's own break cannot cover that,
-    // because the break guards the NEXT iteration and the sign-out arrives
-    // while the current one is awaiting. Measured: the test for this failed
-    // with `Null check operator used on a null value` at the schedule build
-    // until both were captured before the loop.
-    final DateTime referenceMidnight = _midnight!;
 
     final List<Channel> built = <Channel>[
       for (final Map<String, dynamic> entry in rawChannels)
-        Channel.fromXtream(entry, categoryName: categoryNames[_categoryId(entry)] ?? '', clock: guideClock),
+        Channel.fromXtream(entry, categoryName: categoryNames[_categoryId(entry)] ?? '', clock: clock),
     ];
 
     // Filter to candidates BEFORE applying the bound, which is the whole
@@ -623,14 +692,13 @@ class ProviderSession extends ChangeNotifier {
       // below writes whatever `built` holds at that point; a channel whose EPG
       // was not reached restores with an empty schedule, which is the ordinary
       // state of 91 percent of them anyway.
-      // The second clause is a sign-out landing mid-loop, and it is a crash
-      // rather than a stale write: `signOut` nulls `_midnight`, which the
-      // schedule build below reads with `!`, so without this the in-flight
-      // refresh throws `Null check operator used on a null value`. `boot()`
-      // fires this refresh unawaited and deliberately does not catch it
-      // (`app_service_provider.dart`), so that throw reaches the zone as an
-      // unhandled async error a few seconds into launch.
-      if (_isPlaying() || _credentials == null) break;
+      // The second clause is a sign-out or a new credential landing mid-loop.
+      // The schedule build below can no longer crash on it, since
+      // [referenceMidnight] is an argument, so this is now about work rather
+      // than safety: up to [epgFetchLimit] further round trips against an
+      // account nobody is looking at, on a subscription whose measured
+      // connection limit is 1.
+      if (_isPlaying() || !identical(_credentials, credentials)) break;
 
       final int streamId = built[index].streamId!;
 
@@ -646,7 +714,7 @@ class ProviderSession extends ChangeNotifier {
       built[index] = Channel.fromXtream(
         rawChannels[index],
         categoryName: built[index].group,
-        clock: guideClock,
+        clock: clock,
         schedule: schedule,
       );
     }
@@ -656,17 +724,29 @@ class ProviderSession extends ChangeNotifier {
         _applyChannelFavourite(channel, previousFavourites[channel.streamId] ?? false),
     ];
 
-    await _store.replaceChannels(account: account, channels: withFavourites);
+    // Abandoned entirely, store included, if the session's credential moved
+    // while the fetch was in flight. `boot()` fires `refresh()` unawaited at
+    // cold start, so a user who signs out or submits a different credential a
+    // few seconds in leaves a batch of requests still running against the
+    // account they just left.
+    //
+    // Identity rather than a null check, which is the case a null check misses
+    // and the sharper of the two: submitting a second credential on
+    // `/saglayici` within those seconds leaves `_credentials` non-null, so a
+    // null check passes and `/` then shows the PREVIOUS account's channels
+    // under the new one, none of them playable because `adopt` nulled
+    // `_account`.
+    //
+    // BEFORE the write, not after it, and that placement is what makes
+    // [adopt] safe to drop [_inFlight]: `replaceChannels` runs a
+    // `DB.transaction`, which issues a literal `BEGIN TRANSACTION` on the one
+    // shared connection, so an abandoned pass reaching it while the new pass
+    // is inside its own nests a `BEGIN`, sqlite3 rejects it, and the inner
+    // `rollback()` discards the new account's rows as well. The fetch's work
+    // is lost, which is the cheaper of the two costs by a wide margin.
+    if (!identical(_credentials, credentials)) return;
 
-    // Not held if this session has been signed out while the fetch was in
-    // flight. `boot()` fires `refresh()` unawaited at cold start, so a user who
-    // signs out a few seconds in leaves a batch of requests still running
-    // against the account they just left, and this assignment would put that
-    // account's line-up back into a session that no longer has its credential.
-    // The rows are written either way, deliberately: they are keyed by account
-    // and `signOut` leaves them alone on purpose, so the fetch's work is not
-    // wasted if the same credential is adopted again.
-    if (_credentials == null) return;
+    await _store.replaceChannels(account: account, channels: withFavourites);
 
     _channels = withFavourites;
   }
@@ -689,18 +769,23 @@ class ProviderSession extends ChangeNotifier {
   /// A panel answering `get_series` with `[]` is a real answer rather than a
   /// gap; one of the four captured panels does exactly that, so the series half
   /// contributing nothing is an expected shape and not an error.
-  Future<void> _refreshTitles({required XtreamClient client, required String account}) async {
+  Future<void> _refreshTitles({
+    required XtreamClient client,
+    required String account,
+    required XtreamCredentials credentials,
+  }) async {
     final List<TitleItem> built = <TitleItem>[
       ...await _titlesOf(kind: TitleKind.movie, categories: client.vodCategories, entries: client.vodStreams),
       ...await _titlesOf(kind: TitleKind.series, categories: client.seriesCategories, entries: client.series),
     ];
 
-    await _store.replaceTitles(account: account, titles: built);
+    // Same guard as the channel half, in the same position and for the same
+    // two reasons: the previous account's catalogue must not be written back
+    // over the new one, and `replaceTitles` is the other `DB.transaction` an
+    // abandoned pass could nest inside the new pass's.
+    if (!identical(_credentials, credentials)) return;
 
-    // Same guard as the channel half, for the same reason: a sign-out during an
-    // in-flight refresh must not have the previous account's catalogue written
-    // back over it.
-    if (_credentials == null) return;
+    await _store.replaceTitles(account: account, titles: built);
 
     _titles = _store.titlesFor(account);
   }

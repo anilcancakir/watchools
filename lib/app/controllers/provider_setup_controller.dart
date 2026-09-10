@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:magic/magic.dart';
 
 import '../models/provider_fault.dart';
@@ -117,6 +119,24 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
       'Panel bilgileri doğrulandı, ancak kimlik bilgisi cihazın güvenli '
       'deposuna yazılamadı.';
 
+  /// What the form says when the device would not release the credential.
+  ///
+  /// The other half of [_storeRefused], and it exists because [signOut] had
+  /// the same hole [submit] closed and did not close it: every `Vault`
+  /// operation wraps a `PlatformException` as a [MagicVaultException],
+  /// [XtreamCredentials.clear] is a `Vault.delete`, and `WAnchor.onTap` is a
+  /// `VoidCallback`, so the throw became an unhandled async error and the
+  /// user watched a sign-out do nothing. `ProviderSettingsLayout._run`
+  /// catches `PlatformException` alone, which is the wrong type by one
+  /// wrapper: the catch could never fire.
+  ///
+  /// Separate wording rather than reusing [_storeRefused], because the
+  /// credential is still on the device and still working, which is the
+  /// opposite of what that sentence says.
+  static const String _signOutRefused =
+      'Kimlik bilgisi cihazın güvenli deposundan silinemedi, bu yüzden '
+      'oturum açık kaldı.';
+
   /// Ends playback, without this file knowing what plays it.
   ///
   /// A closure rather than an engine or a controller, and the seam is the same
@@ -224,14 +244,26 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
     _fieldError = null;
     refreshUI();
 
-    try {
-      final XtreamCredentials credentials = XtreamCredentials(
-        baseUrl: baseUrl,
-        username: username,
-        password: password,
-        userAgent: userAgent,
-      );
+    // Constructed in its own try, so `on ArgumentError` names the one thing
+    // that can raise one. Wrapping the whole method in that arm reported
+    // anything below it, inside `adopt` or a store read, to the user as
+    // "Panel adresi geçersiz", with the credential possibly already saved.
+    final XtreamCredentials credentials;
 
+    try {
+      credentials = XtreamCredentials(baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+    } on ArgumentError {
+      // The rejected value is never interpolated: it is exactly the string
+      // that may carry `user:password@host`, which is the second shape
+      // `XtreamCredentials` rejects.
+      _fieldError = _panelUrlRejected;
+      _busy = false;
+      refreshUI();
+
+      return;
+    }
+
+    try {
       final XtreamResponse<Map<String, dynamic>> handshake = await XtreamClient(credentials).handshake();
       final XtreamAccount? account = handshake.data == null ? null : XtreamAccount.fromHandshake(handshake.data!);
 
@@ -239,16 +271,26 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
 
       if (_fault != null) return;
 
-      // `adopt` and not `refresh`: adoption is local, it restores the cached
-      // catalogue for the new account key, and the first network refresh is
-      // `boot()`'s job or the user's. A refresh fired from here would race the
-      // connection gate against whatever brought the user to this form.
       await _session.adopt(credentials);
-    } on ArgumentError {
-      // Only step 1 can raise one: a transport failure arrives as
-      // `statusCode: 0` rather than as a throw (`xtream_client.dart:13-16`),
-      // which is why the classifier has a member for it.
-      _fieldError = _panelUrlRejected;
+
+      // The refresh is this method's job and nobody else's, which the plan
+      // got wrong and the running app proved. `adopt` is local: it restores
+      // the cached catalogue for the new account key, and a first credential's
+      // key has never existed, so the catalogue is empty. `boot()`'s refresh
+      // already ran and returned at the door because there was no credential
+      // then. `GuideController.reload` is the only other caller and it is
+      // reachable only from a fault panel that `adopt` has just cleared.
+      //
+      // So without this line a user who types a working credential lands on
+      // `/` reading "Sonuç yok. Arama terimini değiştirin", having searched
+      // for nothing, with no control anywhere that fetches a catalogue and no
+      // recovery short of relaunching the app.
+      //
+      // Unawaited, like `AppServiceProvider.boot()`'s: the form navigates on
+      // immediately and `GuideController` is already listening, so the
+      // catalogue repaints where the user is looking rather than holding the
+      // button until every request lands.
+      unawaited(_session.refresh());
     } on MagicVaultException {
       // The `Vault.put` inside `adopt` (`provider_session.dart:333`). Handled
       // rather than swallowed: see [_storeRefused]. Nothing was adopted, so
@@ -269,11 +311,33 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   /// log line for or stop through anything but the engine itself.
   ///
   /// The verdicts are cleared with it, because both are statements about a
-  /// credential that no longer exists.
+  /// credential that no longer exists. On a keychain that will not release it
+  /// they are replaced rather than cleared, because it does still exist: see
+  /// [_signOutRefused].
+  ///
+  /// Playback is stopped before that can be known, and stays stopped. It
+  /// holds a connection slot on an account the user has asked to leave, and
+  /// the retry is one tap away; keeping a stream running to preserve the
+  /// symmetry of a failed sign-out would be the wrong trade.
   @override
   Future<void> signOut() async {
+    // Refused while a submit is in flight, and the screen disables the control
+    // for the same reason: a sign-out landing during a handshake clears the
+    // credential and the session, and then `submit` resumes at its adopt and
+    // puts the credential straight back. The sign-out silently undoes itself.
+    if (_busy) return;
+
     await _endPlayback();
-    await _session.signOut();
+
+    try {
+      await _session.signOut();
+    } on MagicVaultException {
+      _fault = null;
+      _fieldError = _signOutRefused;
+      refreshUI();
+
+      return;
+    }
 
     _fault = null;
     _fieldError = null;

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic/testing.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:watchools/app/kernel.dart';
 import 'package:watchools/app/middleware/ensure_provider.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/provider/provider_session.dart';
@@ -62,5 +63,19 @@ void main() {
     Magic.put(session);
 
     expect(EnsureProvider().redirectTarget('/'), isNull);
+  });
+
+  test("the 'provider' alias resolves, because a typo in it disables the guard silently", () {
+    // The two halves of this wiring are joined by a bare string:
+    // `kernel.dart:46` registers `'provider'` and `routes/app.dart` asks four
+    // routes for it. `Kernel.resolve` returns null for a name that is not
+    // registered and `resolveAll` drops it with `whereType`
+    // (`magic/lib/src/http/kernel.dart:100-120`), with no error and no log, so
+    // `middleware(['providerr'])` would leave every guarded route open and
+    // nothing anywhere would say so. Filed as a magic defect; this is the
+    // local opt-out.
+    registerKernel();
+
+    expect(Kernel.resolve('provider'), isA<EnsureProvider>());
   });
 }

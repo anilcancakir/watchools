@@ -81,6 +81,16 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
 
   static const String _labelClassName = 'text-sm font-medium text-fg mb-1';
 
+  /// What the form says when the panel rejected the credential just typed.
+  ///
+  /// Rendered instead of `expired`'s [ProviderNotice] on this one screen; see
+  /// the call site for why. Names both fields, because a wrong user name and a
+  /// wrong password are indistinguishable on the wire: an Xtream panel answers
+  /// HTTP 200 with `{"auth": 0}` either way.
+  static const String _credentialRejected =
+      'Panel bu kullanıcı adı ve şifreyi kabul etmedi. İkisini de kontrol edip '
+      'tekrar kaydedin.';
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final FocusNode _userAgentFocusNode;
@@ -112,7 +122,14 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     return WDiv(
       className: 'w-full h-full bg-surface ${PageGutter.x} ${PageGutter.top} flex flex-col items-start gap-6',
       children: <Widget>[
-        _backButton(),
+        // Hidden with no credential, because with no credential there is
+        // nowhere to go back TO and the control would be dead. This screen is
+        // now reached two ways: `MagicRoute.to` from a layout, which leaves a
+        // history entry, and `EnsureProvider`'s boot redirect, which does not.
+        // `MagicRouter.back()` falls through all three of its branches when
+        // `canPop()` is false (`magic_router.dart:578-603`) and does nothing
+        // at all, silently.
+        if (widget.provider.hasCredential) _backButton(),
         const WText('Sağlayıcı ayarları', className: 'text-2xl font-bold text-fg'),
         WDiv(
           className: 'w-full flex-1 min-w-0',
@@ -128,6 +145,7 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                     validator: _validateBaseUrl,
                     onSaved: (String? value) => _baseUrl = value?.trim() ?? '',
                   ),
+                  _plaintextWarning(),
                   _visibleField(
                     label: 'Kullanıcı adı',
                     type: InputType.text,
@@ -143,7 +161,18 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                   _disclosure(),
                   if (_advancedOpen) _userAgentField(),
                   if (fieldError != null) _fieldErrorBanner(fieldError),
-                  if (fault != null) _faultPanel(fault),
+                  // `expired` is the only fault whose `ProviderNotice` action
+                  // is `onOpenSettings` rather than `onRetry`
+                  // (`provider_notice.dart:125`), and on THIS screen the
+                  // settings are the thing the user is already looking at. Its
+                  // panel would offer a button reading "Bilgileri güncelle"
+                  // over copy saying that retrying will not help, wired to a
+                  // resubmit of the same rejected credential. It is also the
+                  // most likely fault here, because it is what a mistyped
+                  // password returns, so it gets the sentence that names the
+                  // two fields instead.
+                  if (fault == ProviderFault.expired) _fieldErrorBanner(_credentialRejected),
+                  if (fault != null && fault != ProviderFault.expired) _faultPanel(fault),
                   _submitButton(),
                   if (widget.provider.hasCredential) _signOutButton(),
                 ],
@@ -185,10 +214,13 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// The user agent field, behind the disclosure.
   ///
   /// Carries the persistent [_userAgentFocusNode] rather than leaving
-  /// `WFormInput` to mint its own; see the class doc block. `autocorrect` and
-  /// `enableSuggestions` are left at their defaults here: unlike the three
-  /// visible fields, nothing this field carries is sensitive or something an
-  /// IME dictionary would leak.
+  /// `WFormInput` to mint its own; see the class doc block.
+  ///
+  /// `autocorrect` and `enableSuggestions` are off here too, and the reason is
+  /// not secrecy: this value is a header a reseller keys access control to, so
+  /// an IME that autocorrects `VLC/3.0.20 LibVLC/3.0.20` into something else
+  /// silently changes what the panel is asked with, and the rejection that
+  /// follows is unexplainable.
   Widget _userAgentField() {
     return WFormInput(
       focusNode: _userAgentFocusNode,
@@ -196,8 +228,37 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       labelClassName: _labelClassName,
       placeholder: _defaultUserAgent,
       onSaved: (String? value) => _userAgent = value ?? '',
+      autocorrect: false,
+      enableSuggestions: false,
       textInputAction: TextInputAction.done,
       className: _fieldClassName,
+    );
+  }
+
+  /// The one thing a client that cannot fix the transport can honestly say.
+  ///
+  /// Xtream Codes puts the credential in the query string and then in the
+  /// stream URL's PATH, so there is nothing to encrypt around and no header to
+  /// move it into that would be any less readable. The provider this app was
+  /// measured against is `http://` on port 8080 and the whole category is like
+  /// that, so refusing `http://` would refuse the category.
+  ///
+  /// What is therefore deliberately NOT built: a lock badge, certificate
+  /// pinning against a certificate that does not exist, hashing a password the
+  /// panel needs in cleartext, or probing `https://` and falling back
+  /// silently. That last one is the most tempting and the most harmful, since
+  /// it teaches the user the connection was secured while leaving a downgrade
+  /// anyone on the path can force.
+  ///
+  /// The second sentence is the only real mitigation available, because it is
+  /// the only one that reduces the blast radius of a password the protocol
+  /// will keep sending in the clear.
+  Widget _plaintextWarning() {
+    return const WText(
+      'Adres https:// ile başlamıyorsa bağlantı şifrelenmez ve ağdaki '
+      'herkes bu şifreyi okuyabilir. Başka bir yerde kullandığınız bir '
+      'şifreyi buraya girmeyin.',
+      className: 'text-xs text-fg-muted',
     );
   }
 
@@ -209,7 +270,16 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     final String label = _advancedOpen ? 'Gelişmiş ayarları gizle' : 'Gelişmiş ayarlar';
 
     return WAnchor(
-      onTap: () => setState(() => _advancedOpen = !_advancedOpen),
+      onTap: () => setState(() {
+        _advancedOpen = !_advancedOpen;
+
+        // Cleared on the way closed, because `_userAgent` is only ever
+        // written by the field's `onSaved`: opening the disclosure, typing a
+        // value and closing it again would otherwise keep sending that value
+        // while the screen shows nothing, and the fallback to
+        // [_defaultUserAgent] in `_submit` would never fire.
+        if (!_advancedOpen) _userAgent = '';
+      }),
       semanticLabel: label,
       child: WDiv(
         className: 'flex flex-row items-center gap-2 py-2',
@@ -242,11 +312,10 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// records elsewhere in this app, and here the box would otherwise fall
   /// back to the full window height inside a scrolling form.
   ///
-  /// Both callbacks retry the same submit: unlike the browse screens, this
-  /// panel appears from the user's OWN just-typed credentials rather than
-  /// from a stored one, so `onOpenSettings` (`expired`'s own action) has
-  /// nowhere else to send them; editing the fields and trying again is the
-  /// only recovery this screen can offer either way.
+  /// `expired` never reaches here, so `onOpenSettings` is unreachable and
+  /// wired to the same retry rather than left null: the remaining three faults
+  /// all take `onRetry` (`provider_notice.dart:125`), and retrying is what
+  /// this screen can offer for all three.
   Widget _faultPanel(ProviderFault fault) {
     return WDiv(
       className: 'w-full h-72',
@@ -274,9 +343,16 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
 
   /// Shown only when there is something to sign out of: `hasCredential` is
   /// the facade's own read of `ProviderSession`, not a guess made here.
+  ///
+  /// Disabled while a submit is in flight, for a reason the submit button's
+  /// own `isDisabled` does not cover: without it, tapping sign-out during a
+  /// handshake clears the credential and the session, and then the submit
+  /// resumes and adopts the credential back. The sign-out silently undoes
+  /// itself, and the controller refuses the call for the same reason.
   Widget _signOutButton() {
     return WAnchor(
       onTap: () => _run(widget.provider.signOut),
+      isDisabled: widget.provider.busy,
       semanticLabel: 'Çıkış yap',
       child: const WDiv(
         className: '''
@@ -329,6 +405,14 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// 4. Ask the facade, then navigate only once it reports nothing wrong: a
   ///    submit that failed leaves the user on the form that explains why.
   Future<void> _submit() async {
+    // The screen's own copy of the controller's busy guard, and it earns its
+    // place rather than duplicating one. `isDisabled` on the button can only
+    // refuse a second tap from the frame after `refreshUI` repaints, and in
+    // that one frame the controller's `submit` returns immediately having
+    // cleared both verdicts, so the navigation below would fire while the
+    // first handshake is still out and take the user off the form.
+    if (widget.provider.busy) return;
+
     final FormState? form = _formKey.currentState;
 
     if (form == null || !form.validate()) return;

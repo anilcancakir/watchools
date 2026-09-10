@@ -98,3 +98,49 @@
    `bool get hasCredential`, reading through to the session rather than cached, for the same
    reason `PlaybackController.health` reads through. Worth catching at the seam between two
    steps rather than by a worker discovering its contract is short.
+
+10. **[REVIEW] The happy path had no caller, and every test still passed.** `submit` adopted
+    and deliberately skipped the refresh, on a stated contract that the first fetch was
+    "`boot()`'s job or the user's". Neither exists at that moment: `boot()`'s refresh already
+    ran and returned at the door because there was no credential then, and the only other
+    caller of `refresh()` is a fault panel's retry that `adopt` has just cleared. So a user
+    who typed a working credential landed on `/` reading "Sonuç yok. Arama terimini
+    değiştirin", having searched for nothing, with no recovery short of relaunching the app.
+    Invisible to the suite for a precise reason worth keeping: the layout test asserted the
+    facade received the four values, the controller test asserted the vault held them, and
+    nobody owned the frame after. A correct local decision against a caller contract that has
+    no caller is the same shape as the route pop that killed libmpv and told Dart nothing, and
+    as the gate that stopped a refresh from starting and did nothing about one already running.
+
+11. **[REVIEW] Narrowing a window reads exactly like closing one.** The sign-out crash in
+    entry 7 was "fixed" twice: first by extending the EPG loop's break, then by capturing
+    `_midnight` before the loop. The second capture still sat immediately after
+    `get_live_streams`, which is the single longest response in a refresh at 2,976 rows, so
+    the widest case was the one left open, and the test double had no seam that could reach
+    it. `onShortEpg` could only script an event inside the EPG loop, and a test that cannot
+    express a window is indistinguishable from a window that is closed. The fix that holds
+    takes the clock and the midnight as arguments, so no nullable field is read across an
+    await at all, and the new `onLiveStreams` seam is what proves it.
+
+12. **[REVIEW] Four of the tests written to close review findings could have passed without
+    their fix.** In one sitting, in a plan whose own wisdom file already named this as the
+    recurring failure: a catalogue-fetch test that called `refresh()` itself and so started
+    the pass it meant to observe; a reset test that never called `Form.save()` while the
+    field was mounted, so the value it asserted about was never written; a busy-guard test
+    that needed two taps with no pump between them to reach a one-frame window; and a
+    focus-node test reading the node across typing, which rebuilds the same element and keeps
+    the same node whether or not an external one is passed. Reading the test did not catch any
+    of the four. Breaking the source caught all four. The rule this settles: a test is not
+    written until the source has been broken once and the test has been watched to fail.
+
+13. **[REVIEW] A guard against data loss belongs in the sibling's default, not in the
+    consumer's config.** `fluttersdk/magic#153` first flipped macOS to the legacy keychain
+    unconditionally, which unblocked this app and would have silently orphaned every vault
+    item every existing signed macOS consumer had already stored: there is no migration
+    between the two keychains in either direction, a miss reads as "never stored" rather than
+    as an error, and `Crypt._getDeviceEncrypter` generates a fresh device key on that null
+    read, so anything encrypted under the old one becomes permanently unreadable. The review
+    on that PR caught it. The shape that shipped is a constructor argument plus a config key
+    defaulting to today's behaviour, which also means this app cannot reach for it until magic
+    is released, and reaching for it early would be exactly the "do not reshape this app
+    around an unreleased API" the workflow rules prohibit.

@@ -8,6 +8,8 @@ import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/provider/provider_session.dart';
 
+import '../../support/throwing_vault.dart';
+
 /// A scriptable stand-in for the panel's handshake, which is the only call
 /// [ProviderSetupController.submit] makes.
 ///
@@ -19,6 +21,14 @@ class _FakePanel {
   int handshakeStatusCode = 200;
   int handshakeCalls = 0;
 
+  /// Every `action` asked for, in order. What proves a catalogue fetch
+  /// happened at all, which is the one thing a handshake count cannot say.
+  final List<String> actions = <String>[];
+
+  /// Served for `get_live_streams`, so a test can tell an empty catalogue
+  /// caused by nothing fetching from an empty catalogue the panel returned.
+  List<Map<String, dynamic>> liveStreams = const <Map<String, dynamic>>[];
+
   MagicResponse handle(MagicRequest request) {
     final String action = request.queryParameters?['action'] as String? ?? '';
 
@@ -26,6 +36,12 @@ class _FakePanel {
       handshakeCalls++;
 
       return MagicResponse(data: handshakeBody, statusCode: handshakeStatusCode);
+    }
+
+    actions.add(action);
+
+    if (action == 'get_live_streams') {
+      return MagicResponse(data: liveStreams, statusCode: 200);
     }
 
     return MagicResponse(data: const <dynamic>[], statusCode: 200);
@@ -81,8 +97,12 @@ void main() {
   /// fails on the schema rather than on anything this controller did.
   /// `developmentCredential` is closed off so a `--dart-define` left in a shell
   /// profile cannot make this session start out configured.
-  Future<ProviderSession> emptySession() async {
-    final ProviderSession session = ProviderSession(developmentCredential: () => null);
+  /// [playing] closes the connection gate, which is how a test isolates the
+  /// submit path: [ProviderSetupController.submit] fires an unawaited
+  /// `refresh()` after it adopts, and that refresh handshakes again, so a
+  /// request count taken over an open gate counts both.
+  Future<ProviderSession> emptySession({bool playing = false}) async {
+    final ProviderSession session = ProviderSession(developmentCredential: () => null, isPlaying: () => playing);
     await session.start();
 
     return session;
@@ -111,7 +131,7 @@ void main() {
     test('stores the credential the panel accepted, and sends the user agent it was given', () async {
       panel.handshakeBody = _handshake(auth: 1, status: 'Active', maxConnections: 2);
 
-      final ProviderSession session = await emptySession();
+      final ProviderSession session = await emptySession(playing: true);
       final ProviderSetupController controller = controllerFor(session);
 
       await controller.submit(
@@ -141,6 +161,54 @@ void main() {
       // defaulted one makes their rejection unexplainable.
       driver.assertSent((MagicRequest request) => request.headers['User-Agent'] == 'watchools/test');
     });
+
+    test(
+      'a stored credential is followed by a catalogue fetch, so the user does not land on an empty screen',
+      () async {
+        // The happy path on every first run, and it was a dead end. `adopt` is
+        // local and restores the cache for an account key that has never
+        // existed, `boot()`'s refresh already ran and returned at the door
+        // because there was no credential then, and `GuideController.reload` is
+        // reachable only from a fault panel that `adopt` has just cleared. So
+        // the user typed a working credential, landed on `/`, and read "Sonuç
+        // yok. Arama terimini değiştirin" having searched for nothing, with no
+        // control anywhere that fetches a catalogue.
+        //
+        // The gate is left open here, unlike the three tests around this one:
+        // the fetch is the subject.
+        panel.handshakeBody = _handshake(auth: 1, status: 'Active', maxConnections: 2);
+        panel.liveStreams = <Map<String, dynamic>>[
+          <String, dynamic>{'stream_id': 41, 'name': 'Kanal D', 'category_id': '1', 'stream_icon': ''},
+        ];
+
+        final ProviderSession session = await emptySession();
+        final ProviderSetupController controller = controllerFor(session);
+
+        await controller.submit(
+          baseUrl: 'http://panel.example:8080',
+          username: 'demo',
+          password: 'demo',
+          userAgent: 'watchools/test',
+        );
+
+        // Drained rather than awaited, and this is the whole difference between
+        // a test and a decoration. The first version of this called
+        // `session.refresh()` here, reasoning that the re-entry guard would
+        // hand back the pass `submit` fired: it does, but with the fix commented
+        // out there is no pass to hand back and the call STARTS one, so the test
+        // passed either way. Proved by commenting out
+        // `unawaited(_session.refresh())` and watching it stay green.
+        //
+        // `FakeNetworkDriver` answers without I/O, so the unawaited pass runs to
+        // completion in microtasks and this drains them without asking for
+        // anything.
+        await pumpEventQueue();
+
+        expect(panel.actions, contains('get_live_streams'));
+        expect(session.channels, isNotEmpty);
+        expect(session.channels.single.name, 'Kanal D');
+      },
+    );
 
     test('a rejected credential arrives as HTTP 200 auth 0, reports expired, and is not stored', () async {
       // The wrong-password case, and it is valid JSON: `xtream_account.dart:219`
@@ -217,7 +285,7 @@ void main() {
       // refuse the second one, and it is true before the first request leaves.
       panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
 
-      final ProviderSession session = await emptySession();
+      final ProviderSession session = await emptySession(playing: true);
       final ProviderSetupController controller = controllerFor(session);
 
       final Future<void> first = controller.submit(
@@ -243,8 +311,39 @@ void main() {
       expect(session.hasCredentials, isTrue);
     });
 
+    test('a keychain that will not store the credential says so, and adopts nothing', () async {
+      // The arm whose own doc block calls it "a live path rather than a
+      // hypothetical", and nothing exercised it: on macOS every `Vault.put`
+      // from a build with no `keychain-access-groups` entitlement fails with
+      // OSStatus -34018. A `fieldError` rather than a `ProviderFault`, because
+      // all four faults are statements about the provider and the panel here
+      // said yes.
+      panel.handshakeBody = _handshake(auth: 1, status: 'Active', maxConnections: 2);
+
+      final ProviderSession session = await emptySession(playing: true);
+      final ProviderSetupController controller = controllerFor(session);
+
+      ThrowingVaultService.install(VaultFailure.put);
+
+      await controller.submit(
+        baseUrl: 'http://panel.example:8080',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'watchools/test',
+      );
+
+      expect(controller.fieldError, isNotNull);
+      expect(controller.fault, isNull);
+      expect(controller.busy, isFalse, reason: 'the finally arm runs on this path too');
+
+      // Nothing was adopted, which is the assertion the arm's doc block
+      // claims: `adopt` saves before it mutates.
+      expect(session.hasCredentials, isFalse);
+      expect(controller.hasCredential, isFalse);
+    });
+
     test('clears the previous verdict before asking again', () async {
-      final ProviderSession session = await emptySession();
+      final ProviderSession session = await emptySession(playing: true);
       final ProviderSetupController controller = controllerFor(session);
 
       await controller.submit(
@@ -288,6 +387,41 @@ void main() {
       expect(order, <String>['playback stopped', 'session cleared']);
       expect(session.hasCredentials, isFalse);
       expect(await Vault.get(XtreamCredentials.vaultKey), isNull);
+    });
+
+    test('a keychain that will not release the credential says so instead of throwing', () async {
+      // `XtreamCredentials.clear` is a `Vault.delete`, and every `Vault`
+      // operation wraps a `PlatformException` as `MagicVaultException`, so a
+      // delete that fails natively throws a type nothing above this catches:
+      // `ProviderSettingsLayout._run` catches `PlatformException` alone, and
+      // `WAnchor.onTap` is a `VoidCallback`, so it would become an unhandled
+      // async error and the user would watch a sign-out silently do nothing.
+      //
+      // A `fieldError` and not a `ProviderFault`, for the reason this
+      // controller's own `_storeRefused` records: all four faults are
+      // statements about the provider, and this one is about the keychain, so
+      // any of them would send the user to retry a panel that never refused.
+      final ProviderSession session = await configuredSession();
+      expect(session.hasCredentials, isTrue);
+
+      // Installed AFTER the credential is stored, so the failure is a delete
+      // that cannot land rather than a save that never happened.
+      ThrowingVaultService.install(VaultFailure.remove);
+
+      final ProviderSetupController controller = controllerFor(session);
+
+      await controller.signOut();
+
+      expect(controller.fieldError, isNotNull);
+      expect(controller.fault, isNull);
+
+      // The session is deliberately unchanged: it clears the vault first
+      // precisely so a failed delete does not leave the app having forgotten
+      // a credential it could not remove from storage. `hasCredential` is
+      // what the screen reads to decide whether to offer the sign-out again,
+      // so it staying true is what keeps the retry on screen.
+      expect(session.hasCredentials, isTrue);
+      expect(controller.hasCredential, isTrue);
     });
   });
 }

@@ -51,6 +51,16 @@ class _MockPanel {
   /// likely and cheapest to script.
   void Function(int streamId)? onShortEpg;
 
+  /// Called as the `get_live_streams` request arrives, before it is answered.
+  ///
+  /// The other window a mid-refresh event can land in, and the wider one:
+  /// this is the single longest response in a refresh, 2,976 rows on a real
+  /// subscription, and everything the channel half reads off the session's
+  /// nullable fields used to be read after it. [onShortEpg] could not reach
+  /// that window, which is why moving the reads out of the EPG loop looked
+  /// like a fix and left the widest case open.
+  void Function()? onLiveStreams;
+
   MagicResponse handle(MagicRequest request) {
     final String action = request.queryParameters?['action'] as String? ?? '';
 
@@ -63,6 +73,7 @@ class _MockPanel {
       case 'get_live_categories':
         return MagicResponse(data: liveCategories, statusCode: 200);
       case 'get_live_streams':
+        onLiveStreams?.call();
         return MagicResponse(data: liveStreams, statusCode: 200);
       case 'get_short_epg':
         final int streamId = int.parse('${request.queryParameters?['stream_id']}');
@@ -642,7 +653,7 @@ void main() {
       // exact shape. `start()` is awaited inside `Magic.init()`, which
       // `main()` awaits before `runApp()`, so an uncaught exception here
       // means no UI at all.
-      ThrowingVaultService.install();
+      ThrowingVaultService.install(VaultFailure.get);
 
       final ProviderSession session = ProviderSession();
 
@@ -791,7 +802,92 @@ void main() {
 
       expect(session.hasCredentials, isFalse, reason: 'the sign-out happened');
       expect(session.channels, isEmpty, reason: 'the in-flight refresh must not write back');
-      expect(session.titles, isEmpty);
+
+      // `panel.requestedVodStreams` and not `session.titles`, which was the
+      // assertion here and could not fail: this double serves no VOD entries,
+      // so `titles` is empty whether or not anything guards the write-back.
+      // The VOD half is four requests against an account the user has just
+      // left, so the assertion that carries weight is that they were never
+      // sent.
+      expect(panel.requestedVodStreams, isFalse, reason: 'a signed-out session must not fetch the VOD half');
+    });
+
+    test('a refresh already in flight cannot write back over a credential adopted while it ran', () async {
+      // The case a null check misses, and the sharper of the two: a sign-out
+      // nulls `_credentials`, so `_credentials == null` catches it, but
+      // submitting a SECOND credential on `/saglayici` within those same
+      // seconds leaves it non-null. The old guard then passed and `/` showed
+      // the PREVIOUS account's channels under the new credential, none of them
+      // playable because `adopt` nulls `_account`.
+      //
+      // Triggered from the `get_live_streams` seam rather than the EPG one:
+      // that is the widest window in a refresh and the one the clock and
+      // midnight reads used to sit behind.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 901, number: 1, name: 'Eski hesap kanalı', categoryId: '1'),
+      ];
+
+      final XtreamCredentials other = XtreamCredentials(
+        baseUrl: 'http://other.example:8080',
+        username: 'someone-else',
+        password: 'other',
+        userAgent: 'watchools/test',
+      );
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      bool adopted = false;
+      panel.onLiveStreams = () {
+        if (adopted) return;
+        adopted = true;
+        session.adopt(other);
+      };
+
+      await session.refresh();
+
+      // The adopted credential is the one standing, and its own account key
+      // has no rows, so the line-up must be empty rather than the previous
+      // account's.
+      expect(session.hasCredentials, isTrue);
+      expect(session.channels, isEmpty, reason: "the previous account's line-up must not be written back");
+    });
+
+    test('a sign-out inside the longest response does not crash the refresh', () async {
+      // The window everything in the channel half reads its nullable fields
+      // across. `get_live_streams` is the single longest response in a
+      // refresh, 2,976 rows on a real subscription, and `_clock!` and
+      // `_midnight!` used to be read immediately after it: `signOut` nulls
+      // both, so a sign-out landing here threw `Null check operator used on a
+      // null value` into the future `boot()` fires unawaited, a few seconds
+      // into launch with no catch anywhere.
+      //
+      // Two earlier attempts narrowed this rather than closing it, first by
+      // extending the EPG loop's own break, then by capturing before the loop
+      // but still after this response. Both left this exact case open, and
+      // `onShortEpg` cannot reach it because the EPG loop never starts.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 902, number: 1, name: 'Kanal', categoryId: '1', epgChannelId: 'ch1'),
+      ];
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      panel.onLiveStreams = () => session.signOut();
+
+      // The assertion is that this completes at all. `refresh()` is what
+      // `boot()` fires unawaited, so a throw here is the unhandled async error
+      // the user would have seen instead of a UI.
+      await session.refresh();
+
+      expect(session.hasCredentials, isFalse);
+      expect(session.channels, isEmpty);
     });
 
     test('clears the credential, the vault entry, and the held catalogue', () async {
