@@ -11,6 +11,7 @@ import 'config/database.dart';
 import 'config/logging.dart';
 import 'config/network.dart';
 import 'config/routing.dart';
+import 'config/security.dart';
 import 'config/view.dart';
 import 'config/watchools_theme.dart';
 
@@ -43,6 +44,7 @@ void main() async {
       () => cacheConfig,
       () => loggingConfig,
       () => broadcastingConfig,
+      () => securityConfig,
     ],
   );
   if (!kReleaseMode) {
