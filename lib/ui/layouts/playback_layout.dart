@@ -184,12 +184,16 @@ class PlaybackLayout extends StatelessWidget {
       // 72 percent strip across the frame and undo the whole correction.
       className: 'flex flex-col gap-3 p-4 rounded-xl bg-scrim-strong',
       children: <Widget>[
+        // The channel is named on both paths, and that is the point of the
+        // controller keeping it through a refusal: "this channel cannot be
+        // played" with no channel on screen leaves the user guessing which
+        // one. The programme line goes, because a channel that cannot open has
+        // nothing to say about what is on it.
+        if (channel != null) WText(channel.name, className: 'text-xl font-semibold text-fg'),
         if (playback.unplayable)
           const WText('Bu kanal oynatılamıyor', className: 'text-base font-semibold text-fg')
-        else if (channel != null) ...<Widget>[
-          WText(channel.name, className: 'text-xl font-semibold text-fg'),
-          if (channel.schedule.isNotEmpty) WText(channel.schedule.first.title, className: 'text-sm text-fg-muted'),
-        ],
+        else if (channel != null && channel.schedule.isNotEmpty)
+          WText(channel.schedule.first.title, className: 'text-sm text-fg-muted'),
         if (health != null) WText(health, className: 'text-sm text-fg-muted'),
         // No transport controls when there is nothing to control. An
         // unplayable channel opened no core, so pause would reach the native

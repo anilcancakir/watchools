@@ -227,6 +227,13 @@ void main() {
       expect(find.text('Bu kanal oynatılamıyor'), findsOneWidget);
       expect(find.bySemanticsLabel('Geri'), findsOneWidget);
 
+      // Named, which is what the controller keeping the channel through a
+      // refusal is for: the message alone leaves the user guessing which
+      // channel it is about. Found on the running app, where the controller
+      // fix had bought nothing visible because this branch replaced the name
+      // instead of adding to it.
+      expect(find.text(_channel.name), findsOneWidget);
+
       // And it offers no transport control. An unplayable channel opened no
       // core, so pause would reach the native side with nothing to pause and
       // come back an error the user cannot act on. The way out stays.
