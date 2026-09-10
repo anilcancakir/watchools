@@ -242,3 +242,51 @@
    it. Measured against HEAD the counts are 1 and 1, equal, which is what CI compares; measured
    against the working tree they are 8 and 1. Same command, opposite verdict, and only one of them
    is about what will be pushed.
+
+## Review and oracle rounds
+
+1. **The deferred idea from wave 6 turned out to be two defects, and the one it named was the
+   smaller.** Wave 6 filed "recognise a base64 segment whose decoding contains a secret" as the fix
+   for the tokenised URL. Implementing it found that the guard could not have worked for a real
+   token anyway: a token is commonly a readable payload plus a **binary** signature, and one invalid
+   UTF-8 byte made the strict `utf8.decode` throw, so the whole run was left alone with the
+   credential in plain ASCII at its front. `allowMalformed: true` is the correct setting, because
+   the guard that protects innocent text is the containment check rather than the decode's
+   strictness. And the first version of the escape fix still leaked: `=` was in the run's character
+   class, so a match reached backwards through a query parameter's `token=` and the joined run has
+   invalid mid-string padding, decodes to nothing, and is returned verbatim. Padding belongs in its
+   own trailing group, which is what base64 means by it.
+
+2. **A guard on a long async sequence has to be re-read, not just entered.** `ProviderSession.refresh`
+   consulted the playback gate once, at the top, and then ran a handshake, four list fetches and up
+   to `epgFetchLimit` sequential EPG calls unguarded. The question "may I start" and the question
+   "may I continue" are different, and only the first was being asked. Not an edge case either:
+   `boot()` fires the refresh unawaited at cold start, so **every launch** puts that batch in flight
+   and a user tapping a channel seconds in plays straight through it, on an account whose measured
+   `max_connections` is 1. Where to re-check is decided by the transaction boundaries: between the
+   two halves and between EPG round trips, never inside a `replace*`, because abandoning
+   mid-transaction leaves the catalogue half written.
+
+3. **A silence in a platform channel is a defect with three faces.** `WatchoolsPlayerPlugin.swift`
+   stops the core when it prunes the attached platform view and tells Dart nothing. From that one
+   silence: the second visit to the screen sent a forgotten view id, the connection gate latched
+   shut for the life of the process, and the wakelock outlived its core. All three were fixed by one
+   `detach()` from the view State's `dispose`, and none of them was reachable by any widget test.
+   The generalisation for the five engines still to come: when the platform can tear something down
+   without saying so, the consumer needs a signal at the boundary that owns the resource, and the
+   interface needs to promise that a redundant teardown is safe. That promise is now written down,
+   because it currently holds only by accident of mpv's nil guard.
+
+4. **Two defects this round were visible only by looking.** A back affordance shipped stretched into
+   a pill across the whole window, because a column stretches its children across the cross axis and
+   `findsOneWidget` on a semantics label passes at either width. And a controller fix that kept the
+   channel through a refusal bought nothing on screen, because the layout's branch replaced the
+   channel name instead of adding to it. Both were found by starting the app and taking a
+   screenshot. The lesson is not "write more tests": it is that a test asserts the thing you thought
+   to assert, and a screenshot shows the thing you did not.
+
+5. **A passing test is not evidence; a test proved to fail is.** Both fixes above got an assertion,
+   and both assertions were then checked by removing the fix and watching them fail (40 by 40
+   against 1392 by 40; one EPG request against three). This run caught vacuous tests in workers four
+   times and in my own work twice, and the cheap discipline that would have caught all six is to
+   break the code once on purpose before believing the green.
