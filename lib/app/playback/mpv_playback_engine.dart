@@ -83,6 +83,19 @@ class MpvPlaybackEngine implements PlaybackEngine {
 
   late final StreamSubscription<PlayerEvent> _upstream;
 
+  /// The surface [attach] was given, for this engine's whole life.
+  ///
+  /// Never cleared, and that is a known limit rather than an oversight. A route
+  /// pop makes the id dead (`WatchoolsPlayerPlugin.swift:186-191` prunes the
+  /// view and tells Dart nothing), and this object cannot hear that, so
+  /// [load]'s null check is a guard against never having attached and not
+  /// against having attached to something that has since gone.
+  ///
+  /// Safe today because exactly one consumer calls [load], and
+  /// `PlaybackController` holds the `_attached` flag the pop clears. The second
+  /// consumer promise 3 anticipates has to go through that controller for the
+  /// same reason, or this needs an interface member and all six
+  /// implementations need to answer it.
   PlaybackSurface? _surface;
 
   /// How many loads this engine has opened, which is the stamp it hands out.
@@ -204,7 +217,16 @@ class MpvPlaybackEngine implements PlaybackEngine {
 
     // 2. Before the platform call, so the first ticks of the new core are
     //    attributed rather than dropped: the sampler starts inside `start`.
-    _loaded = ++_generation;
+    //
+    //    Kept in a local as well, because everything after this point has to
+    //    ask whether it is still the current load before it writes anything.
+    //    `load` has two awaits and nothing guards re-entrancy: the fault
+    //    panel's retry is double-tappable, and the variant ladder promise 3
+    //    names will drive this programmatically. With two in flight, the older
+    //    one's tail would otherwise clobber the newer one's state.
+    final int generation = ++_generation;
+
+    _loaded = generation;
     _reading = false;
 
     // 3. The one call that hands the secret to the native side, so it is the
@@ -212,31 +234,57 @@ class MpvPlaybackEngine implements PlaybackEngine {
     //    like every other, because "most likely" is not "only".
     try {
       await _native(() => WatchoolsPlayer.play(surface.platformViewId, source.toString(), userAgent: userAgent));
-
-      // 4. Only once play has actually succeeded: a failed load leaves no core
-      //    alive, and enabling here first would hold the display awake for a
-      //    stream that never opened, with nothing left to release it.
-      if (!_awake) {
-        _awake = true;
-        await _toggleWakelock(enable: true);
-      }
     } on PlatformException {
-      _loaded = null;
+      // 4. Only this load's own state, and only if it is still the current
+      //    one. An older load failing after a newer one took over used to set
+      //    `_loaded = null`, which makes [_read] drop every tick for the life
+      //    of the engine: health stays idle forever while a core plays, no
+      //    health line ever renders, and [StallDetector] never sees a sample,
+      //    so a genuine freeze reports nothing.
+      if (_loaded == generation) {
+        _loaded = null;
 
-      // 5. Released here too, and this branch is the one that leaked. Step 1
-      //    closed whatever core was alive, so a `load` that fails at step 3
-      //    ends with nothing playing while [_awake] still says the display is
-      //    held. Nothing would release it: [stop] and [dispose] both guard on
-      //    the same flag and the screen has no reason to call either after a
-      //    channel change it never saw succeed, and the next `load` would
-      //    read the flag as a hold it already owns and skip the enable.
-      if (_awake) {
-        _awake = false;
-        await _toggleWakelock(enable: false);
+        // Released here, and this branch is the one that leaked. Step 1 closed
+        // whatever core was alive, so a `load` that fails at step 3 ends with
+        // nothing playing while [_awake] still says the display is held.
+        // Nothing would release it: [stop] and [dispose] both guard on the
+        // same flag and the screen has no reason to call either after a
+        // channel change it never saw succeed, and the next `load` would read
+        // the flag as a hold it already owns and skip the enable.
+        await _release();
       }
 
       rethrow;
     }
+
+    // 5. Outside the try, and after the staleness check, for two separate
+    //    reasons the earlier shape got wrong.
+    //
+    //    Outside, because a `PlatformException` out of the wakelock plugin is
+    //    not a failed load: caught by the branch above it would null `_loaded`
+    //    while the core plays, which is the same permanent-idle failure.
+    //
+    //    After the check, because a [stop] landing during the platform round
+    //    trip above reads `_awake` false, skips its release, and this line
+    //    would then take a hold for a core that is already gone, with nothing
+    //    left to release it. Both reachable from the screen: the back
+    //    affordance stops and pops, and the pop's own `detach` stops again.
+    if (_loaded != generation || _awake) return;
+
+    _awake = true;
+    await _toggleWakelock(enable: true);
+  }
+
+  /// Drops the display hold if this engine is holding it.
+  ///
+  /// A boolean rather than a counter, so one release is all a hold can ever
+  /// owe however many loads opened it, and guarded so nothing ever asks the
+  /// platform for a release it never granted.
+  Future<void> _release() async {
+    if (!_awake) return;
+
+    _awake = false;
+    await _toggleWakelock(enable: false);
   }
 
   /// Runs [call] and cleans anything it throws back.
@@ -286,11 +334,12 @@ class MpvPlaybackEngine implements PlaybackEngine {
     _loaded = null;
     _reading = false;
 
-    if (_awake) {
-      _awake = false;
-      await _toggleWakelock(enable: false);
-    }
-
+    // [_surface] is deliberately kept. A stop is the stream ending, not the
+    // view going away: the platform view is still mounted and still valid, and
+    // clearing the id here would make the next [load] throw `StateError` with
+    // a live surface sitting right there. What a stop cannot know is whether
+    // the view is about to be pruned, and the consumer is what knows that.
+    await _release();
     await _native(WatchoolsPlayer.stop);
   }
 
@@ -325,10 +374,7 @@ class MpvPlaybackEngine implements PlaybackEngine {
     _loaded = null;
     _reading = false;
 
-    if (_awake) {
-      _awake = false;
-      await _toggleWakelock(enable: false);
-    }
+    await _release();
 
     await _upstream.cancel();
     await _native(WatchoolsPlayer.stop);

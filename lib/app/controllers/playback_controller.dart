@@ -222,6 +222,38 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   @override
   ProviderFault? get fault => _session.fault;
 
+  /// Whether this controller is holding one of the account's connection slots.
+  ///
+  /// A member rather than a closure in the composition root, and that is the
+  /// correction rather than a preference. `AppServiceProvider` hands this to
+  /// [ProviderSession] as its playback gate, and `lib/app/providers/` is
+  /// outside the CI coverage denominator, so while the logic lived there it was
+  /// asserted only by two hand copies in a test file, which had **drifted apart
+  /// from each other and from the original**. Deleting a clause of the real one
+  /// turned nothing red. Now there is one expression and the test reads it.
+  ///
+  /// Three clauses, each closing a hole the others leave.
+  ///
+  /// `health != idle` covers the four states a naive `== playing` would miss: a
+  /// paused, starving, stalled or not-presenting core is still an open core
+  /// holding the slot.
+  ///
+  /// `channel != null` closes the window before the first tick. [health]
+  /// reports `idle` from the [play] call until one arrives, and [StallDetector]
+  /// extends that to every tick before the first decoded frame, so a core that
+  /// is still connecting reads "not playing" while holding the slot.
+  ///
+  /// `!unplayable` is what stops the second clause over-reaching. [play] keeps
+  /// the channel through a refusal so the screen can name what it will not
+  /// play, and without this the gate would then report a held connection for a
+  /// channel that never opened a core: no URL was derived, nothing was sent,
+  /// and yet every catalogue refresh would be refused until the route popped.
+  ///
+  /// Over-reporting costs a skipped refresh, which the next one fixes.
+  /// Under-reporting costs the viewer their stream, on an account whose
+  /// measured `max_connections` is 1.
+  bool get holdsConnection => (_channel != null && !_unplayable) || health != PlaybackHealth.idle;
+
   /// Hands the engine the surface it renders into, once.
   ///
   /// Called by the widget that owns the platform view, from
@@ -307,6 +339,16 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
 
     _channel = channel;
     _unplayable = false;
+    // Reset with the rest, because the verdict this holds is about the stream
+    // being replaced. The load takes [health] back to `idle`, so a stale
+    // `_notified` makes [_onTick] compare the new stream's first verdict
+    // against the old stream's and skip the repaint when they match. Nothing
+    // is visibly wrong today only because `StallDetector` never returns
+    // `starving` or `stalled` on the first tick of a stamp, which is a
+    // property of another package's class rather than of this one: the day it
+    // does, a retry that lands in the state it replaced would repaint nothing
+    // and the buffering line would silently never appear.
+    _notified = PlaybackHealth.idle;
 
     // Held rather than opened when no surface exists yet, and this ordering is
     // the whole reason the field is here. A tap on the line-up calls `play`
@@ -352,8 +394,20 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   /// direction moves [health] by itself: the tick that comes back carrying
   /// `paused` is what does that, which is how mpv behaves and therefore what
   /// this controller must be written against.
+  ///
+  /// Reads [_resolvedEngine] rather than [_engine], so a control tapped before
+  /// anything played does not BUILD an engine to send a command no core can
+  /// answer. On the real implementation that construction subscribes to a
+  /// platform channel, which is the side effect [detach] and [onClose] already
+  /// avoid the same way.
   @override
-  Future<void> togglePause() => health == PlaybackHealth.paused ? _engine.resume() : _engine.pause();
+  Future<void> togglePause() async {
+    final PlaybackEngine? engine = _resolvedEngine;
+
+    if (engine == null) return;
+
+    await (health == PlaybackHealth.paused ? engine.resume() : engine.pause());
+  }
 
   /// Ends playback and releases the provider connection.
   ///

@@ -71,6 +71,19 @@ class FakePlaybackEngine implements PlaybackEngine {
   /// The surface handed over at [attach], or null while none has been.
   PlaybackSurface? get surface => _surface;
 
+  /// Whether anybody is still subscribed to [ticks].
+  ///
+  /// The only way to observe a consumer's teardown from outside it, and it
+  /// exists because the obvious alternative does not work. A consumer that
+  /// forgets to cancel its subscription is asserted against by emitting a tick
+  /// after teardown and expecting no repaint, but a `ChangeNotifier` that has
+  /// been disposed cannot notify **either way**, so that assertion passes
+  /// whether or not the cancel happened. Measured on `PlaybackController`:
+  /// deleting its `_ticks?.cancel()` left the suite green through two
+  /// rewrites. This reads the stream itself, which is the thing the cancel
+  /// actually changes.
+  bool get hasTickListener => _ticks.hasListener;
+
   /// The most recent [load]'s arguments, kept after [stop] so a test can assert
   /// what was opened rather than only that something was.
   Uri? get source => _source;

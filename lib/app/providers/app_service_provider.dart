@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:magic/magic.dart';
-import 'package:watchools_player/watchools_player.dart';
 
 import '../controllers/guide_controller.dart';
 import '../controllers/library_controller.dart';
@@ -50,27 +49,14 @@ class AppServiceProvider extends ServiceProvider {
     // is what makes the binding order below irrelevant: `PlaybackController` is
     // bound after this line and does not exist yet.
     //
-    // Two clauses, because health alone has a hole. `!= idle` covers the four
-    // states a naive `== playing` would miss: a paused, starving, stalled or
-    // not-presenting core is still an open core holding the one connection the
-    // measured account allows. But `health` reports `idle` from the `load` call
-    // until the first tick, and `StallDetector` extends that to every tick
-    // before the first decoded frame, so a core that is still connecting, and a
-    // core that opens and never yields a frame, both read "not playing" while
-    // holding the slot. `channel != null` closes that window: the controller
-    // holds the channel from the moment it is chosen.
-    //
-    // Over-reporting costs a skipped catalogue refresh, which the next refresh
-    // fixes. Under-reporting costs the viewer their stream.
-    Magic.put(
-      ProviderSession(
-        isPlaying: () {
-          final PlaybackController playback = Magic.find<PlaybackController>();
-
-          return playback.channel != null || playback.health != PlaybackHealth.idle;
-        },
-      ),
-    );
+    // The predicate itself is `PlaybackController.holdsConnection` rather than
+    // an expression written out here, and that is load-bearing: this directory
+    // is outside the CI coverage denominator, so logic living in it is asserted
+    // only by whatever a test file transcribes. Two transcriptions of this one
+    // existed and had drifted apart from each other and from the original, so
+    // deleting a clause of the real gate turned nothing red. One expression,
+    // one place, and the test reads the same member the app does.
+    Magic.put(ProviderSession(isPlaying: () => Magic.find<PlaybackController>().holdsConnection));
 
     // Bound after the session, and the order IS load-bearing rather than
     // tidiness, which an earlier version of this comment got wrong.

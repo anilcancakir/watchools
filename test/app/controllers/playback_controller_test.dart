@@ -67,13 +67,14 @@ MagicResponse _panel(MagicRequest request) {
 /// cross the grace.
 PlaybackTick _tick({
   required int monotonicNs,
+  int session = 1,
   double? timePos,
   bool paused = false,
   bool coreIdle = false,
   bool? underrun = false,
   bool demuxerIdle = false,
 }) => PlaybackTick(
-  session: 1,
+  session: session,
   monotonicNs: monotonicNs,
   timePos: timePos,
   paused: paused,
@@ -304,11 +305,7 @@ void main() {
       await controller.attach(const PlaybackSurface(platformViewId: 7));
       await controller.play(_playable);
 
-      // A tick before teardown, so the session has actually been playing. It
-      // also gives the engine a stamp to measure a later tick against: with no
-      // stamp at all, a post-stop tick is indistinguishable from a first one
-      // and the fake accepts it, which would make the assertion below pass for
-      // the wrong reason.
+      // A tick before teardown, so the session has actually been playing.
       engine.emit(_tick(monotonicNs: 0, timePos: 10));
       await Future<void>.delayed(Duration.zero);
 
@@ -321,29 +318,56 @@ void main() {
       // left open is the reason the next device in the house cannot watch.
       expect(engine.commands, contains(FakePlaybackCommand.stop));
 
-      // Detached from the engine, provable rather than asserted: a tick after
-      // teardown reaches nobody, so no verdict moves and nothing repaints.
-      // `ChangeNotifier.hasListeners` is `@protected`, so the session detach is
-      // observed the same way, through the absence of an effect.
-      engine.emit(_tick(monotonicNs: 60000000000, timePos: 99, paused: true));
+      // Detached from the engine, and the STAMP is what makes this provable.
+      // An earlier version emitted `session: 1` again, and its comment claimed
+      // the earlier tick gave the fake "a stamp to measure a later tick
+      // against". It does, and that is precisely the problem: `onClose` stops
+      // the engine, `stop` sets the fake's `_reading` false, and
+      // `FakePlaybackEngine._isStale` is then `tick.session <= session`, so a
+      // repeat of stamp 1 was dropped by the FAKE before it ever reached the
+      // stream. The assertion held with `_ticks?.cancel()` deleted, which was
+      // measured rather than reasoned about. A higher stamp is accepted, so
+      // the silence below is the subscription's doing and nothing else's.
+      expect(controller.health, PlaybackHealth.idle, reason: 'the stop took the engine back to idle');
+
+      // The subscription itself, read off the stream, and it took three
+      // attempts to find an assertion that can fail.
+      //
+      // Emitting a tick and expecting no repaint does not work, twice over.
+      // A repeat of stamp 1 is dropped by the FAKE, because `stop` sets its
+      // `_reading` false and `_isStale` is then `tick.session <= session`. And
+      // a higher stamp the fake accepts still repaints nothing, because
+      // `onClose` has disposed the controller and a disposed `ChangeNotifier`
+      // cannot notify either way. Both versions stayed green with
+      // `_ticks?.cancel()` deleted, which was measured rather than reasoned
+      // about. `hasTickListener` is the one observable the cancel changes.
+      expect(engine.hasTickListener, isFalse, reason: 'the tick subscription outlived the controller');
+
+      // The session listener has no equivalent handle, since
+      // `ChangeNotifier.hasListeners` is `@protected`. What can be said is
+      // that a notification after teardown does not throw, which is what an
+      // undetached listener calling `refreshUI` on a disposed controller
+      // would risk.
+      session.setChannelFavourite(streamId: 10002, favourite: true);
       await Future<void>.delayed(Duration.zero);
 
       expect(notifications, 0);
-      expect(controller.health, PlaybackHealth.idle);
     });
   });
 
   group('the connection gate the composition root closes', () {
-    // The closure `AppServiceProvider.register()` passes to `ProviderSession`,
-    // written out here so its logic is tested without booting the providers.
-    // The real one reads the controller through the container; this one reads
-    // the same controller directly, and the predicate is the part that matters.
+    // `holdsConnection` IS the predicate the composition root passes to
+    // `ProviderSession`; `app_service_provider.dart` now reads this member
+    // rather than writing the expression out. Two hand copies used to live in
+    // this file, they had drifted apart from each other and from the original,
+    // and deleting a clause of the real gate turned nothing red, because
+    // `lib/app/providers/` is outside the coverage denominator.
     test('an open core of any health blocks a refresh, and only idle lets it through', () async {
       final ProviderSession playbackSession = await readySession();
       final FakePlaybackEngine engine = FakePlaybackEngine();
       final PlaybackController controller = PlaybackController(engine: () => engine, session: playbackSession);
 
-      bool isPlaying() => controller.health != PlaybackHealth.idle;
+      bool isPlaying() => controller.holdsConnection;
 
       expect(isPlaying(), isFalse, reason: 'nothing has played, so the slot is free');
 
@@ -373,6 +397,32 @@ void main() {
       await controller.stop();
 
       expect(isPlaying(), isFalse, reason: 'stop released the slot');
+    });
+
+    test('a channel that opened no core holds no slot, whatever the screen is showing', () async {
+      final ProviderSession playbackSession = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: playbackSession);
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+      await controller.play(_fixtureBuilt);
+
+      // `play` keeps the channel through a refusal so the screen can name what
+      // it will not play, and that gave the gate a second meaning it was not
+      // written for: channel set, health idle, no URL derived, nothing sent,
+      // and no connection held. Without the `unplayable` clause every refresh
+      // would be refused until the route popped, for a stream that never
+      // opened.
+      expect(controller.channel, _fixtureBuilt);
+      expect(controller.unplayable, isTrue);
+      expect(controller.health, PlaybackHealth.idle);
+      expect(controller.holdsConnection, isFalse);
+
+      // And a playable channel after it takes the slot again, so the clause
+      // narrows the gate rather than disabling it.
+      await controller.play(_playable);
+
+      expect(controller.holdsConnection, isTrue);
     });
   });
 
@@ -502,13 +552,10 @@ void main() {
       final FakePlaybackEngine engine = FakePlaybackEngine();
       final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
 
-      // The real closure from `AppServiceProvider.register()`, verbatim.
-      bool isPlaying() => controller.channel != null || controller.health != PlaybackHealth.idle;
-
       await controller.attach(const PlaybackSurface(platformViewId: 7));
       await controller.play(_playable);
 
-      expect(isPlaying(), isTrue);
+      expect(controller.holdsConnection, isTrue);
 
       // A route pop with no press of the back affordance, which is the
       // ordinary way to leave a screen. Without this the channel would stay
@@ -516,7 +563,7 @@ void main() {
       // catalogue refresh would ever run again.
       await controller.detach();
 
-      expect(isPlaying(), isFalse);
+      expect(controller.holdsConnection, isFalse);
     });
 
     test('is safe before any engine has been built, which is a screen opened and left', () async {
@@ -531,12 +578,64 @@ void main() {
   });
 
   group('the fault the screen renders', () {
-    test('comes from the session rather than a second vocabulary', () async {
+    test('carries a real fault through, and clears when the session recovers', () async {
+      // The earlier version of this asserted `controller.fault == session.fault`
+      // on a healthy session, so both sides were null and
+      // `ProviderFault? get fault => null;` would have passed it. Nothing on
+      // the branch connected the session's fault to the screen, because the
+      // layout's four fault tests use a hand-written double.
+      Vault.fake();
+      await credentials.save();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      // A refused handshake, which is the shape a lapsed subscription
+      // actually arrives in: HTTP 200 with `auth: 0` in the body.
+      Magic.singleton(
+        XtreamClient.driverKey,
+        () => FakeNetworkDriver(
+          stubs: (MagicRequest request) => MagicResponse(
+            data: <String, dynamic>{
+              'user_info': <String, dynamic>{'auth': 0},
+            },
+            statusCode: 200,
+          ),
+        ),
+      );
+
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      expect(controller.fault, isNull, reason: 'nothing has been asked of the provider yet');
+
+      await session.refresh();
+
+      expect(session.fault, isNotNull);
+      expect(controller.fault, session.fault, reason: 'the screen reads the session rather than a second vocabulary');
+
+      // And it clears rather than latching, which a cached copy would not.
+      Magic.singleton(XtreamClient.driverKey, () => FakeNetworkDriver(stubs: _panel));
+      await session.refresh();
+
+      expect(session.fault, isNull);
+      expect(controller.fault, isNull);
+    });
+
+    test('repaints the screen when the session moves, since the controller does not own it', () async {
       final ProviderSession session = await readySession();
       final FakePlaybackEngine engine = FakePlaybackEngine();
       final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
 
-      expect(controller.fault, session.fault);
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+
+      // The half of this controller's state it does not own arrives between
+      // builds, so a screen that only rebuilt on its own ticks would show a
+      // stale fault until an unrelated gesture happened to rebuild it.
+      session.setChannelFavourite(streamId: 10002, favourite: true);
+
+      expect(notifications, 1);
     });
   });
 }
