@@ -132,10 +132,46 @@ And the earlier `_channel`-through-a-refusal fix had bought nothing visible,
 because the layout's `unplayable` branch replaced the channel name instead of
 adding to it.
 
+## Code review round 2 (`ac:plan-code-review`)
+
+Read against `6a1f582`, so it did not see the oracle-round commits and found
+the `onReady` discarded future independently. Eleven findings, ten acted on,
+one rejected after trying it.
+
+| Severity | Finding | Outcome |
+|---|---|---|
+| IMPORTANT | the `onClose` teardown test cannot fail on either thing it claims | rewritten against `hasTickListener`, after two failed attempts |
+| IMPORTANT | `load`'s failure branch writes state a newer load owns | generation guard on both the tail and the catch |
+| IMPORTANT | the wakelock enable can land after the core it was taken for is gone | enable moved out of the try, behind the same guard |
+| IMPORTANT | the gate reports "playing" for a channel that opened no core | third clause, `!unplayable` |
+| IMPORTANT | the gate closure is asserted only by two hand copies that disagree | hoisted to `PlaybackController.holdsConnection` |
+| IMPORTANT | the fault getter's only test asserts `null == null` | drives a refused handshake, asserts arrival and clearing |
+| MINOR | `stop`/`togglePause` build an engine through the getter | `togglePause` reads `_resolvedEngine` |
+| MINOR | `_notified` is not reset by `play` | reset, with why nothing had broken yet |
+| MINOR | `detach` leaves the engine holding a pruned view id | documented as a single-consumer limit; see below |
+| MINOR | `MpvPlaybackEngine.dispose()` has no production caller | true, and the doc block already reads as a contract rather than a live path |
+| MINOR | a run-character prefix defeats the base64 match | unreachable against the measured token shape; noted |
+
+**Rejected after trying it.** Clearing `_surface` in `stop()` looks like it
+closes the dead-id hole finding 9 names. It does not: a stop is the stream
+ending rather than the view going away, the platform view is still mounted,
+and the next `load` would throw `StateError` with a live surface sitting right
+there. The field is documented instead, with the single-consumer assumption
+that makes it safe written down.
+
+**The test that took three attempts is the finding worth remembering.** Emit a
+tick after teardown and expect no repaint: version one was dropped by the fake
+(`_isStale` reads `tick.session <= session` once `stop` clears `_reading`),
+version two landed but a disposed `ChangeNotifier` cannot notify either way.
+Both stayed green with `_ticks?.cancel()` deleted. Only the third, reading
+`FakePlaybackEngine.hasTickListener`, fails when the cancel goes. Every fix in
+this round that could be proved was proved the same way, by breaking the code
+once on purpose.
+
 ### Gates after everything
 
-`flutter analyze --fatal-infos --fatal-warnings` clean. 487 tests pass, 1
-deliberate skip. `dart format` clean. Coverage 2434/2534 = 96.1% against the
+`flutter analyze --fatal-infos --fatal-warnings` clean. 489 tests pass, 1
+deliberate skip. `dart format` clean. Coverage 2439/2538 = 96.1% against the
 90% floor, computed with CI's own script. Plugin 16/16. Mock verifier all
 checks passed. Committed lock carries 1 `source: path` entry, equal to HEAD's.
 Both CI jobs green on PR #26.

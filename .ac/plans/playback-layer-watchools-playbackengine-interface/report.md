@@ -30,8 +30,8 @@ implementations lie about it.
 | Gate | Result |
 |---|---|
 | `flutter analyze --fatal-infos --fatal-warnings` | clean |
-| `flutter test` | 487 pass, 1 deliberate skip |
-| Coverage (CI's own script, scaffold excluded) | 2434/2534 = 96.1%, floor 90% |
+| `flutter test` | 489 pass, 1 deliberate skip |
+| Coverage (CI's own script, scaffold excluded) | 2439/2538 = 96.1%, floor 90% |
 | `dart format lib test` | clean |
 | Plugin tests | 16/16 |
 | Mock panel verifier | all checks passed |

@@ -290,3 +290,38 @@
    against 1392 by 40; one EPG request against three). This run caught vacuous tests in workers four
    times and in my own work twice, and the cheap discipline that would have caught all six is to
    break the code once on purpose before believing the green.
+
+6. **A test can be vacuous three different ways in a row, and only measurement tells you which.** The
+   `onClose` teardown test emitted a tick after teardown and expected no repaint. Attempt one was
+   dropped by the **fake**, because `stop` clears its `_reading` and `_isStale` then reads
+   `tick.session <= session`, so a repeated stamp never reached the stream. Attempt two raised the
+   stamp so the tick landed, and still could not fail, because `onClose` disposes the controller and
+   a disposed `ChangeNotifier` cannot notify either way. Both stayed green with `_ticks?.cancel()`
+   deleted. The fix was to stop asserting an absence of effect and read the thing the cancel
+   actually changes, `StreamController.hasListener`, exposed on the fake for the purpose. The
+   general shape: **an assertion of the form "nothing happened" is only as good as your proof that
+   something could have.** Two independent mechanisms were swallowing the event before the
+   subscription was ever consulted, and neither was visible by reading.
+
+7. **A method with two awaits and no re-entrancy guard writes state it may not own.** `load` stops
+   the old core, claims a generation, then calls the platform. Two of them in flight (the fault
+   panel's retry is double-tappable) and the older one's catch nulls the newer one's generation,
+   after which `_read` drops every tick for the life of the engine: health idle forever while a
+   core plays, and `StallDetector` never sampling, so a real freeze reports nothing. The fix is to
+   capture the generation in a local and make every write after an await conditional on still
+   owning it. Worth checking on any async method that mutates instance state, which in this layer is
+   most of them.
+
+8. **Keeping state for the UI can silently change what a predicate means.** Round 1 made `play` keep
+   the channel through a refusal so the screen could name it. The connection gate read
+   `channel != null` and now reported a held connection for a channel that opened no core, refusing
+   every catalogue refresh until the route popped. Nothing about the change looked like it touched
+   the gate. The lesson is to grep every reader of a field before widening when it is set, and the
+   structural half is item 9.
+
+9. **Logic in a directory outside the coverage denominator gets asserted by transcription, and
+   transcriptions drift.** The gate predicate lived as a closure in `lib/app/providers/`. Two hand
+   copies of it existed in one test file, they disagreed with each other and with the original, and
+   deleting a clause of the real one turned nothing red. Hoisting it to
+   `PlaybackController.holdsConnection` made one expression that the composition root and the test
+   both read. Any logic worth a test does not belong in a file the coverage gate cannot see.
