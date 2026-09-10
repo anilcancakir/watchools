@@ -99,6 +99,17 @@ public class WatchoolsPlayerPlugin: NSObject, FlutterPlugin {
             factory.engine.stop()
             result(nil)
 
+        case "setPaused":
+            guard let paused = call.arguments as? Bool else {
+                result(FlutterError(code: "bad-args", message: "setPaused needs a bool", details: nil))
+                return
+            }
+            if let failure = factory.engine.setPaused(paused) {
+                result(FlutterError(code: "mpv", message: failure, details: nil))
+                return
+            }
+            result(nil)
+
         default:
             result(FlutterMethodNotImplemented)
         }

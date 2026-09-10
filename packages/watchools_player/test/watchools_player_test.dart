@@ -164,4 +164,19 @@ void main() {
     expect(event.name, 'somethingLater');
     expect(event.isEnd, isFalse);
   });
+
+  test('setPaused sends the flag as-is on the method channel', () async {
+    MethodCall? received;
+    const MethodChannel command = MethodChannel('watchools_player');
+    messenger.setMockMethodCallHandler(command, (MethodCall call) async {
+      received = call;
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(command, null));
+
+    await WatchoolsPlayer.setPaused(true);
+
+    expect(received?.method, 'setPaused');
+    expect(received?.arguments, true);
+  });
 }

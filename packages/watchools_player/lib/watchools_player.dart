@@ -78,6 +78,17 @@ class WatchoolsPlayer {
 
   static Future<void> stop() => _channel.invokeMethod<void>('stop');
 
+  /// Writes mpv's `pause` flag.
+  ///
+  /// The other half of [PlayerTick.paused], which the native side already
+  /// reads every tick: until this existed, nothing in the app could change
+  /// what that field reports. Kept to pause on purpose: no seek, no volume,
+  /// no speed, no track selection, because the `PlaybackEngine` this package
+  /// is one step toward promises none of them yet.
+  static Future<void> setPaused(bool paused) {
+    return _channel.invokeMethod<void>('setPaused', paused);
+  }
+
   /// Drops the native side's reference to [viewId] and tears the core down if
   /// that view was the one being rendered into.
   ///

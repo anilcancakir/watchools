@@ -324,3 +324,60 @@ suffix marking the package end-of-life, and `magic/CLAUDE.md:92` says
 "Web = in-memory SQLite" while `connection_factory_web.dart:41` opens an
 `IndexedDbFileSystem`-backed database. The doc is probably stale; worth one
 probe before anything designs around either claim.
+
+---
+
+## From the playback layer plan
+
+Two findings in `wind`, both about driving a surface with a remote. The first is fixed and
+unreleased; the second is untouched and is the larger one.
+
+### Defect, fixed but unpublished: remote activation exists only in a local commit
+
+`WAnchor` binds `ActivateIntent` and `ButtonActivateIntent` to its activation callback
+(`wind/lib/src/widgets/w_anchor.dart:132-135`, installed via `Actions` at `:293`). Its own comment
+records why that is the right hook: "`WidgetsApp` binds `enter`, `numpadEnter`, `space`,
+`gameButtonA` and `select` to `ActivateIntent`, and `select` is the D-pad centre key on Android TV,
+so answering the intent answers every one of those keys at once."
+
+**It is unreleased.** The local checkout is `version: 1.5.2` with `92f20f5 fix(w-anchor): make a
+control reachable by keyboard and remote, and cost one stop (#202)` on top of the release tag. All
+eighteen published versions in the pub cache, including 1.5.2, grep `ActivateIntent` at **zero** in
+that file. Verified by iterating every `~/.pub-cache/hosted/pub.dev/fluttersdk_wind-*/`.
+
+Measured consequence for any consumer: watchools constrains `fluttersdk_wind: ^1.5.0`, so CI and
+every release build resolve a Wind **without** activation, while `pubspec_overrides.yaml` supplies
+one **with** it. A control developed and tested locally therefore appears remote-drivable and ships
+inert. That is the same trap `CLAUDE.md` records from the other direction ("CI resolves the
+ecosystem packages from pub.dev, so a job that is red after a local green means a sibling has
+unreleased work in it"), except here the local green is the false one.
+
+This also corrects `CLAUDE.md`'s own claim that "wind has no D-pad activation (`WAnchor` is `Focus`
+plus `GestureDetector`, no key handling)". That was true when written and remains true for anything
+published; it is false for the local tree. Both halves matter, and stating only one of them
+misleads.
+
+Sibling fix: cut the release. Local opt-out until then: an app-side `Shortcuts`/`Actions` wrapper,
+to be deleted at the bump.
+
+### Gap, open, and the one that actually blocks a TV surface: no focus traversal
+
+There is **no** `FocusTraversalPolicy`, `FocusTraversalOrder`, `FocusTraversalGroup` or
+`NamedFocusTraversalGroup` anywhere in `wind/lib`. Focus traversal therefore follows Flutter's
+default reading order, which is correct for a pointer and a keyboard and wrong for a D-pad: on a
+remote, "next" has to mean the control physically to the right or below, and reading order does not
+express that.
+
+Activation without traversal is half a remote. A viewer can press select on whatever happens to
+hold focus and cannot reliably move focus to the control they want, which on a player overlay (a
+back affordance, a pause toggle, a channel list) is the whole interaction.
+
+Beside it, and compounding it: `wind/lib/src/core/platform_service.dart:41-48` returns a
+`(String, bool)` pair where the bool is `isMobile`, with **no form-factor axis**. Android TV reads
+as `('android', true)`, so every `mobile:` variant fires on a 55 inch screen. That one is already
+recorded in `CLAUDE.md`; it is repeated here because a traversal policy and a TV axis are the two
+halves of the same missing capability, and shipping either alone leaves a surface that looks
+remote-ready and is not.
+
+Sibling fix: a directional traversal policy plus a `tv:` variant axis. Not attempted in the
+playback plan, which is explicit that its player is mouse and keyboard for now.

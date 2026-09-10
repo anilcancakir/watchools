@@ -1,0 +1,125 @@
+Step 3: Wire the three dependencies, and prepare the Wind release
+===================================================================
+
+## Watchools app: pubspec.yaml and packages/watchools_player/pubspec.yaml
+
+$ grep -c 'watchools_player' pubspec.yaml
+3
+$ grep -c 'wakelock_plus' pubspec.yaml
+1
+$ ! grep -q 'plugin_platform_interface' packages/watchools_player/pubspec.yaml && echo OK
+OK
+$ grep -cF 'fluttersdk_wind: ^1.5.0' pubspec.yaml
+1
+
+## Version solving: wakelock_plus had to move below its own latest
+
+`wakelock_plus ^1.8.0` failed to resolve: 1.6.0+ raises its `win32` floor to
+`^6.0.0`, and `magic` depends on `file_picker ^11.0.2`, which depends on
+`win32 ^5.9.0`. 1.5.2 is the newest wakelock_plus version pub's solver
+accepts against that floor, and it is the version `flutter pub get`
+resolved with the overrides moved aside (the hosted-only committed lock).
+1.5.2's own pubspec still declares a real macOS `pluginClass` and
+`dartPluginClass` (`WakelockPlusMacosPlugin`), confirmed against the
+resolved package under ~/.pub-cache: the plugin wraps `IOPMAssertionCreateWithName`
+/ `IOPMAssertionRelease` directly, not a Dart-only stub.
+
+## pubspec.lock discipline
+
+`flutter pub get` was run TWICE, per CLAUDE.md's recipe:
+
+1. `pubspec_overrides.yaml` moved to /tmp, `flutter pub get` run -> hosted-only
+   lock. This is the one `git add`-ed. Diff against the previous committed
+   lock is 39 insertions, nothing removed: `wakelock_plus` (1.5.2, direct main),
+   its transitive `wakelock_plus_platform_interface` and `package_info_plus`/
+   `package_info_plus_platform_interface`, and `watchools_player` (source: path,
+   relative: true, version 0.0.1). `grep -c 'source: path' pubspec.lock` on
+   this staged lock is 1: `watchools_player` only, which is the one legitimate
+   path entry this step adds.
+2. `pubspec_overrides.yaml` restored, `flutter pub get` run again for local
+   development (this is what a contributor's next `pub get` produces anyway).
+   That run resolves `wakelock_plus` to 1.8.0 and `win32` to 6.4.0, because the
+   local `magic` and `fluttersdk_wind` checkouts solve differently than the
+   published graph. This lock is LEFT UNSTAGED (`git status --porcelain
+   pubspec.lock` shows `M pubspec.lock` in the working tree against the staged
+   hosted-only version), matching the documented day-to-day behaviour.
+
+## Generated plugin registrant
+
+`macos/Flutter/GeneratedPluginRegistrant.swift` changed: `pub get` added
+`import wakelock_plus`, `import watchools_player`, `import package_info_plus`
+(a `share_plus` transitive dependency, pre-existing, newly surfaced by the
+resolution) and their `.register(with:)` calls. Not hand-edited; this is
+`pub get`'s own output per CLAUDE.md's "written by pub get" note.
+
+## Wind: which version pubspec.lock resolves, and whether it carries the binding
+
+$ awk '/^  fluttersdk_wind:$/{f=1} f && /version:/{print; exit}' pubspec.lock
+    version: "1.5.2"
+
+$ grep -c 'ActivateIntent' "$HOME/.pub-cache/hosted/pub.dev/fluttersdk_wind-1.5.2/lib/src/widgets/w_anchor.dart"
+0
+
+This is the PASSING answer: the published 1.5.2 that CI and this app's
+`fluttersdk_wind: ^1.5.0` constraint resolve carries no `ActivateIntent`
+binding. Remote/keyboard activation is NOT live in this app. It is prepared,
+unpublished, in Wind PR #203 (see below).
+
+## Wind release preparation (unpublished)
+
+Branch `release/1.5.3` off `master`, PR opened, not merged:
+https://github.com/fluttersdk/wind/pull/203
+
+Files touched (five-surface patch-release set, matching the shape of the
+prior 1.5.1/1.5.2 release commits):
+- pubspec.yaml: version 1.5.2 -> 1.5.3
+- CHANGELOG.md: `## [Unreleased]` promoted to `## [1.5.3] - 2026-09-10`,
+  link references updated (`[Unreleased]: .../compare/1.5.3...HEAD`,
+  `[1.5.3]: .../releases/tag/1.5.3` added)
+- example/pubspec.yaml: version 1.5.2+1 -> 1.5.3+1
+- dartdoc_options.yaml: source-link tag 1.5.2 -> 1.5.3
+- llms.txt: "Version 1.5.2 stable." -> "Version 1.5.3 stable."
+- example/pubspec.lock: re-tracked via `flutter pub get` in example/
+
+Wind's own Definition of Done, run in /Users/anilcan/Code/fluttersdk/wind:
+
+$ dart analyze
+Analyzing wind...
+No issues found!
+
+$ dart format . --set-exit-if-changed
+Formatted 391 files (0 changed) in 0.45 seconds.
+
+$ flutter test
++1804 ~1: All tests passed!
+(1804 passing, 1 pre-existing skip, matches the count already on master)
+
+$ ./tool/coverage.sh 90
+Coverage: 95.3%
+PASS: 95.3% meets threshold 90%
+
+## Two commands a human runs to finish it
+
+1. In the Wind checkout, merge https://github.com/fluttersdk/wind/pull/203,
+   then: `git tag 1.5.3 && git push origin 1.5.3` (the tag triggers
+   `.github/workflows/publish.yml`, which runs `pub publish`).
+2. In this repository, once 1.5.3 is on pub.dev: bump
+   `fluttersdk_wind: ^1.5.0` to `fluttersdk_wind: ^1.5.3` in `pubspec.yaml`,
+   then `flutter pub get` with the overrides moved aside and commit the
+   resulting hosted-only lock.
+
+Neither command was run by this step. `fluttersdk_wind: ^1.5.0` in this
+repository's pubspec.yaml is untouched, per the Must Not.
+
+## Reachability test: NOT WRITTEN, see Issues in the step report
+
+The `Done when` criterion calling for a throwaway test importing
+`package:watchools_player/watchools_player.dart` from `test/` could not be
+satisfied: the Write tool refused any new path under `test/` as "outside
+active step scope," and the briefing's Files list names only the two
+pubspec.yaml files plus the Wind tree. Reachability was instead confirmed by
+reading `packages/watchools_player/lib/watchools_player.dart` (the
+`WatchoolsPlayer` class exists and is exported) and by the fact that
+`flutter analyze --fatal-infos --fatal-warnings` and `flutter test` both
+pass clean with the path dependency wired, which is the compile-time
+signal the test would have produced.

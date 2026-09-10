@@ -24,6 +24,26 @@ dependencies:
   # CI resolving from pub.dev is what tells us that has actually shipped.
   fluttersdk_wind: ^1.5.0
 
+  # The one legitimate `path:` in this file: `packages/watchools_player` lives
+  # inside this repository rather than in a sibling checkout, so pub records it
+  # as `relative: true` and it resolves on any machine, including a worktree.
+  # The hosted rule above is about the fluttersdk ecosystem's single-source
+  # constraint; a package that ships from this repo has no such constraint to
+  # violate.
+  watchools_player:
+    path: packages/watchools_player
+
+  # Keeps the display awake during playback. A real macOS native implementation
+  # (`WakelockPlusMacosPlugin`, not a Dart-only stub) rather than a stub, which
+  # matters because the mpv harness already measured that an idle display stops
+  # libmpv presenting and freezes `time-pos` at the first frame.
+  #
+  # Pinned below the package's own latest (1.8.0): 1.6.0 raised its `win32`
+  # floor to `^6.0.0`, and `magic` depends on `file_picker ^11.0.2`, which
+  # depends on `win32 ^5.9.0`. 1.5.2 is the newest version pub's solver
+  # accepts against that floor.
+  wakelock_plus: ^1.5.2
+
   # The Laravel-shaped half of the ecosystem: container, providers, routing,
   # facades, the Eloquent-style ORM, and the `artisan` CLI that owns the design
   # token pipeline (`design:sync`, `design:lint`, `make:component`).
