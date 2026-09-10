@@ -381,3 +381,69 @@ remote-ready and is not.
 
 Sibling fix: a directional traversal policy plus a `tv:` variant axis. Not attempted in the
 playback plan, which is explicit that its player is mouse and keyboard for now.
+
+## From the onboarding plan
+
+### `magic`, defect: an unregistered middleware alias is dropped silently
+
+`Kernel.resolve` returns null for a name that is not in `_routeMiddleware`, and `resolveAll`
+filters that null out with `whereType` (`magic/lib/src/http/kernel.dart:100-120`). So
+`MagicRoute.page(...).middleware(['providerr'])` leaves the route completely unguarded, with no
+error, no assert and no log line. Read off both methods; Laravel, which this API is modelled on,
+throws for an unregistered alias.
+
+The blast radius is the whole point: a route guard is the one kind of middleware whose absence
+looks exactly like success. Watchools joins `lib/app/kernel.dart:46` to four call sites in
+`lib/routes/app.dart` through the bare string `'provider'`, and a typo in either half opens every
+catalogue route to a user with no credential.
+
+Local opt-out: `test/app/middleware/ensure_provider_test.dart` asserts
+`Kernel.resolve('provider')` is an `EnsureProvider`, proved to discriminate by renaming the
+registration to `'providerr'`.
+
+Sibling fix: a `Log.warning` in `resolve` naming the alias, or an assert in debug mode. A throw
+would match Laravel but is a breaking change for anyone relying on the current silence.
+
+### `wind`, gap: `InputType` has no `url` member
+
+`w_input.dart:13-28` enumerates `text`, `password`, `email`, `number` and `multiline`, and
+`_getKeyboardConfig` at `:744` maps only those. A panel-address field therefore gets the plain text
+keyboard on a phone, with no `/`, `.` or `:` row, on a screen whose first field is a URL the user
+has to type by hand from a reseller's message.
+
+Local opt-out: `InputType.text`, which is what `lib/ui/layouts/provider_settings_layout.dart`
+ships.
+
+Sibling fix: one enum member plus one `TextInputType.url` case.
+
+### `magic`, improvement: the vault's platform options are hardcoded, and one of them cannot be right for everyone
+
+`MagicVaultService` built its `FlutterSecureStorage` with a `const` options set and no seam
+(`magic/lib/src/security/magic_vault_service.dart`), which is what made the macOS keychain
+unreachable from a build with no signing identity: the data protection keychain needs the
+restricted `keychain-access-groups` entitlement, so every `Vault.put` fails with
+`errSecMissingEntitlement` (-34018).
+
+Fixed in `fluttersdk/magic#153`, and the review round on that PR is the part worth recording here.
+The first version flipped `usesDataProtectionKeychain` to `false` unconditionally, which is data
+loss rather than a fix: there is no migration between macOS's two keychains in either direction, a
+miss reads as "never stored" rather than as an error, and `Crypt._getDeviceEncrypter` generates a
+fresh device key on a null read (`magic/lib/src/facades/crypt.dart:141-147`). Every existing signed
+macOS consumer would have come out of a `pub upgrade` with everything encrypted under
+`encryptWithDeviceKey` permanently unreadable and every user logged out. The merged shape is a
+constructor argument plus a config key, defaulting to today's behaviour.
+
+Still open in the same file: `iOptions` is hardcoded to plain `first_unlock`, not
+`first_unlock_this_device`, so an iOS credential can come back from a backup restored onto a
+different device and a consumer cannot change it. Same hardcoding, opposite error, on the platform
+where roaming is easiest. Not filed as a defect, because unlike macOS nothing is unusable; it wants
+the same seam.
+
+### `magic`, gap: `Vault` cannot say whether it can store anything
+
+There is no capability probe. The only way to learn that a platform will refuse every write is to
+attempt one and catch `MagicVaultException`, which means a consumer can offer a credential form on
+a platform that cannot keep what it collects. Watchools' onboarding screen is exactly that surface.
+
+Sibling fix: a `Vault.isAvailable` that performs a write-read-delete of a reserved key once and
+caches the answer, or an explicit `probe()` a consumer calls at boot.

@@ -5,6 +5,7 @@ import 'package:magic/magic.dart';
 import '../controllers/guide_controller.dart';
 import '../controllers/library_controller.dart';
 import '../controllers/playback_controller.dart';
+import '../controllers/provider_setup_controller.dart';
 import '../playback/mpv_playback_engine.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../provider/provider_session.dart';
@@ -81,6 +82,20 @@ class AppServiceProvider extends ServiceProvider {
     final ProviderSession session = Magic.find<ProviderSession>();
 
     Magic.put(PlaybackController(engine: () => MpvPlaybackEngine(redact: session.redactProviderSecrets)));
+
+    // The other half of the same rule as the gate above, from the other
+    // direction: a sign-out has to stop the core BEFORE the session forgets the
+    // credential, because the core holds one of the account's connection slots
+    // (measured limit: 1) from a URL carrying that credential in its path.
+    // `ProviderSetupController` must not import the playback layer to do that,
+    // so it takes the stop as a closure and this line is where the two layers
+    // are allowed to meet.
+    //
+    // A closure again, so `PlaybackController` is resolved when a sign-out
+    // happens rather than now, and `stop()` rather than a predicate plus a
+    // stop: an expression written out here is asserted only by whatever a test
+    // file transcribes, which is the drift the gate's own comment records.
+    Magic.put(ProviderSetupController(stopPlayback: () => Magic.find<PlaybackController>().stop()));
 
     // Provider traffic gets its own driver, and this is a security boundary
     // rather than tidiness. The shared `network` driver carries magic's

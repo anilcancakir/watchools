@@ -222,11 +222,12 @@ ProviderFault? classifyProviderFault({
   // 3. The generic denial with no account behind it, which is the first-launch
   //    case: the handshake itself came back as unparseable text. That says
   //    nothing whatsoever about the credential, so it must not be read as
-  //    `expired`, the one fault that withholds the retry
-  //    (`provider_notice.dart`'s button routes to settings for it and nowhere
-  //    useful, since no onboarding screen exists). A blocked address, a
-  //    blocked user agent and a reverse proxy's HTML error page all land here,
-  //    and all three are recoverable.
+  //    `expired`, the one fault that withholds the retry. Retrying is the
+  //    right offer for a denial the panel has not explained; if it persists,
+  //    the onboarding screen can walk the user through entering their
+  //    credentials correctly. A blocked address, a blocked user agent and a
+  //    reverse proxy's HTML error page all land here, and all three are
+  //    recoverable.
   if (account == null) return ProviderFault.throttled;
 
   // 4. A subscription already known dead stays dead, whatever this call

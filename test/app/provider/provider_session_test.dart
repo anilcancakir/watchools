@@ -9,7 +9,10 @@ import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/models/title_item.dart';
 import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
+import 'package:watchools/app/provider/catalogue_store.dart';
 import 'package:watchools/app/provider/provider_session.dart';
+
+import '../../support/throwing_vault.dart';
 
 /// A scriptable double for the Xtream panel.
 ///
@@ -48,6 +51,16 @@ class _MockPanel {
   /// likely and cheapest to script.
   void Function(int streamId)? onShortEpg;
 
+  /// Called as the `get_live_streams` request arrives, before it is answered.
+  ///
+  /// The other window a mid-refresh event can land in, and the wider one:
+  /// this is the single longest response in a refresh, 2,976 rows on a real
+  /// subscription, and everything the channel half reads off the session's
+  /// nullable fields used to be read after it. [onShortEpg] could not reach
+  /// that window, which is why moving the reads out of the EPG loop looked
+  /// like a fix and left the widest case open.
+  void Function()? onLiveStreams;
+
   MagicResponse handle(MagicRequest request) {
     final String action = request.queryParameters?['action'] as String? ?? '';
 
@@ -60,6 +73,7 @@ class _MockPanel {
       case 'get_live_categories':
         return MagicResponse(data: liveCategories, statusCode: 200);
       case 'get_live_streams':
+        onLiveStreams?.call();
         return MagicResponse(data: liveStreams, statusCode: 200);
       case 'get_short_epg':
         final int streamId = int.parse('${request.queryParameters?['stream_id']}');
@@ -631,6 +645,23 @@ void main() {
       expect(panel.handshakeCalls, 2);
     });
 
+    test('a keychain read failure becomes unreachable, not a boot failure', () async {
+      // `MagicVaultService.get` wraps every PlatformException as
+      // MagicVaultException on reads (`magic_vault_service.dart:48-54`), and
+      // `FakeVaultService` cannot simulate that: every one of its overrides is
+      // a no-throw body. `ThrowingVaultService` is the double built for this
+      // exact shape. `start()` is awaited inside `Magic.init()`, which
+      // `main()` awaits before `runApp()`, so an uncaught exception here
+      // means no UI at all.
+      ThrowingVaultService.install(VaultFailure.get);
+
+      final ProviderSession session = ProviderSession();
+
+      await expectLater(session.start(), completes);
+      expect(session.fault, ProviderFault.unreachable);
+      expect(session.hasCredentials, isFalse);
+    });
+
     test('an unreadable stored credential becomes a fault, not a boot failure', () async {
       // `start()` is awaited inside `Magic.init()`, which `main()` awaits
       // before `runApp()`. A `FormatException` propagating from here aborts
@@ -711,6 +742,192 @@ void main() {
 
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.series).favourite, isTrue);
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.movie).favourite, isFalse);
+    });
+  });
+
+  group('adopt(), accepting a credential at runtime', () {
+    test('hasCredentials becomes true, the vault holds the record, and streamUrlFor works once refreshed', () async {
+      Vault.fake();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 10002, number: 2, name: '02 H.264 AAC | RAW TS', categoryId: '1'),
+      ];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      expect(session.hasCredentials, isFalse);
+
+      await session.adopt(credentials);
+      // adopt() never touches the network: the account is still unknown, so
+      // streamUrlFor stays null until the caller decides to refresh.
+      expect(session.hasCredentials, isTrue);
+      await session.refresh();
+
+      final Channel channel = session.channels.firstWhere((Channel each) => each.streamId != null);
+      expect(session.streamUrlFor(channel), isNotNull);
+      expect(await Vault.get(XtreamCredentials.vaultKey), isNotNull);
+    });
+  });
+
+  group('signOut(), forgetting the current provider', () {
+    test('a refresh already in flight cannot write the catalogue back afterwards', () async {
+      // `AppServiceProvider.boot()` fires `refresh()` unawaited at cold start,
+      // so a user who signs out a few seconds in leaves a batch of requests
+      // running against the account they just left. Without a guard before the
+      // held-catalogue assignment, the fetch completes and puts that account's
+      // line-up back into a session that no longer has its credential:
+      // `hasCredentials` false while `channels` is full, which is the half
+      // state `signOut` exists to prevent.
+      //
+      // The sign-out is triggered from inside the EPG loop through the panel
+      // double's own seam, which is the only point in a refresh where a test
+      // can interleave.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 801, number: 1, name: 'Kanal 1', categoryId: '1', epgChannelId: 'ch1'),
+      ];
+      panel.shortEpgByStreamId[801] = <Map<String, dynamic>>[
+        _shortEpgListing(start: '2024-01-01 20:00:00', end: '2024-01-01 21:00:00', title: 'Programme'),
+      ];
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      panel.onShortEpg = (int _) => session.signOut();
+
+      await session.refresh();
+
+      expect(session.hasCredentials, isFalse, reason: 'the sign-out happened');
+      expect(session.channels, isEmpty, reason: 'the in-flight refresh must not write back');
+
+      // `panel.requestedVodStreams` and not `session.titles`, which was the
+      // assertion here and could not fail: this double serves no VOD entries,
+      // so `titles` is empty whether or not anything guards the write-back.
+      // The VOD half is four requests against an account the user has just
+      // left, so the assertion that carries weight is that they were never
+      // sent.
+      expect(panel.requestedVodStreams, isFalse, reason: 'a signed-out session must not fetch the VOD half');
+    });
+
+    test('a refresh already in flight cannot write back over a credential adopted while it ran', () async {
+      // The case a null check misses, and the sharper of the two: a sign-out
+      // nulls `_credentials`, so `_credentials == null` catches it, but
+      // submitting a SECOND credential on `/saglayici` within those same
+      // seconds leaves it non-null. The old guard then passed and `/` showed
+      // the PREVIOUS account's channels under the new credential, none of them
+      // playable because `adopt` nulls `_account`.
+      //
+      // Triggered from the `get_live_streams` seam rather than the EPG one:
+      // that is the widest window in a refresh and the one the clock and
+      // midnight reads used to sit behind.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 901, number: 1, name: 'Eski hesap kanalı', categoryId: '1'),
+      ];
+
+      final XtreamCredentials other = XtreamCredentials(
+        baseUrl: 'http://other.example:8080',
+        username: 'someone-else',
+        password: 'other',
+        userAgent: 'watchools/test',
+      );
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      bool adopted = false;
+      panel.onLiveStreams = () {
+        if (adopted) return;
+        adopted = true;
+        session.adopt(other);
+      };
+
+      await session.refresh();
+
+      // The adopted credential is the one standing, and its own account key
+      // has no rows, so the line-up must be empty rather than the previous
+      // account's.
+      expect(session.hasCredentials, isTrue);
+      expect(session.channels, isEmpty, reason: "the previous account's line-up must not be written back");
+    });
+
+    test('a sign-out inside the longest response does not crash the refresh', () async {
+      // The window everything in the channel half reads its nullable fields
+      // across. `get_live_streams` is the single longest response in a
+      // refresh, 2,976 rows on a real subscription, and `_clock!` and
+      // `_midnight!` used to be read immediately after it: `signOut` nulls
+      // both, so a sign-out landing here threw `Null check operator used on a
+      // null value` into the future `boot()` fires unawaited, a few seconds
+      // into launch with no catch anywhere.
+      //
+      // Two earlier attempts narrowed this rather than closing it, first by
+      // extending the EPG loop's own break, then by capturing before the loop
+      // but still after this response. Both left this exact case open, and
+      // `onShortEpg` cannot reach it because the EPG loop never starts.
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Ulusal')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 902, number: 1, name: 'Kanal', categoryId: '1', epgChannelId: 'ch1'),
+      ];
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+
+      panel.onLiveStreams = () => session.signOut();
+
+      // The assertion is that this completes at all. `refresh()` is what
+      // `boot()` fires unawaited, so a throw here is the unhandled async error
+      // the user would have seen instead of a UI.
+      await session.refresh();
+
+      expect(session.hasCredentials, isFalse);
+      expect(session.channels, isEmpty);
+    });
+
+    test('clears the credential, the vault entry, and the held catalogue', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveStreams = <Map<String, dynamic>>[_liveEntry(streamId: 701, number: 1, name: 'Kanal', categoryId: '1')];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+      expect(session.channels, isNotEmpty);
+
+      await session.signOut();
+
+      expect(session.hasCredentials, isFalse);
+      expect(session.channels, isEmpty);
+      expect(session.titles, isEmpty);
+      expect(await Vault.get(XtreamCredentials.vaultKey), isNull);
+    });
+
+    test('leaves the cached catalogue rows in place, because accountKey excludes the password', () async {
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveStreams = <Map<String, dynamic>>[_liveEntry(streamId: 801, number: 1, name: 'Kanal', categoryId: '1')];
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.refresh();
+
+      final String account = CatalogueStore.accountKey(credentials);
+      expect(const CatalogueStore().channelsFor(account), isNotEmpty);
+
+      await session.signOut();
+      // Read the store directly rather than through the session: this is the
+      // assertion that discriminates a real survival from adopt() simply
+      // restoring whatever an empty table gives back.
+      expect(const CatalogueStore().channelsFor(account), isNotEmpty);
+
+      await session.adopt(credentials);
+      expect(session.channels, isNotEmpty);
     });
   });
 }

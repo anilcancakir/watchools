@@ -1,0 +1,37 @@
+Step 3: adopt() and signOut() on ProviderSession
+Command: flutter test test/app/provider/provider_session_test.dart
+
+=== Baseline: full suite, real implementation, no sabotage ===
+
+00:00 +28: both title ID spaces a series favourite is keyed on its own space, not the movie one
+00:00 +29: adopt(), accepting a credential at runtime hasCredentials becomes true, the vault holds the record, and streamUrlFor works once refreshed
+00:00 +30: signOut(), forgetting the current provider clears the credential, the vault entry, and the held catalogue
+00:00 +31: signOut(), forgetting the current provider leaves the cached catalogue rows in place, because accountKey excludes the password
+00:00 +32: (tearDownAll)
+00:00 +32: All tests passed!
+
+=== Discrimination proof ===
+
+A `DELETE FROM catalogue_channels WHERE account = ?` was inserted at the top of
+`signOut()` (right after `XtreamCredentials.clear()`), the suite re-run filtered
+to the row-survival test, then the line was removed.
+
+Command: flutter test test/app/provider/provider_session_test.dart --plain-name
+"leaves the cached catalogue rows in place"
+
+00:00 +0: loading test/app/provider/provider_session_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: signOut(), forgetting the current provider leaves the cached catalogue rows in place, because accountKey excludes the password
+00:00 +0 -1: signOut(), forgetting the current provider leaves the cached catalogue rows in place, because accountKey excludes the password [E]
+  Expected: non-empty
+    Actual: []
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/app/provider/provider_session_test.dart 801:7  main.<fn>.<fn>
+
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+The test fails when signOut deletes the rows, and passes once the DELETE is
+removed: it discriminates the behaviour it exists to guard.

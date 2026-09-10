@@ -1,0 +1,51 @@
+Step 6: Send a credential-less user to the form
+Evidence: the loop guard in EnsureProvider.redirectTarget discriminates.
+
+=== 1. Baseline: full test file green, guard in place ===
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/middleware/ensure_provider_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: redirects a credential-less session (development seam neutralised) from / to /saglayici
+00:00 +1: returns null for /saglayici itself, the loop guard against an infinite redirect
+00:00 +2: returns null once the session has a credential (development seam supplies one)
+00:00 +3: (tearDownAll)
+00:00 +3: All tests passed!
+
+=== 2. Guard removed: the loop-guard test now fails ===
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/middleware/ensure_provider_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: redirects a credential-less session (development seam neutralised) from / to /saglayici
+00:00 +1: returns null for /saglayici itself, the loop guard against an infinite redirect
+00:00 +1 -1: returns null for /saglayici itself, the loop guard against an infinite redirect [E]
+  Expected: null
+    Actual: '/saglayici'
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/app/middleware/ensure_provider_test.dart 55:5  main.<fn>
+  
+00:00 +1 -1: returns null once the session has a credential (development seam supplies one)
+00:00 +2 -1: (tearDownAll)
+00:00 +2 -1: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/middleware/ensure_provider_test.dart: returns null for /saglayici itself, the loop guard against an infinite redirect
+
+=== 3. Guard restored: all tests green again ===
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/middleware/ensure_provider_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: redirects a credential-less session (development seam neutralised) from / to /saglayici
+00:00 +1: returns null for /saglayici itself, the loop guard against an infinite redirect
+00:00 +2: returns null once the session has a credential (development seam supplies one)
+00:00 +3: (tearDownAll)
+00:00 +3: All tests passed!
+
+=== 4. rg acceptance checks ===
+$ rg -c "middleware\(\['provider'\]\)" lib/routes/app.dart
+4
+$ rg "MagicRoute\.page\('/saglayici'" lib/routes/app.dart | rg -q middleware ; echo exit=$?
+exit=1
+
+=== 5. QA walk: app started with no defines, location after boot ===
+$ ./bin/fsa start --device macos && ./bin/fsa dusk:get_routes
+{"location": "/saglayici", "title": ""}
+Confirms: with no credential and no dart-defines, EnsureProvider redirected / to /saglayici before the first frame.
