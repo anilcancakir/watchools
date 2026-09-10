@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/guide_controller.dart';
+import '../../app/controllers/playback_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
 import '../../app/models/provider_fault.dart';
@@ -45,8 +46,32 @@ class NowLayout extends StatelessWidget {
   /// The shared line-up state.
   final GuideController controller;
 
+  /// What the hero's play affordance does, defaulting to the real thing.
+  ///
+  /// A seam because the real one resolves a controller from the container and
+  /// pushes a route, and a widget test has neither. Without it the one control
+  /// that makes this screen reach playback would be the only untested control
+  /// on it.
+  final void Function(Channel channel)? onPlay;
+
   /// Creates the [NowLayout].
-  const NowLayout({super.key, required this.controller});
+  const NowLayout({super.key, required this.controller, this.onPlay});
+
+  /// Starts [channel] and goes to the playback screen.
+  ///
+  /// Selects first, so returning from playback finds the hero showing what was
+  /// just watched rather than whatever was selected before it.
+  void _play(Channel channel) {
+    if (onPlay != null) {
+      onPlay!(channel);
+
+      return;
+    }
+
+    controller.selectChannel(channel);
+    Magic.find<PlaybackController>().play(channel);
+    MagicRoute.to('/izle');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +349,11 @@ class NowLayout extends StatelessWidget {
             WDiv(
               className: 'shrink-0',
               child: WAnchor(
-                onTap: () {},
+                // The play affordance is what navigates; the tile's own tap
+                // keeps selecting. The hero exists to preview, so a tap that
+                // both previewed and left the screen would make the preview
+                // unreachable.
+                onTap: () => _play(channel),
                 semanticLabel: live == null ? '${channel.name} izle' : '${live.title} izle',
                 child: const WDiv(
                   className: '''

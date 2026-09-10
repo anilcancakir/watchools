@@ -8,6 +8,41 @@ import '../models/provider_fault.dart';
 import '../playback/playback_engine.dart';
 import '../provider/provider_session.dart';
 
+/// What a screen reads of playback, and nothing more.
+///
+/// A narrow interface beside the controller rather than the controller itself,
+/// so a widget test drives the playback screen with no container, no provider
+/// session and no panel behind it. `PlaybackController` implements it and is
+/// what the app binds; a test passes a hand-written double.
+///
+/// Note what is absent, because the absence is the design: there is **no URL
+/// on this contract and there must never be one**. A stream URL carries the
+/// subscription password in its path, so a screen that could read one is a
+/// screen that could put it in a semantics label, and a semantics label is
+/// exactly what an accessibility tree and a dusk snapshot print.
+abstract interface class PlaybackFacade {
+  /// The channel being watched, or null when nothing is.
+  Channel? get channel;
+
+  /// What the counters say right now.
+  PlaybackHealth get health;
+
+  /// Why the provider is not delivering, or null when it is.
+  ProviderFault? get fault;
+
+  /// Whether the last attempt found no URL for its channel.
+  bool get unplayable;
+
+  /// Pauses when playing, resumes when paused.
+  Future<void> togglePause();
+
+  /// Ends playback and releases the provider connection.
+  Future<void> stop();
+
+  /// Hands the engine the surface it renders into.
+  Future<void> attach(PlaybackSurface surface);
+}
+
 /// What a screen asks to start, hold and end playback of one channel.
 ///
 /// The object between a tap and the engine. Everything above it talks to this
@@ -40,7 +75,7 @@ import '../provider/provider_session.dart';
 /// than a state to handle: the engine would open the stream, advance its
 /// counters and report health while rendering into nothing, which is silent on
 /// a real platform.
-class PlaybackController extends SimpleMagicController {
+class PlaybackController extends SimpleMagicController implements PlaybackFacade {
   // No `static get instance` here, unlike the other two controllers, and the
   // absence is structural rather than an omission: `Magic.findOrPut` needs a
   // zero-argument constructor and this one requires its engine, which is the
@@ -119,6 +154,7 @@ class PlaybackController extends SimpleMagicController {
   }
 
   /// The channel being watched, or null when nothing is.
+  @override
   Channel? get channel => _channel;
 
   /// What the counters say right now, straight from the engine's detector.
@@ -139,6 +175,7 @@ class PlaybackController extends SimpleMagicController {
   /// before then, and asking [_engine] here would make a getter subscribe to a
   /// platform channel, which is the side effect this controller's own Must NOT
   /// forbids.
+  @override
   PlaybackHealth get health => _resolvedEngine?.health ?? PlaybackHealth.idle;
 
   /// Whether the last [play] found no URL for its channel.
@@ -148,6 +185,7 @@ class PlaybackController extends SimpleMagicController {
   /// true thing about them, which is that this channel cannot be played from
   /// what the app currently knows. A genuine fault arrives through [fault]
   /// instead, with the vocabulary the notice already renders.
+  @override
   bool get unplayable => _unplayable;
 
   /// Why the provider is not delivering, or null when it is.
@@ -156,6 +194,7 @@ class PlaybackController extends SimpleMagicController {
   /// the member this surface needs most: it is what a `max_connections: 1`
   /// account produces when another device takes the slot, and the only fault
   /// whose retry costs that other device its stream.
+  @override
   ProviderFault? get fault => _session.fault;
 
   /// Hands the engine the surface it renders into, once.
@@ -163,6 +202,7 @@ class PlaybackController extends SimpleMagicController {
   /// Called by the widget that owns the platform view, from
   /// `onPlatformViewCreated`: the identifier is minted synchronously but is
   /// only valid to pass on after that callback has fired.
+  @override
   Future<void> attach(PlaybackSurface surface) => _engine.attach(surface);
 
   /// Opens [channel], replacing whatever was playing.
@@ -198,6 +238,7 @@ class PlaybackController extends SimpleMagicController {
   /// direction moves [health] by itself: the tick that comes back carrying
   /// `paused` is what does that, which is how mpv behaves and therefore what
   /// this controller must be written against.
+  @override
   Future<void> togglePause() => health == PlaybackHealth.paused ? _engine.resume() : _engine.pause();
 
   /// Ends playback and releases the provider connection.
@@ -205,6 +246,7 @@ class PlaybackController extends SimpleMagicController {
   /// Its own command rather than a side effect of leaving the screen, because
   /// the measured connection budget on a real subscription is **one**: a
   /// session left open is the reason the next device in the house cannot watch.
+  @override
   Future<void> stop() async {
     _channel = null;
     _notified = PlaybackHealth.idle;

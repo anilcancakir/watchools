@@ -468,7 +468,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 5
 
-- [ ] **Step 10**: The playback screen, as an overlay above the platform view
+- [x] **Step 10**: The playback screen, as an overlay above the platform view
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-none: it follows an overlay pattern this app has already proven three times, but gestures do not reach Flutter through a macOS platform view, so every control's position and every focus decision is load-bearing in a way a browse screen's is not.
@@ -498,7 +498,7 @@ the segment after `player-reconnect/`.
         - Render a scrubber, a seek bar or a duration; the engine exposes none of the three
         - Collapse `notPresenting` into `stalled`
 
-- [ ] **Step 11**: Register the route, and make a tap reach it
+- [x] **Step 11**: Register the route, and make a tap reach it
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-1-cross-layer: it threads one gesture through a component, two layouts, a controller and the router, and the router has a documented failure mode where a route registered in the wrong place is silently absent rather than an error.

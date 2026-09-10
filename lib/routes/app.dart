@@ -2,6 +2,7 @@ import 'package:magic/magic.dart';
 
 import '../resources/views/guide_view.dart';
 import '../resources/views/library_view.dart';
+import '../resources/views/playback_view.dart';
 import '../resources/views/title_view.dart';
 
 /// Application Route Definitions.
@@ -19,4 +20,12 @@ void registerAppRoutes() {
   MagicRoute.page('/', () => const GuideView()).title('Canlı');
   MagicRoute.page('/kutuphane', () => const LibraryView()).title('Kütüphane');
   MagicRoute.page('/baslik', () => const TitleView()).title('Başlık');
+
+  // `/izle` carries no identifier either, and for a sharper reason than
+  // `/baslik` does: the controller already holds the channel the user chose,
+  // and putting a `streamId` in the path would make a URL that reopens a
+  // provider stream on a cold start, before any handshake has said the
+  // account is still active. Playback is reached by choosing something, never
+  // by arriving at an address.
+  MagicRoute.page('/izle', () => const PlaybackView()).title('İzle');
 }

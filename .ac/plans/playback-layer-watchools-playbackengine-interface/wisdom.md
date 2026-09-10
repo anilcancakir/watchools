@@ -178,3 +178,39 @@
    not-presenting core is still an open core holding the one connection the measured account allows.
    `== playing` would let a catalogue refresh evict a viewer who had merely paused, which is the
    precise failure the injectable predicate was built to prevent.
+
+## Wave 5
+
+1. **`Zaman` was deliberately left reaching playback only through `Şimdi`**, which the step's own
+   text permits and which I am recording rather than burying. `TimeLayout` has no hero and no empty
+   play callback: it carries `selectChannel` (`:362`) and `selectProgramme` (`:507`), both of which a
+   viewer uses to move around the grid. Repurposing either would take a navigation away from a
+   control that has a job, and the honest alternatives (a long press, a dedicated affordance in each
+   programme cell) are a design decision rather than a wiring one. The grid is one tap from `Şimdi`
+   on the toolbar switch, so nothing is unreachable.
+
+2. **A widget test cannot pop a route or resolve a container**, so two controls needed a seam.
+   `MagicRouter` throws `Router not initialized` without a `MaterialApp.router` above it, and
+   `pumpScreen` collects `FlutterError`s rather than swallowing them, so the back affordance failed
+   its own test until `onBack` existed. `NowLayout.onPlay` is the same shape for the same reason.
+   Both default to the real thing, so production wiring is unchanged; the alternative was leaving
+   the one control that reaches playback as the only untested control on the screen. On a surface
+   where gestures never reach the platform view, a control that silently does nothing is invisible.
+
+3. **`/izle` carries no identifier, and the reason is sharper than `/baslik`'s.** The controller
+   already holds the channel the user chose. A `streamId` in the path would make a URL that reopens
+   a provider stream on a cold start, before any handshake has said the account is still active, and
+   against an account whose measured connection limit is one. Playback is reached by choosing
+   something, never by arriving at an address.
+
+4. **`PlaybackFacade` lives beside the controller, not in the UI layer.** Dart has no structural
+   typing, so a UI-side interface would have forced the controller to import the UI to implement it.
+   I wrote "satisfies it structurally" in a doc block first, which is simply false for Dart, and the
+   analyzer said so. The interface sits in the controller's own file, the controller declares
+   `implements PlaybackFacade`, and the layout imports it from there, which is what the other three
+   layouts already do with their controllers.
+
+5. **The stack's order is asserted, not assumed.** A control behind the platform view is invisible
+   to a tap on macOS and silent in a widget test, so the test reads `Stack.children` and asserts the
+   view sits at index 0. Mutation-checked by moving a scrim above the view: red. The pause wiring was
+   mutation-checked the same way.
