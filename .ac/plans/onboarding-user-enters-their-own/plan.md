@@ -160,9 +160,24 @@ accepts a write**, and a green suite would otherwise certify a flow no human can
 
 ### Wave 1
 
-- [ ] **Step 1**: Sign the macOS target so the Keychain accepts a write
+- [x] **Step 1**: Sign the macOS target so the Keychain accepts a write
 
-    > **DEFERRED mid-run, and the account-side half is already done.** `asc` created what was
+    > **SUPERSEDED, and the step's own goal is met without it.** What this step existed for
+    > was a Keychain that accepts a write, and `magic 0.0.10` delivers that on an unsigned
+    > build: `security.vault.macos_data_protection_keychain` moves `Vault` to the legacy login
+    > keychain, which needs no entitlement. `lib/config/security.dart` sets it to
+    > `kReleaseMode`, so debug and profile take the legacy keychain and a signed release keeps
+    > the data protection one. Measured on the running app before anything else in step 8:
+    > `Vault.put` then `Vault.get` returned `ROUNDTRIP: hello` with no certificate installed.
+    >
+    > Signing is therefore no longer a build requirement on macOS, which is the outcome worth
+    > having: a contributor with no certificate can build and store a credential. It remains
+    > future work for a **release** build, where the data protection keychain is the right one
+    > and the entitlement is required, and the account-side half below is done and still valid
+    > for that day.
+    >
+    > **The original deferral note, kept because the account artefacts are still the ones to
+    > use.** `asc` created what was
     > actually missing, non-interactively: the App ID `com.watchools.app` (`SW57679G5G`, seed
     > `883V9SVA54`), this Mac registered as a device (`8Q46CPBVM9`, which a
     > `MAC_APP_DEVELOPMENT` profile requires and an iOS one does not), and the profile itself
@@ -386,9 +401,35 @@ Step 9 is in another repository and blocks nothing here. Step 8 needs steps 1 th
         - Do not add an interceptor test. One already exists and is better than a new one would be: `test/app/protocol/xtream/xtream_client_test.dart:182-198` resolves `DioNetworkDriver`, reads `dio.interceptors.length` inside `configureDriver`, asserts it is **1** because dio seeds its own `ImplyContentTypeInterceptor` so one is the empty state, and has a non-vacuity control at `:165-181` that ships a driver carrying `AuthInterceptor` to prove the capture is live. An earlier draft of this plan asked for a duplicate that would have asserted 0 through an interface (`NetworkDriver`) that exposes no interceptor list at all.
         - Do not extend `redactProviderSecrets` to the HTTP path. Its own doc block argues against a second door with no traffic.
 
-- [ ] **Step 8**: Walk the whole flow on the running app against the local mock
+- [x] **Step 8**: Walk the whole flow on the running app against the local mock
 
-    > **DEFERRED with step 1.** This walk's whole point is that the credential survives a
+    > **RUN, and every `Done when` met.** Against `tool/xtream-mock` on an unsigned macOS
+    > build, with no `--dart-define`. First boot landed on `/saglayici`; the three fields
+    > filled and submitted; the app landed on `/` reporting `8 kanal · 8 kanalda akış yok`
+    > rather than the 23-channel fixture, which is the review round's catalogue-fetch fix
+    > working on a real app rather than in a test; tapping a channel produced
+    > `GET /live/demo/demo/10001.ts` followed by `GET /live/play/ZGVtbzpkZW1vOjE3ODkwODMxMDM/10001.ts`
+    > in the mock's log; a full `fsa restart` landed on `/` with nothing re-entered, which is
+    > the Keychain write surviving a process restart; sign-out returned to `/saglayici` and
+    > `Vault.get('xtream_credentials')` read `null`. The app's own session log contains no
+    > `demo` at all.
+    >
+    > **One defect found, and it is not on this flow.** The live screen's toolbar overflows by
+    > 110 pixels on the right at an 800x600 window, with `Arama` and `Şimdi görünümü` both
+    > flagged. `now_layout.dart` and `guide_view_switch.dart` are untouched by this plan and
+    > neither widget sizes off channel data, so this is a width case rather than anything the
+    > provider path introduced, and 800x600 is a size `CLAUDE.md` records the app as not being
+    > designed against. Not fixed here: it belongs to whoever owns that toolbar's breakpoints,
+    > and fixing a layout on a screen this plan never touched would be scope this plan cannot
+    > review.
+    >
+    > **One criterion was racy and should be tightened before the next run.** `--grep 'kanal ·'`
+    > taken two seconds after submit found nothing, because the unawaited refresh was still in
+    > flight; the same grep a few seconds later found `8 kanal`. Wait on the text rather than
+    > sleeping. The count itself can also be satisfied by rows a previous walk left behind,
+    > since `signOut` leaves them on purpose.
+    >
+    > **The original deferral note.** This walk's whole point is that the credential survives a
     > restart, which needs a real Keychain write, and its `Must NOT` forbids the
     > `--dart-define` path that would fake it. Run it in the same sitting as step 1.
     - **Type**: verification

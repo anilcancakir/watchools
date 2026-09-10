@@ -22,7 +22,7 @@ dependencies:
   # The caret is a floor, not a pin. It moves when Wind publishes the TV work
   # this app needs (D-pad activation, focus traversal, a virtualized list), and
   # CI resolving from pub.dev is what tells us that has actually shipped.
-  fluttersdk_wind: ^1.5.0
+  fluttersdk_wind: ^1.5.3
 
   # The one legitimate `path:` in this file: `packages/watchools_player` lives
   # inside this repository rather than in a sibling checkout, so pub records it
@@ -52,7 +52,7 @@ dependencies:
   # `DB.transaction` for the channel catalogue: no `index()` in Blueprint, no
   # `whereIn`/`like`/`join` in the query builder, and a row-at-a-time
   # `insertAll`. See `.ac/research/stack-decisions.md`.
-  magic: ^0.0.9
+  magic: ^0.0.10
   fluttersdk_artisan: ^0.0.14
 
   # The debug trio, wired into lib/main.dart under kDebugMode so the release

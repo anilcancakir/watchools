@@ -1,0 +1,20 @@
+{
+  "location": "/saglayici",
+  "title": ""
+}
+{
+  "location": "/",
+  "title": ""
+}
+{
+  "location": "/izle",
+  "title": ""
+}
+{
+  "location": "/",
+  "title": ""
+}
+{
+  "location": "/saglayici",
+  "title": ""
+}
