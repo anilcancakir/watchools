@@ -326,5 +326,23 @@ void main() {
 
       await subscription.cancel();
     });
+
+    test('emitting after dispose names the mistake rather than the stream', () async {
+      final FakePlaybackEngine engine = await _loaded();
+
+      await engine.dispose();
+
+      // A tick nobody can hear is a bug in the script, so it is loud. The
+      // message names this class and the ordering; the stream's own
+      // `Cannot add new events after calling close` names neither, and a
+      // scripted sequence that hits it reads as a defect in the code under
+      // test rather than in the sequence.
+      expect(
+        () => engine.emit(_tick(session: 1, atSeconds: 0, timePos: 1)),
+        throwsA(
+          isA<StateError>().having((StateError error) => error.message, 'message', contains('emit after dispose')),
+        ),
+      );
+    });
   });
 }

@@ -149,32 +149,19 @@ void main() {
     });
   });
 
-  group('describe', () {
-    test('drops the query and the credential path segments of a stream URL', () {
-      final String described = _record().describe(
-        Uri.parse('http://h:8080/live/bob/s3cret/1.ts?username=bob&password=s3cret'),
-      );
-
-      expect(described, isNot(contains('s3cret')));
-      expect(described, isNot(contains('bob')));
-      expect(described, isNot(contains('?')));
-      expect(described, 'http://h:8080/live/***/***/1.ts');
-    });
-
-    test('keeps scheme, host, port and the segments that are not a credential', () {
-      expect(
-        _record().describe(Uri.parse('https://h.example:2095/player_api.php?username=bob&password=s3cret')),
-        'https://h.example:2095/player_api.php',
-      );
-      expect(_record().describe(Uri.parse('http://h/xmltv.php')), 'http://h/xmltv.php');
-    });
-
-    test('drops userInfo, the other place a URL carries a credential', () {
-      expect(_record().describe(Uri.parse('http://bob:s3cret@h:8080/live')), 'http://h:8080/live');
-    });
-  });
-
   group('redact', () {
+    // What the deleted `describe(Uri)` used to cover, asserted through the one
+    // method that has callers. A stringified URL is prose, so the guarantee is
+    // the same and there is no second door to keep in step.
+    test('covers a whole stream URL, its query and its userInfo', () {
+      expect(
+        _record().redact('http://h:8080/live/bob/s3cret/1.ts?username=bob&password=s3cret'),
+        'http://h:8080/live/***/***/1.ts?username=***&password=***',
+      );
+      expect(_record().redact('http://bob:s3cret@h:8080/live'), 'http://***:***@h:8080/live');
+      expect(_record().redact('http://h/xmltv.php'), 'http://h/xmltv.php');
+    });
+
     test('strips both secrets out of the FFmpeg reconnect warning that is the only lapse signal', () {
       // The verbatim shape watchools_player.dart:42-44 quotes: mpv forwards
       // FFmpeg's warning as prose, and the stream URL carries the credential in
@@ -301,6 +288,35 @@ void main() {
 
       expect(record.redact(line), isNot(contains('ZGVtbzpkZW1vOjE3ODkwMDMwMTc')));
       expect(record.redact(line), contains('/live/play/***/10001.ts'));
+    });
+
+    test('strips a token whose signature is binary and whose base64 is percent-escaped', () {
+      // Two gaps in one line, both real and both invisible to the test above,
+      // which uses a token that happens to be pure ASCII and pure
+      // URL-alphabet.
+      //
+      // A token is commonly a readable payload plus a signature, and a
+      // signature is bytes rather than text: one invalid UTF-8 byte made the
+      // strict decode throw and the run was left alone with `demo:demo:` in
+      // plain ASCII at its front. And a token in a query parameter is
+      // percent-encoded, so a standard-alphabet `/` arrives as `%2F`, which
+      // split the run in two at a character the run class did not admit.
+      //
+      // The payload here is `demo:demo:1789003017` followed by nine random
+      // bytes, base64-encoded standard and escaped the way a URL carries it.
+      final XtreamCredentials record = XtreamCredentials(
+        baseUrl: 'http://127.0.0.1:3300',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'Watchools/1.0',
+      );
+
+      const String line =
+          'http: Will reconnect to '
+          'http://127.0.0.1:3300/live/play/10001.ts?token=ZGVtbzpkZW1vOjE3ODkwMDMwMTfVD%2F8Hw8IGJCk';
+
+      expect(record.redact(line), isNot(contains('ZGVtbzpkZW1vOjE3ODkw')));
+      expect(record.redact(line), 'http: Will reconnect to http://127.0.0.1:3300/live/play/10001.ts?token=***');
     });
 
     test('leaves an encoded run that names no secret exactly as it arrived', () {

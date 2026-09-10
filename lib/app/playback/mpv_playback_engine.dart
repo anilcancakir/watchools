@@ -223,6 +223,18 @@ class MpvPlaybackEngine implements PlaybackEngine {
     } on PlatformException {
       _loaded = null;
 
+      // 5. Released here too, and this branch is the one that leaked. Step 1
+      //    closed whatever core was alive, so a `load` that fails at step 3
+      //    ends with nothing playing while [_awake] still says the display is
+      //    held. Nothing would release it: [stop] and [dispose] both guard on
+      //    the same flag and the screen has no reason to call either after a
+      //    channel change it never saw succeed, and the next `load` would
+      //    read the flag as a hold it already owns and skip the enable.
+      if (_awake) {
+        _awake = false;
+        await _toggleWakelock(enable: false);
+      }
+
       rethrow;
     }
   }

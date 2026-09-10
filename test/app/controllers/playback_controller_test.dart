@@ -165,7 +165,8 @@ void main() {
       await controller.play(_fixtureBuilt);
 
       expect(controller.unplayable, isTrue);
-      expect(controller.channel, isNull);
+      // Kept rather than cleared, so the screen can name what it is refusing.
+      expect(controller.channel, _fixtureBuilt);
       expect(engine.commands, isNot(contains(FakePlaybackCommand.load)));
     });
 
@@ -372,6 +373,160 @@ void main() {
       await controller.stop();
 
       expect(isPlaying(), isFalse, reason: 'stop released the slot');
+    });
+  });
+
+  // The ordering the line-up actually produces: `play` first, the route push
+  // second, so the surface arrives a frame after the choice. Asserted here
+  // rather than through the screen, because a screen test resolves a session
+  // with no credential, `streamUrlFor` returns null, and every assertion about
+  // what the engine saw then passes because nothing happened at all. Two tests
+  // added with the ordering fix did exactly that.
+  group('a channel chosen before a surface exists', () {
+    test('is held rather than opened, and opens when the surface arrives', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      // No attach yet. The URL is derivable, so this is the state the ordering
+      // defect actually occurred in: the earlier version called `load` here,
+      // which threw `StateError` into an unawaited future.
+      await controller.play(_playable);
+
+      expect(engine.commands, isEmpty);
+      expect(controller.channel, _playable);
+      expect(controller.unplayable, isFalse);
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+
+      // Attach before load, which is the engine's own rule, and the held
+      // channel is what was opened.
+      expect(engine.commands, <FakePlaybackCommand>[FakePlaybackCommand.attach, FakePlaybackCommand.load]);
+      expect(engine.source, session.streamUrlFor(_playable));
+    });
+
+    test('is dropped by a stop, so the next surface opens nothing', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      await controller.play(_playable);
+      await controller.stop();
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+
+      expect(engine.commands, isNot(contains(FakePlaybackCommand.load)));
+    });
+
+    test('retry re-opens the held channel, before any surface has arrived', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      await controller.play(_playable);
+      await controller.retry();
+
+      // Still held, not opened: `retry` is `play` again and the surface is
+      // still absent. What it must not do is lose the channel.
+      expect(controller.channel, _playable);
+      expect(engine.commands, isEmpty);
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+
+      expect(engine.commands, contains(FakePlaybackCommand.load));
+    });
+
+    test('retry re-opens an already playing channel through the engine', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+      await controller.play(_playable);
+      await controller.retry();
+
+      // Two loads, which is what "make the request again" means for the two
+      // faults whose panel offers it. A retry that toggled pause instead would
+      // be toggling a core that never opened.
+      expect(engine.commands.where((FakePlaybackCommand c) => c == FakePlaybackCommand.load).length, 2);
+    });
+
+    test('retry with nothing chosen does nothing at all', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      await controller.retry();
+
+      expect(engine.commands, isEmpty);
+    });
+  });
+
+  group('detach, which is the only signal Dart gets that the surface is gone', () {
+    test('stops the core and forgets the surface, so the next visit holds instead of loading', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+      await controller.play(_playable);
+      await controller.detach();
+
+      // The native side stops the core on its own when it prunes the view
+      // (`WatchoolsPlayerPlugin.swift:186-191`), so this is Dart catching up
+      // with what already happened rather than initiating it.
+      expect(engine.commands, contains(FakePlaybackCommand.stop));
+      expect(controller.channel, isNull);
+      expect(controller.health, PlaybackHealth.idle);
+
+      // The second visit. `play` comes before the new surface again, and it
+      // must hold: sending the previous view id gets `no-view` back, and the
+      // earlier version did exactly that on every visit after the first.
+      final int loadsBefore = engine.commands.where((FakePlaybackCommand c) => c == FakePlaybackCommand.load).length;
+
+      await controller.play(_playable);
+
+      expect(
+        engine.commands.where((FakePlaybackCommand c) => c == FakePlaybackCommand.load).length,
+        loadsBefore,
+        reason: 'no surface is attached, so the channel is held',
+      );
+
+      await controller.attach(const PlaybackSurface(platformViewId: 8));
+
+      expect(engine.commands.where((FakePlaybackCommand c) => c == FakePlaybackCommand.load).length, loadsBefore + 1);
+      expect(engine.surface?.platformViewId, 8);
+    });
+
+    test('releases the gate the composition root closes, which would otherwise latch', () async {
+      final ProviderSession session = await readySession();
+      final FakePlaybackEngine engine = FakePlaybackEngine();
+      final PlaybackController controller = PlaybackController(engine: () => engine, session: session);
+
+      // The real closure from `AppServiceProvider.register()`, verbatim.
+      bool isPlaying() => controller.channel != null || controller.health != PlaybackHealth.idle;
+
+      await controller.attach(const PlaybackSurface(platformViewId: 7));
+      await controller.play(_playable);
+
+      expect(isPlaying(), isTrue);
+
+      // A route pop with no press of the back affordance, which is the
+      // ordinary way to leave a screen. Without this the channel would stay
+      // set for the life of the process, the gate would never reopen, and no
+      // catalogue refresh would ever run again.
+      await controller.detach();
+
+      expect(isPlaying(), isFalse);
+    });
+
+    test('is safe before any engine has been built, which is a screen opened and left', () async {
+      final ProviderSession session = await readySession();
+      final PlaybackController controller = PlaybackController(
+        engine: () => throw StateError('the engine must not be built by detach'),
+        session: session,
+      );
+
+      await controller.detach();
     });
   });
 

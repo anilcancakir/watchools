@@ -465,6 +465,48 @@ void main() {
       expect(wakelockCalls, <bool>[false]);
     });
 
+    test('a load that never opened a core holds nothing', () async {
+      final MpvPlaybackEngine started = await engine();
+
+      messenger.setMockMethodCallHandler(commandChannel, (MethodCall call) async {
+        if (call.method != 'play') return null;
+
+        throw PlatformException(code: 'mpv', message: 'could not open the stream');
+      });
+
+      await started.attach(_surface);
+      await expectLater(started.load(_source), throwsA(isA<PlatformException>()));
+
+      // Nothing was ever held, so nothing is owed. The enable sits after the
+      // platform call precisely so that a load which fails holds nothing.
+      expect(wakelockCalls, isEmpty);
+    });
+
+    test('a channel change that fails releases the hold the previous channel had', () async {
+      final MpvPlaybackEngine started = await engine();
+
+      await started.attach(_surface);
+      await started.load(_source);
+
+      expect(wakelockCalls, <bool>[true]);
+      wakelockCalls.clear();
+
+      messenger.setMockMethodCallHandler(commandChannel, (MethodCall call) async {
+        if (call.method != 'play') return null;
+
+        throw PlatformException(code: 'mpv', message: 'could not open the stream');
+      });
+
+      await expectLater(started.load(_source), throwsA(isA<PlatformException>()));
+
+      // The leak this closes: `load` stops the previous core before opening
+      // the next one, so a failure here ends with nothing playing while the
+      // display is still held awake. Neither `stop` nor `dispose` would ever
+      // release it, because both guard on the same flag and the screen has no
+      // reason to call either after a channel change it never saw succeed.
+      expect(wakelockCalls, <bool>[false]);
+    });
+
     test('a second load without an intervening stop does not leak a second hold', () async {
       final MpvPlaybackEngine started = await engine();
 

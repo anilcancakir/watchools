@@ -141,7 +141,18 @@ class FakePlaybackEngine implements PlaybackEngine {
   /// A stale tick is dropped rather than reported, so a scripted sequence can
   /// reproduce the one shape that only a real transport produces: the previous
   /// load's last samples arriving after the new load.
+  ///
+  /// Throws [StateError] after [dispose], because a tick nobody can hear is a
+  /// script bug rather than a state to absorb. Named here rather than left to
+  /// the stream's own `Cannot add new events after calling close`, which says
+  /// nothing about which object or which call ordering produced it.
   void emit(PlaybackTick tick) {
+    if (_ticks.isClosed) {
+      throw StateError(
+        'FakePlaybackEngine: emit after dispose; the tick stream is closed and no consumer can hear it.',
+      );
+    }
+
     if (_isStale(tick)) return;
 
     _session = tick.session;

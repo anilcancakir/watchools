@@ -44,6 +44,7 @@ class _FakePlayback implements PlaybackFacade {
   int toggles = 0;
   int stops = 0;
   int attaches = 0;
+  int detaches = 0;
   int retries = 0;
   final List<Channel> played = <Channel>[];
 
@@ -55,6 +56,9 @@ class _FakePlayback implements PlaybackFacade {
 
   @override
   Future<void> attach(PlaybackSurface surface) async => attaches++;
+
+  @override
+  Future<void> detach() async => detaches++;
 
   @override
   Future<void> play(Channel channel) async => played.add(channel);
@@ -222,6 +226,41 @@ void main() {
       expect(find.byType(ProviderNotice), findsNothing);
       expect(find.text('Bu kanal oynatılamıyor'), findsOneWidget);
       expect(find.bySemanticsLabel('Geri'), findsOneWidget);
+
+      // And it offers no transport control. An unplayable channel opened no
+      // core, so pause would reach the native side with nothing to pause and
+      // come back an error the user cannot act on. The way out stays.
+      expect(find.bySemanticsLabel('Duraklat'), findsNothing);
+      expect(find.bySemanticsLabel('Devam et'), findsNothing);
+    });
+  });
+
+  group('nothing washes the picture', () {
+    testWidgets('no scrim covers the frame, whatever the state', (WidgetTester tester) async {
+      // `DESIGN.md:441-442`: the chrome is transparent over video. The first
+      // version stacked `Scrim.flat` (85 percent black at its bottom stop) and
+      // `Scrim.bottom` (the opaque surface colour) full-bleed over the view,
+      // which painted the lower third of the picture out. Asserted on the
+      // stack's own children rather than on a rendered colour, because the
+      // widget test's square font makes nothing about the paint measurable.
+      for (final _FakePlayback playback in <_FakePlayback>[
+        _FakePlayback(),
+        _FakePlayback(unplayable: true),
+        _FakePlayback(fault: ProviderFault.unreachable),
+      ]) {
+        await pumpLayout(tester, playback);
+
+        final Stack stack = tester.widget<Stack>(find.byType(Stack).first);
+        final Iterable<Widget> unpositioned = stack.children.where(
+          (Widget each) => each is! Positioned && each is! WatchoolsPlayerView,
+        );
+
+        expect(
+          unpositioned,
+          isEmpty,
+          reason: 'every child above the view is bounded by a Positioned, so none of them covers the frame',
+        );
+      }
     });
   });
 }

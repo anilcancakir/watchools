@@ -43,6 +43,9 @@ abstract interface class PlaybackFacade {
   /// waiting for one.
   Future<void> attach(PlaybackSurface surface);
 
+  /// Reports that the surface handed over by [attach] is going away.
+  Future<void> detach();
+
   /// Opens [channel], or holds it until a surface arrives.
   Future<void> play(Channel channel);
 
@@ -241,6 +244,43 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
     await play(pending);
   }
 
+  /// Reports that the surface is going away, and ends the session with it.
+  ///
+  /// Called from the screen's `dispose`, which is the only moment Dart hears
+  /// about this at all. The native side prunes the view on its own
+  /// (`WatchoolsPlayerPlugin.swift:186-191`) and **stops the core** when the
+  /// pruned view is the attached one, so a route pop kills playback whether or
+  /// not anybody asked. Without this, three things follow from that silence,
+  /// all of them measured against the Swift rather than guessed:
+  ///
+  /// 1. [_attached] would stay true against a forgotten view id, so the second
+  ///    visit to the screen would take [play]'s open-now branch, send the dead
+  ///    id and get `no-view` back, having set no [_pending] for the new
+  ///    surface to consume. A black screen with no fault, on every visit after
+  ///    the first.
+  /// 2. [_channel] would stay set forever, and it is half of the closure
+  ///    `AppServiceProvider` gives [ProviderSession] as its playback gate. The
+  ///    gate would latch closed and no catalogue refresh would ever run again,
+  ///    because [onClose] is the only other thing that clears it and a bound
+  ///    controller is never closed in this app.
+  /// 3. The engine's wakelock is Dart-side state, so a core the native layer
+  ///    stopped by itself would leave the display held awake indefinitely.
+  ///
+  /// No [refreshUI] here, deliberately: this runs from a `dispose`, and
+  /// notifying a widget that is being torn down is a `setState` after dispose.
+  @override
+  Future<void> detach() async {
+    _attached = false;
+    _pending = null;
+    _channel = null;
+    _unplayable = false;
+    _notified = PlaybackHealth.idle;
+
+    // Only a core that exists. `_engine` would BUILD one, which on the real
+    // implementation means subscribing to a platform channel during teardown.
+    await _resolvedEngine?.stop();
+  }
+
   /// Opens [channel], replacing whatever was playing.
   ///
   /// Reports rather than throws when no URL can be derived, because a
@@ -253,7 +293,11 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
     final Uri? source = _session.streamUrlFor(channel);
 
     if (source == null) {
-      _channel = null;
+      // The channel is kept rather than cleared, so the screen can name what
+      // it is refusing. Clearing it made the report read "this channel cannot
+      // be played" with no channel on screen to attach that to, and left
+      // [retry] with nothing to re-open either.
+      _channel = channel;
       _pending = null;
       _unplayable = true;
       refreshUI();
@@ -319,6 +363,11 @@ class PlaybackController extends SimpleMagicController implements PlaybackFacade
   @override
   Future<void> stop() async {
     _channel = null;
+    // Cleared with the rest, because a stop is the user saying they are done
+    // with this channel. Leaving it would make the next `attach` open a stream
+    // nobody asked for: the back affordance stops and then pops, and the pop
+    // is what disposes the view whose replacement mints the next surface.
+    _pending = null;
     _notified = PlaybackHealth.idle;
     _unplayable = false;
 

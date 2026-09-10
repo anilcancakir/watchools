@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 import 'package:watchools_player/watchools_player.dart';
@@ -8,7 +9,6 @@ import '../../app/models/channel.dart';
 import '../../app/models/provider_fault.dart';
 import '../../app/playback/playback_engine.dart';
 import '../components/provider_notice/provider_notice.dart';
-import '../components/scrim/scrim.dart';
 import 'support/page_gutter.dart';
 
 /// The playback surface: video underneath, Flutter chrome on top.
@@ -20,14 +20,30 @@ import 'support/page_gutter.dart';
 /// silent in a widget test. The stack's order is therefore load-bearing rather
 /// than cosmetic, and the test asserts the view sits at index 0.
 ///
-/// ### The chrome recedes
+/// ### The chrome recedes, and no scrim covers the picture
 ///
-/// `DESIGN.md:441-442` sets the one rule this surface already had: the chrome
-/// is transparent over video and never uses a scrim heavier than 40 percent,
-/// which is the ceiling Plex holds and the reason their artwork stays legible
-/// underneath. `Scrim.bottom` and `Scrim.flat` are the two the component
-/// offers that fit; there is no `Scrim.top`, and adding one would mean editing
-/// a component this screen has no business editing.
+/// `DESIGN.md:441-442` sets the rule this surface answers to: the chrome is
+/// transparent over video, because the reason Plex's artwork stays legible is
+/// that nothing washes it. So nothing here does. The chrome is content-width
+/// panels in two corners and the frame is untouched everywhere else.
+///
+/// The first version reached for `Scrim.flat` and `Scrim.bottom` full-bleed.
+/// Both are built for a still behind a text block rather than for live video:
+/// `flat` bottoms out at 85 percent black (`scrim.dart:35`) and `bottom` at
+/// the fully opaque surface colour (`scrim.dart:67`), so the two stacked
+/// painted the lower third of the picture out completely. Wind exposes no
+/// gradient stops, so a lighter ramp is not something this file can build, and
+/// `scrim.dart` is a shared component this screen has no business reweighting
+/// for its own case.
+///
+/// The panels carry `bg-scrim-strong`, which is 72 percent
+/// (`watchools_status_tokens.dart:109`). That is over the 40 percent the same
+/// `DESIGN.md` line names, and the conflict is real rather than an oversight
+/// here: the theme ships exactly two scrim weights, 45 and 72, and its own
+/// comment records 72 as what a line of text needs to clear AA over a frame
+/// whose brightness we do not control. One of the two numbers is wrong and
+/// only a design call settles which. Bounded is the part this file can honour,
+/// and it is the part that keeps the picture.
 ///
 /// ### Remote activation is prepared, not live
 ///
@@ -69,8 +85,8 @@ class PlaybackLayout extends StatelessWidget {
           // Index 0 deliberately: everything else must sit above it to be
           // tappable at all.
           WatchoolsPlayerView(onReady: (int viewId) => playback.attach(PlaybackSurface(platformViewId: viewId))),
-          Scrim.flat,
-          Scrim.bottom,
+          // No full-bleed scrim here, deliberately; the doc block above is why.
+          //
           // Above the fault branch rather than inside it. Both browse screens
           // once rendered a focusable widget in one parent when a list had
           // results and another when it did not, and every keystroke after the
@@ -89,8 +105,16 @@ class PlaybackLayout extends StatelessWidget {
                 // opened is not a retry.
                 child: ProviderNotice(
                   fault: fault,
-                  onRetry: () => playback.retry(),
-                  onOpenSettings: () => MagicRoute.to('/'),
+                  onRetry: () => _run(playback.retry),
+                  // The same destination the other four layouts send this to,
+                  // and it stops first. `expired` is the one fault whose panel
+                  // shows this instead of a retry, so the user is leaving to
+                  // replace a credential: walking off an open core would hold
+                  // the account's single connection slot while they do it.
+                  onOpenSettings: () => _run(() async {
+                    await playback.stop();
+                    MagicRoute.to('/saglayici');
+                  }),
                 ),
               ),
             )
@@ -106,16 +130,37 @@ class PlaybackLayout extends StatelessWidget {
     );
   }
 
+  /// Runs a playback command from a control, and reports what it throws.
+  ///
+  /// Every control on this screen calls something that reaches the native
+  /// side, and `WAnchor.onTap` is a `VoidCallback`, so the future it returns
+  /// belongs to nobody: a `PlatformException` out of the plugin becomes an
+  /// unhandled async error, which is a red console dump in debug and silence
+  /// in release. Reproduced on the running app by tapping pause with no core.
+  ///
+  /// Logged rather than turned into a [ProviderFault], because a failed pause
+  /// is not the provider failing and that vocabulary has no member for it. The
+  /// message is already redacted: every plugin call in `MpvPlaybackEngine`
+  /// goes through its `_native` door, which rebuilds the exception with the
+  /// message cleaned.
+  Future<void> _run(Future<void> Function() command) async {
+    try {
+      await command();
+    } on PlatformException catch (failure) {
+      Log.error('playback control failed: ${failure.code} ${failure.message ?? ''}');
+    }
+  }
+
   /// The way out, which also releases the connection.
   ///
   /// Stops rather than merely navigating, because the measured account allows
   /// **one** connection and a screen that walks away from an open core is the
   /// reason the next device in the house cannot watch.
   Widget _back() => WAnchor(
-    onTap: () async {
+    onTap: () => _run(() async {
       await playback.stop();
       (onBack ?? MagicRoute.back)();
-    },
+    }),
     semanticLabel: 'Geri',
     child: const WDiv(
       className: '''
@@ -133,7 +178,11 @@ class PlaybackLayout extends StatelessWidget {
     final String? health = _healthLine();
 
     return WDiv(
-      className: 'flex flex-col gap-3',
+      // Content-width and rounded, so it reads as a panel over the picture
+      // rather than a band across it. `Align` above keeps it from claiming the
+      // row, which is the other half of bounded: a `w-full` here would put a
+      // 72 percent strip across the frame and undo the whole correction.
+      className: 'flex flex-col gap-3 p-4 rounded-xl bg-scrim-strong',
       children: <Widget>[
         if (playback.unplayable)
           const WText('Bu kanal oynatılamıyor', className: 'text-base font-semibold text-fg')
@@ -142,7 +191,12 @@ class PlaybackLayout extends StatelessWidget {
           if (channel.schedule.isNotEmpty) WText(channel.schedule.first.title, className: 'text-sm text-fg-muted'),
         ],
         if (health != null) WText(health, className: 'text-sm text-fg-muted'),
-        WDiv(className: 'flex flex-row items-center gap-3', children: <Widget>[_pause()]),
+        // No transport controls when there is nothing to control. An
+        // unplayable channel opened no core, so pause would reach the native
+        // side with no core to pause and come back a `PlatformException` the
+        // user cannot act on. A control that cannot work is worse than no
+        // control on the one screen where a silent no-op is invisible.
+        if (!playback.unplayable) WDiv(className: 'flex flex-row items-center gap-3', children: <Widget>[_pause()]),
       ],
     );
   }
@@ -156,7 +210,7 @@ class PlaybackLayout extends StatelessWidget {
     final bool paused = playback.health == PlaybackHealth.paused;
 
     return WAnchor(
-      onTap: () => playback.togglePause(),
+      onTap: () => _run(playback.togglePause),
       semanticLabel: paused ? 'Devam et' : 'Duraklat',
       child: WDiv(
         className: '''

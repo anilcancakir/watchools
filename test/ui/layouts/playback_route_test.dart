@@ -7,7 +7,6 @@ import 'package:watchools/app/controllers/guide_controller.dart';
 import 'package:watchools/app/controllers/playback_controller.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/playback/fake_playback_engine.dart';
-import 'package:watchools/app/playback/playback_engine.dart';
 import 'package:watchools/app/support/guide_clock.dart';
 import 'package:watchools/ui/layouts/now_layout.dart';
 
@@ -71,26 +70,20 @@ void main() {
       // reason the two are separate controls.
       expect(controller.channel, selectedBefore);
 
-      // The hand-off did NOT open a core, because no surface exists yet: the
-      // route has not pushed, so the platform view has not been created. The
-      // controller holds the channel instead. An earlier version called `load`
-      // here, which threw `StateError` into an unawaited future and would have
-      // shown a black screen with no fault the first time a real credential
-      // produced a URL.
-      expect(engine.commands, isNot(contains(FakePlaybackCommand.load)));
-    });
-
-    testWidgets('the held channel opens when the screen hands over a surface', (WidgetTester tester) async {
-      final FakePlaybackEngine engine = FakePlaybackEngine();
-      final PlaybackController playback = PlaybackController(engine: () => engine);
-
-      // No session, so `streamUrlFor` cannot produce a URL and nothing is held.
-      // That is the state a fixture-built app is in, and it is why the
-      // ordering defect stayed invisible: the assertion below is about the
-      // ORDER the engine sees, which holds either way.
-      await playback.attach(const PlaybackSurface(platformViewId: 7));
-
-      expect(engine.commands.first, FakePlaybackCommand.attach);
+      // The hand-off reached the controller, which is what this test can say
+      // and the limit of what it should claim. This screen resolves a session
+      // with no credential, so `streamUrlFor` returns null and the channel is
+      // reported unplayable rather than held.
+      //
+      // The ordering itself (held before a surface, opened when one arrives)
+      // is asserted in `test/app/controllers/playback_controller_test.dart`
+      // against a session that has handshaken and can derive a real URL. It
+      // has to be: the first version of this test asserted `engine.commands`
+      // lacks `load`, which also passes when `play` does nothing at all, and
+      // here it does nothing at all. A no-URL screen cannot tell a fixed
+      // ordering from an absent one.
+      expect(playback.unplayable, isTrue);
+      expect(engine.commands, isEmpty);
     });
   });
 }

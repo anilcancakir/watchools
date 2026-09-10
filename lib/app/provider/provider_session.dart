@@ -189,8 +189,8 @@ class ProviderSession extends ChangeNotifier {
   /// subscription password in its **path**, so every caller that can read
   /// `XtreamCredentials` is another place the secret can reach a log, and the
   /// point of this shape is that the playback layer receives a `Uri` and never
-  /// sees the fields it was built from. `XtreamCredentials.describe` remains
-  /// the only sanctioned way to name one of these in a diagnostic.
+  /// sees the fields it was built from. [redactProviderSecrets] remains the
+  /// only sanctioned way to name one of these in a diagnostic.
   ///
   /// Null in four cases, which callers must treat alike because none of them is
   /// a fault: no credential is loaded, no handshake has answered yet, the

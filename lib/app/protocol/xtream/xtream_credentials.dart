@@ -31,6 +31,25 @@ class XtreamCredentials {
   /// What replaces a secret in anything a human or a log file reads.
   static const String _redaction = '***';
 
+  /// One percent-escape of a base64 character: `%2B`, `%2F` or `%3D`, in
+  /// either case. Shared by the run pattern and the unescaper so neither can
+  /// admit a character the other does not handle.
+  static const String _escapedBase64Char = '%(?:2[BbFf]|3[Dd])';
+
+  /// One character of a base64 run's **body**, escaped or not.
+  ///
+  /// `=` is deliberately absent and belongs to [_base64Padding] instead. It is
+  /// padding, so base64 only ever puts it at the end, and admitting it in the
+  /// body let a run reach backwards through a query parameter's `=` and match
+  /// `token=<token>` as one string. That decodes to nothing, because a `=` in
+  /// the middle is invalid padding, so the run was left alone with the token
+  /// inside it: the escaped-token leak this pattern exists to close, reopened
+  /// by the character class rather than by the escaping.
+  static const String _base64RunChar = '(?:[A-Za-z0-9+_-]|%2[BbFf])';
+
+  /// Base64 padding, escaped or not, of which there can be at most two.
+  static const String _base64Padding = '(?:=|%3[Dd])';
+
   /// The panel root, with no trailing slash: `http://host:8080`.
   ///
   /// Normalised by the constructor rather than by each caller, because the
@@ -39,14 +58,15 @@ class XtreamCredentials {
   final String baseUrl;
 
   /// The panel username. Also a path segment in every stream URL, which is why
-  /// [describe] has to redact path segments and not only the query.
+  /// [redact] has to cover the escaping a path segment uses and not only the
+  /// query encoders.
   final String username;
 
   /// The panel password, in plain text because the protocol sends it that way.
   ///
   /// Never reaches [toString] and never reaches an exception message. `Vault`
-  /// is the only place it is written, and [describe] and [redact] are the only
-  /// two ways anything carrying it becomes printable.
+  /// is the only place it is written, and [redact] is the only way anything
+  /// carrying it becomes printable.
   final String password;
 
   /// The `User-Agent` this provider is addressed with.
@@ -101,37 +121,18 @@ class XtreamCredentials {
   /// Forgets the credential entirely.
   static Future<void> clear() => Vault.delete(vaultKey);
 
-  /// The only sanctioned way to name a provider URL in a log, an error or a
-  /// diagnostic.
-  ///
-  /// Returns scheme, host, port and path, with the query dropped and any path
-  /// segment equal to [username] or [password] replaced. Dropping the query
-  /// alone is not enough and dropping the path is too much: a panel call keeps
-  /// the credential in the query (`player_api.php?username=&password=`) while a
-  /// stream URL keeps it in the path (`/live/<username>/<password>/<id>.ts`),
-  /// and the path is the half that says which endpoint failed.
-  ///
-  /// `userInfo` goes with the query, since `http://user:pass@host` is the third
-  /// place a URL can carry a secret.
-  String describe(Uri url) {
-    final List<String> segments = url.pathSegments
-        .map((String segment) => segment == username || segment == password ? _redaction : segment)
-        .toList();
-
-    return Uri(
-      scheme: url.scheme,
-      host: url.host,
-      port: url.hasPort ? url.port : null,
-      pathSegments: segments,
-    ).toString();
-  }
-
-  /// The same guarantee as [describe], for prose that merely contains a URL.
+  /// The only sanctioned way to name a provider URL, or anything containing
+  /// one, in a log, an error or a diagnostic.
   ///
   /// Returns [text] with every spelling of [password] and [username] replaced
-  /// by the marker, and everything else byte for byte as it arrived. This is
-  /// [describe]'s sibling rather than its replacement: a `Uri` can be taken
-  /// apart, a log line cannot, and the leak this closes arrives as a log line.
+  /// by the marker, and everything else byte for byte as it arrived.
+  ///
+  /// Prose rather than a `Uri`, and there is deliberately no `Uri` sibling. One
+  /// existed, taking a URL apart to drop the query and rewrite matching path
+  /// segments, and it went the whole implementation without a caller: every
+  /// leak this class actually has to close arrives as a line of prose from
+  /// somewhere below, where there is no `Uri` to take apart. A second door with
+  /// weaker cover and no traffic is how a later reader picks the wrong one.
   /// mpv is subscribed at `warn`
   /// (`packages/watchools_player/macos/watchools_player/Sources/watchools_player/MpvEngine.swift:127`)
   /// and its lines are forwarded verbatim (`:465`), FFmpeg's reconnect warning
@@ -221,15 +222,29 @@ class XtreamCredentials {
   /// Three guards keep it from rewriting innocent text: a minimum length, a
   /// successful base64 decode, and a UTF-8 decoding that actually contains a
   /// secret. A run that fails any of the three is left exactly as it arrived.
-  /// No `/` in the run, deliberately. It is part of the standard base64
+  /// No bare `/` in the run, deliberately. It is part of the standard base64
   /// alphabet, and including it made the match greedily swallow path
   /// separators: `/live/play/<token>/10001` came back as one run that decodes
   /// to nothing and so was left alone, with the token inside it. A token
   /// embedded in a URL path cannot contain `/` anyway, because that would end
   /// the segment, and the URL-safe alphabet spells the same two characters
   /// `-` and `_`.
+  ///
+  /// An **escaped** one is a different matter and is admitted: a token in a
+  /// query parameter is percent-encoded, so a standard-alphabet token arrives
+  /// as `dXNlcg%2FcGFzcw`. `%` was not in the run class, so that split into two
+  /// runs neither of which decodes, and the token went through. Exactly three
+  /// escapes are admitted, `%2B`, `%2F` and `%3D`, either case: they are the
+  /// base64 characters a URL escapes, and they are the only ones that can be
+  /// put back without changing what the run means. Admitting `%[0-9A-Fa-f]{2}`
+  /// wholesale would be worse than the gap it closes, because `%20` would then
+  /// join a token to the next word and the joined run decodes to nothing.
+  ///
+  /// Body then padding rather than one class for both, which is
+  /// [_base64RunChar]'s own note and the correction that made the escaped case
+  /// actually work.
   String _redactEncodedSegments(String text) => text.replaceAllMapped(
-    RegExp(r'[A-Za-z0-9+_=-]{16,}'),
+    RegExp('$_base64RunChar{16,}$_base64Padding{0,2}'),
     (Match match) => _namesASecret(match[0]!) ? _redaction : match[0]!,
   );
 
@@ -244,22 +259,43 @@ class XtreamCredentials {
 
   /// [run] as UTF-8 out of base64, or null when it is not both.
   ///
-  /// Tries the URL alphabet as well as the standard one, because a panel that
-  /// puts a token in a path has reason to prefer it, and pads to a multiple of
-  /// four because a token in a URL usually has its padding stripped.
+  /// Both alphabets in one pass rather than one codec per attempt. `base64Url`
+  /// and `base64` share a decoder that accepts `-_` and `+/` interchangeably
+  /// (`convert/base64.dart`, `Base64Decoder`), so an earlier version's loop
+  /// over the two ran its second iteration only when the first threw, which is
+  /// exactly when the second throws too: dead code that read as coverage.
+  ///
+  /// Unescaped first, then padded to a multiple of four, because a token in a
+  /// URL usually has its padding stripped and the escapes are part of what the
+  /// run class admits.
   String? _decodeBase64(String run) {
-    final String padded = run.padRight(run.length + (4 - run.length % 4) % 4, '=');
+    final String unescaped = _unescapeBase64(run);
+    final String padded = unescaped.padRight(unescaped.length + (4 - unescaped.length % 4) % 4, '=');
 
-    for (final Codec<List<int>, String> codec in <Codec<List<int>, String>>[base64Url, base64]) {
-      try {
-        return utf8.decode(codec.decode(padded));
-      } on FormatException {
-        continue;
-      }
+    // Malformed bytes are allowed through as replacement characters rather
+    // than rejected, and that is the second half of the same defect. A token
+    // is commonly a readable payload plus a **binary** signature, and one
+    // invalid UTF-8 byte anywhere in it made the strict decode throw, so the
+    // whole run was left alone with the credential sitting in plain ASCII at
+    // its front. The guard that stops innocent text being rewritten is
+    // [_namesASecret]'s containment check, not this decode's strictness.
+    try {
+      return utf8.decode(base64Url.decode(padded), allowMalformed: true);
+    } on FormatException {
+      return null;
     }
-
-    return null;
   }
+
+  /// [run] with the three escaped base64 characters put back.
+  ///
+  /// Written from the same pattern the run class admits, so the two cannot
+  /// drift: a character admitted there and not put back here would corrupt the
+  /// decode and hide the token, which is the failure the escape handling exists
+  /// to close.
+  static String _unescapeBase64(String run) => run.replaceAllMapped(
+    RegExp(_escapedBase64Char),
+    (Match match) => String.fromCharCode(int.parse(match[0]!.substring(1), radix: 16)),
+  );
 
   @override
   bool operator ==(Object other) =>
