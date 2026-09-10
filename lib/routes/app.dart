@@ -3,6 +3,7 @@ import 'package:magic/magic.dart';
 import '../resources/views/guide_view.dart';
 import '../resources/views/library_view.dart';
 import '../resources/views/playback_view.dart';
+import '../resources/views/provider_settings_view.dart';
 import '../resources/views/title_view.dart';
 
 /// Application Route Definitions.
@@ -28,4 +29,13 @@ void registerAppRoutes() {
   // account is still active. Playback is reached by choosing something, never
   // by arriving at an address.
   MagicRoute.page('/izle', () => const PlaybackView()).title('İzle');
+
+  // `/saglayici` was referenced from five layouts and registered nowhere, so
+  // `ProviderNotice`'s action on `expired` fell through to `/` and put the user
+  // back on the live screen with the same dead catalogue. A route that is only
+  // ever navigated to is silently absent rather than an error, which is what
+  // let six call sites accumulate against it. The screen behind it is a
+  // placeholder and says so; the form belongs to onboarding, which does not
+  // exist yet.
+  MagicRoute.page('/saglayici', () => const ProviderSettingsView()).title('Sağlayıcı');
 }

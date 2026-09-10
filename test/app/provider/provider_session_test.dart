@@ -33,6 +33,21 @@ class _MockPanel {
   int handshakeCalls = 0;
   final List<int> requestedShortEpgStreamIds = <int>[];
 
+  /// Whether the VOD half of a refresh ever ran.
+  ///
+  /// The larger half by request count (four calls against the channel half's
+  /// two plus the EPG loop), so a test that asserts a refresh was abandoned
+  /// reads this rather than only counting EPG calls.
+  bool requestedVodStreams = false;
+
+  /// Called as each `get_short_epg` request arrives, before it is answered.
+  ///
+  /// The seam a test uses to stand in for "the user tapped a channel while the
+  /// refresh was in flight": the EPG loop is the longest stretch of sequential
+  /// requests in the app, so it is where a mid-refresh event is both most
+  /// likely and cheapest to script.
+  void Function(int streamId)? onShortEpg;
+
   MagicResponse handle(MagicRequest request) {
     final String action = request.queryParameters?['action'] as String? ?? '';
 
@@ -49,6 +64,7 @@ class _MockPanel {
       case 'get_short_epg':
         final int streamId = int.parse('${request.queryParameters?['stream_id']}');
         requestedShortEpgStreamIds.add(streamId);
+        onShortEpg?.call(streamId);
         return MagicResponse(
           data: <String, dynamic>{'epg_listings': shortEpgByStreamId[streamId] ?? const <Map<String, dynamic>>[]},
           statusCode: 200,
@@ -56,6 +72,7 @@ class _MockPanel {
       case 'get_vod_categories':
         return MagicResponse(data: vodCategories, statusCode: 200);
       case 'get_vod_streams':
+        requestedVodStreams = true;
         return MagicResponse(data: vodStreams, statusCode: 200);
       case 'get_series_categories':
         return MagicResponse(data: seriesCategories, statusCode: 200);
@@ -339,6 +356,51 @@ void main() {
       expect(session.hasCredentials, isTrue);
       expect(session.fault, isNull);
       driver.assertSentCount(0);
+    });
+
+    test('stops mid-refresh when playback starts, rather than only refusing to start', () async {
+      // The case the door alone does not cover, and the one that happens on
+      // every launch: `AppServiceProvider.boot()` fires an unawaited
+      // `refresh()` at cold start, so a user who taps a channel a few seconds
+      // in is playing while a batch of a handshake, four list fetches and up
+      // to `epgFetchLimit` sequential EPG calls is still in flight, against an
+      // account whose measured `max_connections` is 1.
+      //
+      // The predicate flips the moment the first EPG request is made, which is
+      // the earliest point a test can stand in for "the user tapped a channel".
+      await seedCredentials();
+      panel.handshakeBody = _handshake(auth: 1, maxConnections: 2);
+      panel.liveCategories = <Map<String, dynamic>>[_liveCategory('1', 'Spor')];
+      panel.liveStreams = <Map<String, dynamic>>[
+        _liveEntry(streamId: 301, number: 1, name: 'Kanal 1', categoryId: '1', epgChannelId: 'ch1'),
+        _liveEntry(streamId: 302, number: 2, name: 'Kanal 2', categoryId: '1', epgChannelId: 'ch2'),
+        _liveEntry(streamId: 303, number: 3, name: 'Kanal 3', categoryId: '1', epgChannelId: 'ch3'),
+      ];
+      for (final int streamId in <int>[301, 302, 303]) {
+        panel.shortEpgByStreamId[streamId] = <Map<String, dynamic>>[
+          _shortEpgListing(start: '2024-01-01 20:00:00', end: '2024-01-01 21:00:00', title: 'Programme'),
+        ];
+      }
+
+      bool playing = false;
+      final ProviderSession session = ProviderSession(isPlaying: () => playing);
+      await session.start();
+
+      // Flip on the first EPG request. `requestedShortEpgStreamIds` is what
+      // the fake panel records, so reading it is how the test observes where
+      // the loop got to.
+      panel.onShortEpg = (int _) => playing = true;
+
+      await session.refresh();
+
+      // One EPG request went out before the flip and the loop then broke, so
+      // the other two never left. Asserted as a length rather than as a set,
+      // because the point is that it stopped, not which channel it stopped on.
+      expect(panel.requestedShortEpgStreamIds, hasLength(1));
+
+      // And the VOD half never ran at all. That is four more requests, which
+      // is the larger half of what a refresh costs.
+      expect(panel.requestedVodStreams, isFalse);
     });
   });
 

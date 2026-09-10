@@ -437,6 +437,21 @@ kept for later, which is what happened to four of them when the losing layouts
 went. And nothing here paints a colour outside the semantic aliases; a component
 that needs a value the theme does not carry is a gap in the theme.
 
-The player chrome does not exist yet. When it does it is transparent over video
-and must never use a scrim heavier than 40 percent, which is the ceiling Plex
-holds and the reason their artwork stays legible underneath.
+The player chrome does not wash the picture: no scrim spans the frame. Contrast
+is bounded to the panel carrying the text, at the theme's `scrim-strong`
+weight, which is the measured minimum for a line of text over a frame whose
+brightness we do not control.
+
+This line read "never a scrim heavier than 40 percent" until the chrome was
+built, and the number turned out to be the wrong half of the rule. What keeps
+Plex's artwork legible is that nothing covers it, and 40 percent was this
+document's guess at how to say so. But the theme ships exactly two scrim
+weights, 45 and 72 (`lib/config/watchools_status_tokens.dart:108-109`), and
+records 72 as what a line of text needs to clear AA over an arbitrary frame, so
+a rule capped at 40 had no token that satisfied it and no reading under which
+the text stayed readable. Bounding the contrast rather than weakening it keeps
+both: the picture is untouched everywhere the chrome is not, and the chrome is
+legible where it is. `lib/ui/layouts/playback_layout.dart` is the worked
+example, and its first version (two full-bleed ramps out of `Scrim`, which are
+built for a still image behind a text block and bottom out at 85 percent and
+at opaque) is what the rule now forbids in as many words.

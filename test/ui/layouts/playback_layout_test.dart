@@ -244,7 +244,7 @@ void main() {
 
   group('nothing washes the picture', () {
     testWidgets('no scrim covers the frame, whatever the state', (WidgetTester tester) async {
-      // `DESIGN.md:441-442`: the chrome is transparent over video. The first
+      // `DESIGN.md:440-443`: no scrim spans the frame. The first
       // version stacked `Scrim.flat` (85 percent black at its bottom stop) and
       // `Scrim.bottom` (the opaque surface colour) full-bleed over the view,
       // which painted the lower third of the picture out. Asserted on the

@@ -22,7 +22,7 @@ import 'support/page_gutter.dart';
 ///
 /// ### The chrome recedes, and no scrim covers the picture
 ///
-/// `DESIGN.md:441-442` sets the rule this surface answers to: the chrome is
+/// `DESIGN.md:440-443` sets the rule this surface answers to: the chrome is
 /// transparent over video, because the reason Plex's artwork stays legible is
 /// that nothing washes it. So nothing here does. The chrome is content-width
 /// panels in two corners and the frame is untouched everywhere else.
@@ -36,14 +36,14 @@ import 'support/page_gutter.dart';
 /// `scrim.dart` is a shared component this screen has no business reweighting
 /// for its own case.
 ///
-/// The panels carry `bg-scrim-strong`, which is 72 percent
-/// (`watchools_status_tokens.dart:109`). That is over the 40 percent the same
-/// `DESIGN.md` line names, and the conflict is real rather than an oversight
-/// here: the theme ships exactly two scrim weights, 45 and 72, and its own
-/// comment records 72 as what a line of text needs to clear AA over a frame
-/// whose brightness we do not control. One of the two numbers is wrong and
-/// only a design call settles which. Bounded is the part this file can honour,
-/// and it is the part that keeps the picture.
+/// The panels carry `bg-scrim-strong`, 72 percent
+/// (`watchools_status_tokens.dart:109`), which is what the theme records as the
+/// minimum for a line of text over a frame whose brightness we do not control.
+/// That used to contradict `DESIGN.md`, which capped a player scrim at 40
+/// percent; building this screen is what showed the number to be the wrong half
+/// of the rule, since no token satisfied it and none of the readings left the
+/// text legible. `DESIGN.md` now states the half that matters, which is that
+/// nothing spans the frame, and this file is the example it cites.
 ///
 /// ### Remote activation is prepared, not live
 ///
@@ -84,8 +84,16 @@ class PlaybackLayout extends StatelessWidget {
         children: <Widget>[
           // Index 0 deliberately: everything else must sit above it to be
           // tappable at all.
-          WatchoolsPlayerView(onReady: (int viewId) => playback.attach(PlaybackSurface(platformViewId: viewId))),
-          // No full-bleed scrim here, deliberately; the doc block above is why.
+          // Through `_run` like every control, and this one matters more than
+          // any of them: `ValueChanged<int>` returns void, and `attach` is what
+          // opens the held channel, so the `load` it triggers is the single
+          // most likely call on this screen to come back a `PlatformException`
+          // and the one whose failure was landing as an unhandled async error.
+          WatchoolsPlayerView(
+            onReady: (int viewId) => _run(() => playback.attach(PlaybackSurface(platformViewId: viewId))),
+          ),
+          // No full-bleed scrim here, which `DESIGN.md:440-443` now states as
+          // the rule; the doc block above records why the rule changed shape.
           //
           // Above the fault branch rather than inside it. Both browse screens
           // once rendered a focusable widget in one parent when a list had

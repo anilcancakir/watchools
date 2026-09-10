@@ -31,6 +31,47 @@ void main() {
       // which is the failure this asserts against.
       expect("MagicRoute.page('/izle'".allMatches(source).length, 1);
     });
+
+    test('every path navigated to from a layout is a path that is registered', () async {
+      // The failure this exists for, found on the running app: `/saglayici` was
+      // reached from five layouts and registered nowhere, so
+      // `ProviderNotice`'s action on `expired` fell through to `/` and put the
+      // user back on the live screen with the same dead catalogue. Nothing
+      // errored, because `MagicRoute.to` on an unknown path is a fall-through
+      // rather than a throw, which is exactly how six call sites accumulated
+      // against a route that did not exist.
+      //
+      // Read as source for the same reason the test above is: the table can
+      // only be built once per process.
+      final String routes = await File('lib/routes/app.dart').readAsString();
+      final Iterable<File> layouts = Directory('lib/ui/layouts')
+          .listSync()
+          .whereType<File>()
+          .where((File file) => file.path.endsWith('.dart'));
+
+      final Set<String> navigated = <String>{};
+
+      for (final File layout in layouts) {
+        final String source = layout.readAsStringSync();
+
+        for (final RegExpMatch match in RegExp(r"MagicRoute\.to\('([^']+)'\)").allMatches(source)) {
+          navigated.add(match.group(1)!);
+        }
+      }
+
+      // The regex has to have found something, or this test passes by reading
+      // nothing. That is the shape of vacuous check this project keeps paying
+      // for, so the guard is part of the assertion rather than a comment.
+      expect(navigated, isNotEmpty, reason: 'no MagicRoute.to call was found, so nothing was checked');
+
+      for (final String path in navigated) {
+        expect(
+          routes.contains("MagicRoute.page('$path'"),
+          isTrue,
+          reason: '$path is navigated to from a layout but registered in no route',
+        );
+      }
+    });
   });
 
   group('the hero play affordance', () {

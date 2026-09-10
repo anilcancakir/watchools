@@ -51,6 +51,17 @@ import 'catalogue_store.dart';
 /// the viewer's expense: while [_isPlaying] answers true, it returns having
 /// sent nothing, provable on a faked driver by `assertSentCount(0)`.
 ///
+/// The gate is consulted at the door **and twice more inside**, and the
+/// difference is the case that happens on every launch rather than an edge:
+/// `AppServiceProvider.boot()` fires `refresh()` unawaited at cold start, so a
+/// user who taps a channel a few seconds in is playing while a handshake, four
+/// list fetches and up to [epgFetchLimit] sequential EPG calls are still in
+/// flight. A door-only gate says nothing about a refresh already running.
+/// The two inner checks sit between the channel and the VOD halves and between
+/// EPG round trips, never inside one: each half ends in a `replace*` that runs
+/// a `DB.transaction`, and abandoning mid-transaction would leave the
+/// catalogue half written.
+///
 /// ## What a refresh persists, and what it deliberately does not read back
 ///
 /// [CatalogueStore] does not persist a channel's schedule
@@ -113,9 +124,22 @@ class ProviderSession extends ChangeNotifier {
   /// The composition root is what closes the loop, so neither side imports the
   /// other. Defaults to "not playing", which is what the fixture path wants.
   ///
-  /// The measured account's `max_connections` is **1**, and a second concurrent
-  /// stream killed the first at 5.79 s, so this is the difference between a
-  /// refresh being safe and a refresh evicting the viewer.
+  /// What was measured, and what was not, because the gate's strength should
+  /// not be read as stronger than its evidence. The measured account's
+  /// `max_connections` is **1**, and a second concurrent stream killed the
+  /// first at 5.79 s (`.ac/research/player-layer.md:224-230`) with a `.ts`
+  /// request on **both** sides. Whether a `player_api.php` call occupies the
+  /// slot at all is **unmeasured**, and the mock panel never enforces the cap
+  /// (it reports `active_cons` and admits the request anyway,
+  /// `tool/xtream-mock/server.mjs:171`), so nothing here has been proven to be
+  /// necessary. The gate stays because it is cheap and errs in the direction
+  /// that cannot cost a viewer their stream.
+  ///
+  /// [refresh] consults this at its door **and twice more inside**, which is
+  /// the correction that matters: the door alone stops a refresh starting
+  /// during playback and does nothing about one already running, and the
+  /// cold-start refresh racing the user's first tap is the case that happens on
+  /// every launch.
   final bool Function() _isPlaying;
 
   XtreamCredentials? _credentials;
@@ -340,7 +364,28 @@ class ProviderSession extends ChangeNotifier {
     _anchorClock();
 
     final String account = CatalogueStore.accountKey(credentials);
+
+    // Re-checked between the two halves, not only at the door. The gate at the
+    // top of this method stops a refresh from STARTING during playback and
+    // does nothing about one already running, and that is the case which
+    // happens on every launch: `AppServiceProvider.boot()` fires
+    // `unawaited(session.refresh())` at cold start, so a user who taps a
+    // channel five seconds in plays straight through an in-flight batch of a
+    // handshake, four list fetches and up to [epgFetchLimit] sequential EPG
+    // calls, against an account whose measured `max_connections` is 1.
+    //
+    // Between the halves rather than inside one: each half ends in a
+    // `replace*` that runs a `DB.transaction`, and abandoning mid-transaction
+    // would leave the catalogue half written. The EPG loop has its own check
+    // for the same reason, placed between round trips.
     await _refreshChannels(client: client, account: account);
+
+    if (_isPlaying()) {
+      notifyListeners();
+
+      return;
+    }
+
     await _refreshTitles(client: client, account: account);
 
     notifyListeners();
@@ -445,6 +490,14 @@ class ProviderSession extends ChangeNotifier {
     ];
 
     for (final int index in candidates.take(epgFetchLimit)) {
+      // The longest stretch of requests in the app: up to [epgFetchLimit]
+      // sequential round trips, one per channel. Abandoning it mid-way is safe
+      // and the schedules already merged are kept, because the `replaceChannels`
+      // below writes whatever `built` holds at that point; a channel whose EPG
+      // was not reached restores with an empty schedule, which is the ordinary
+      // state of 91 percent of them anyway.
+      if (_isPlaying()) break;
+
       final int streamId = built[index].streamId!;
 
       final List<Map<String, dynamic>> listings =

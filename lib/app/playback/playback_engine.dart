@@ -96,6 +96,17 @@ class PlaybackSurface {
 /// 5. [attach] happens before [load]. An engine with no surface renders into
 ///    nothing, which on a real platform is silent.
 /// 6. **No member carries raw text.** See [load].
+/// 7. [stop] and [dispose] are **idempotent, and safe to call after the surface
+///    is gone.** This is the promise the consumer above actually relies on and
+///    the one an implementer is most likely to break, because the platform can
+///    tear the core down without saying so: `WatchoolsPlayerPlugin.swift:186-191`
+///    stops the core when it prunes the attached platform view, and Dart hears
+///    nothing, so `PlaybackController.detach` stops an engine that may already
+///    be stopped. On mpv that happens to work, because `MpvEngine.swift:195-196`
+///    opens with `guard let handle = mpv else { return }`. That is an
+///    implementation property rather than a contract, and `ExoPlayer` after
+///    `release()` is the counter-example, so it is written here instead of
+///    inherited from what mpv happens to tolerate.
 ///
 /// ### Three members this interface will never have
 ///
@@ -120,6 +131,28 @@ class PlaybackSurface {
 /// precedent in four reference players is ExoPlayer's `getCurrentLiveOffset()`
 /// with a `TIME_UNSET` sentinel, no Dart player has one, and nothing in the app
 /// asks the question. It arrives with the caller that needs it.
+///
+/// ### The caller that will ask for an offset, and the shape to give it
+///
+/// One is already on screen. `showcase_layout.dart:98` renders an
+/// `İzlemeye devam et` rail off `TitleItem.progress`, and
+/// `ProviderSession.setTitleProgress` (`provider_session.dart:392`) has **no
+/// caller anywhere in `lib/`**: the only thing that can ever write it is a VOD
+/// session reading its own offset. So resume is unwired rather than deferred,
+/// and it is the concrete demand for the third absence above.
+///
+/// When it lands, the shape is a **separate capability interface** that a
+/// VOD-capable engine also implements, not nullable members added here. The
+/// difference is the whole reason this contract is `abstract interface class`:
+/// nullable members would make every live-only engine answer a question it has
+/// no answer for, and answer it with a null that reads as "unknown", which is
+/// never healthy. A second interface makes a live-only engine simply not
+/// implement it, and makes a screen that needs a scrubber say so in its own
+/// type.
+///
+/// Catch-up is a different case and genuinely deferred: `tv_archive` is set on
+/// 20 of 2,976 channels on the measured account (`channel.dart:78-81`), so it
+/// is carried and unused rather than unwired.
 abstract interface class PlaybackEngine {
   /// Takes the surface this engine renders into, for its whole life.
   ///
