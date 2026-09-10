@@ -527,7 +527,7 @@ the segment after `player-reconnect/`.
 
 ### Wave 6
 
-- [ ] **Step 12**: Measure whether the panel re-mints a token per request
+- [x] **Step 12**: Measure whether the panel re-mints a token per request
     - **Type**: verification
     - **Files**: (no source edits; runs commands)
     - **Description**: The recovery design turns on one unmeasured fact. A lapsed token stalls libmpv with no event, and `player-layer.md:156-180` concludes that **no reconnect option survives it** and recovery therefore belongs to the app layer via a fresh `loadfile`. What is not established is whether a fresh `loadfile` of the **stable** URL is enough: the mock mints a new token on every 302 (`server.mjs:1111-1118`), and if a real panel does the same then recovery needs no `player_api.php` call at all and the protocol layer owes the engine nothing. Measure it against the mock first, which is free and settles the shape. **Do not spend a real-provider request on this**: the standing constraint is few, logged, never repeated, and the real-panel question is recorded in `## Deferred Ideas` with the exact two-request procedure. Also correct the record while here: the 300 s TTL that has been quoted as a provider fact is the mock's own constant, and the panel figure is about forty minutes (`catalogue.mjs:58-68`).
@@ -548,7 +548,7 @@ the segment after `player-reconnect/`.
         - Curl port 3399. That is `verify.mjs`'s own port; `server.mjs:40` defaults to **3300**, and an earlier draft of this step curled 3399 and would have had every request refused
         - Leave the panel bound; a second run fails with `EADDRINUSE`
 
-- [ ] **Step 13**: Run every gate the project enforces
+- [x] **Step 13**: Run every gate the project enforces
     - **Type**: verification
     - **Files**: (no source edits; runs commands)
     - **Description**: The full local gate set before the pull request, in the order CI runs it. The lock check runs **first**, because that is the only moment the committed file is still the committed file: this plan adds two dependencies (`watchools_player` by path, `wakelock_plus` hosted) and, per step 3, leaves `fluttersdk_wind: ^1.5.0` untouched because the Wind release is prepared but unpublished, so `pubspec.lock` legitimately changes and the committed version must be the **hosted-only** one, regenerated with `pubspec_overrides.yaml` moved aside per `.gitignore:73`. Coverage is the gate most likely to fail on this plan: `lib/app/playback/` is inside the denominator and its macOS implementation cannot run under `flutter test`, which is exactly why `FakePlaybackEngine` is a deliverable.
@@ -642,6 +642,18 @@ Both go into `.ac/research/ecosystem-defects.md` and, per `CLAUDE.md`, get repor
 reply carrying this work rather than only in a file.
 
 ## Deferred Ideas
+
+- **The tokenised URL defeats both redaction paths, and step 12 measured it.** The 302's target
+  carries a base64 token whose payload is literally `username:password:issuedAt`
+  (`evidence/12-token-remint.txt`). `describe(Uri)` replaces a path segment only when the segment
+  **equals** a secret, and `redact(String)` looks for the raw secret plus three encodings, none of
+  which is the base64 blob. Reachable rather than theoretical: mpv follows the redirect, FFmpeg's
+  reconnect warning names the URL it is retrying, and that warning is the only signal a token is
+  lapsing so it cannot be switched off. The fix is **not** a fourth hand-written spelling: it is to
+  recognise a base64-looking path segment whose decoding contains either secret, which covers a
+  token shape this app has not seen yet as well as the one it has. Deferred rather than done because
+  step 12 is a measurement step and this is code, and because the real panel's token shape is
+  itself unmeasured.
 
 - **The variant ladder.** Already deferred once when the protocol layer was chosen over it, and
   deliberately not designed out here: it reads one `demuxer-cache-state` node, its tier 0 is

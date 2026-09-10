@@ -1,0 +1,80 @@
+Step 13: every gate the project enforces, in the order CI runs them.
+
+## 1. The lock, first, because that is the only moment it is still itself
+
+A local `pub get` with `pubspec_overrides.yaml` active rewrites the lock with
+sibling paths under /Users/, and every gate after `pub get` passes over such a
+lock rather than failing on it. So this is measured against HEAD, which is what
+CI clones.
+
+  git show HEAD:pubspec.lock | grep -c 'source: path'   -> 1
+  git show HEAD:pubspec.lock | grep -c 'relative: true' -> 1
+
+EQUAL, which is what `.github/workflows/ci.yml:47-67` compares. Not zero, and
+zero would be wrong: `watchools_player` lives under `packages/` in this
+repository, so it is a legitimate path dependency and pub records it as
+relative. The gate's own comment says exactly that.
+
+The working tree reads 8 and 1, unstaged, which is the state `.gitignore`'s
+regeneration recipe deliberately leaves behind.
+
+## 2. Analyze
+
+  flutter analyze --fatal-infos --fatal-warnings
+  -> No issues found!
+
+## 3. Format
+
+  dart format --output=none --set-exit-if-changed lib test
+  -> Formatted 142 files (0 changed)
+
+## 4. The suite, with coverage
+
+  flutter test --coverage
+  -> 463 pass, 1 skip, 0 fail
+
+The one skip is deliberate and pre-existing: the exact-case `User-Agent`
+assertion, which needs a published magic carrying `preserveHeaderCase`
+(`fluttersdk/magic#151`). It passes against the local override and fails against
+the published constraint, so it stays skipped until the commit that bumps
+`magic:` unskips it.
+
+## 5. Coverage, computed with the CI step's own script rather than trusted
+
+Run verbatim from `.github/workflows/ci.yml:113-145`, same exclusion list
+(`lib/resources/views/`, `lib/app/providers/`, `lib/app/kernel.dart`,
+`lib/routes/app.dart`), same floor from `FLUTTER_COVERAGE_MINIMUM`.
+
+  Flutter line coverage (scaffold excluded): 2387/2486 = 96.0%, floor 90.0%
+  PASS
+
+Reading the printed hit/found matters here rather than only the percentage: lcov
+carries only files the tests import, so the denominator moved when this plan
+added `lib/app/playback/` and `lib/app/controllers/playback_controller.dart` to
+it. It went from 2239 lines at the protocol layer's delivery to 2486 now, and the
+ratio held because `FakePlaybackEngine` is a deliverable rather than a test
+helper. That was decision D2's accepted cost and it did not come due.
+
+## 6. The plugin's own suite, which step 4 changed
+
+  cd packages/watchools_player && flutter test
+  -> 16 pass, 0 fail
+
+## 7. The mock verifier
+
+  node tool/xtream-mock/verify.mjs
+  -> All checks passed.
+
+## What no gate here covers, stated rather than implied
+
+**No Swift is compiled by any of the above, and none is compiled by CI**:
+`ci.yml:23` and `:150` both run `ubuntu-latest` and there is no
+`flutter build macos` step. Step 4's whole deliverable is Swift, so it was
+verified by a manual `flutter build macos --debug` during wave 2 (exit 0,
+`Built build/macos/Build/Products/Debug/Watchools.app`). Any future step that
+writes Swift needs the same manual build; a green CI says nothing about it.
+
+**No gate here exercises real playback.** `flutter test` touches no engine, no
+display and no provider. The macOS implementation's behaviour against a real
+stream, the wakelock's effect on a real display, and the redaction of a real
+FFmpeg reconnect warning are all unverified by this run.

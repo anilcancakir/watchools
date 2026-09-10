@@ -1,0 +1,65 @@
+Step 12: does the panel re-mint a stream token per request?
+
+Measured against `tool/xtream-mock/server.mjs` on its own default port 3300.
+No request was sent to a real provider.
+
+## The two Location headers, captured verbatim
+
+Request 1:
+  Location: http://127.0.0.1:3300/live/play/ZGVtbzpkZW1vOjE3ODkwMDMwMTc/10001.ts
+
+Request 2 (about eight seconds later, same stable URL):
+  Location: http://127.0.0.1:3300/live/play/ZGVtbzpkZW1vOjE3ODkwMDMwMjU/10001.ts
+
+## They differ, and the payload says why
+
+The token is base64. Decoded:
+
+  ZGVtbzpkZW1vOjE3ODkwMDMwMTc -> demo:demo:1789003017
+  ZGVtbzpkZW1vOjE3ODkwMDMwMjU -> demo:demo:1789003025
+
+So it is `username:password:issuedAt`, and the second differs from the first only in
+the timestamp. `server.mjs:1111` mints a fresh one on every 302 rather than caching.
+
+## What this settles, and only for this fixture
+
+Against the mock, a bare `loadfile` of the STABLE URL is a sufficient recovery: the
+302 re-mints, so the engine needs no `player_api.php` call and the protocol layer
+owes the engine nothing for recovery. That matches what the interface already
+promises, where `load(Uri)` replaces whatever was playing and the app's recovery
+from a lapsed token is a fresh open.
+
+**The real panel is unmeasured.** This is a fixture result and must not be quoted as
+a provider fact. The deferred procedure in the plan's `## Deferred Ideas` is the
+two-request measurement against the real subscription, and it stays deferred under
+the standing constraint: few requests, all logged, never repeated.
+
+## Correction to the record, made while here
+
+The 300 s token TTL that has been quoted repeatedly as a provider fact is the mock's
+own constant, chosen so a test does not have to wait (`catalogue.mjs:58-68`). The
+measured real-panel figure is about **forty minutes**. Nothing should be sized
+against 300 s.
+
+## A finding this measurement surfaced, which was not what it was looking for
+
+**The tokenised URL still carries the credential, and neither redaction path removes
+it.** The token is base64, which is encoding rather than encryption, and its payload
+is literally `username:password:issuedAt`.
+
+- `XtreamCredentials.describe(Uri)` replaces a path segment only when that segment
+  **equals** the username or the password (`xtream_credentials.dart:117-119`). The
+  token segment equals neither, so it survives.
+- `XtreamCredentials.redact(String)` replaces the raw secret and three encodings of
+  it. None of them is the base64 blob, which contains no literal `demo`.
+
+Reachable rather than theoretical: the app does not follow redirects
+(`app_service_provider.dart`, `followRedirects = false`), but mpv does, and FFmpeg's
+reconnect warning names the URL it is retrying, which after a 302 is the tokenised
+one. That warning is the only signal a token is lapsing, so it cannot be switched
+off, and `MpvPlaybackEngine` forwards it through `redact` to a `Log` call.
+
+Not fixed here: step 12 is a measurement step and changing the redactor is code.
+Filed in the plan's `## Deferred Ideas` with the shape of the fix, which is to
+recognise a base64 segment whose decoding contains either secret rather than to
+enumerate a fourth spelling.

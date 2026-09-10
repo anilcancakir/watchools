@@ -214,3 +214,31 @@
    to a tap on macOS and silent in a widget test, so the test reads `Stack.children` and asserts the
    view sits at index 0. Mutation-checked by moving a scrim above the view: red. The pause wiring was
    mutation-checked the same way.
+
+## Wave 6
+
+1. **The measurement found something it was not looking for, and it is the sharper result.** Step 12
+   asked whether the mock re-mints a stream token per request; it does, and the two `Location`
+   headers differ only in a timestamp. But the token is **base64**, and decoding it gives
+   `username:password:issuedAt`. So the tokenised URL still carries the credential, and neither
+   redaction path removes it: `describe(Uri)` replaces a path segment only when the segment
+   **equals** a secret, and `redact(String)` looks for the raw secret plus three encodings, none of
+   which is a base64 blob containing no literal secret. Reachable rather than theoretical, because
+   mpv follows the redirect and FFmpeg's reconnect warning names the URL it is retrying, which is
+   the one log line the design depends on and cannot switch off. Filed in `## Deferred Ideas` with
+   the shape of the fix: recognise a base64-looking segment whose decoding contains either secret,
+   rather than enumerate a fourth spelling.
+
+2. **Coverage held because the fake was a deliverable, not because it was lucky.** The denominator
+   moved from 2239 lines to 2486 as this plan added `lib/app/playback/` and the controller to it,
+   and the ratio came out at 2387/2486 = 96.0% against a 90% floor. Decision D2 accepted the risk
+   that the macOS implementation's untestable lines would count against the floor; `FakePlaybackEngine`
+   is why it did not come due. Read the printed `hit/found` rather than the percentage: lcov carries
+   only files the tests import, so a red run can be a moved denominator rather than a regression.
+
+3. **A verification step's own gate can be the wrong instrument.** Step 13's lock criterion has to
+   read HEAD rather than the working tree, because a local `pub get` with the overrides active
+   rewrites the lock and every gate after it passes over the rewritten file rather than failing on
+   it. Measured against HEAD the counts are 1 and 1, equal, which is what CI compares; measured
+   against the working tree they are 8 and 1. Same command, opposite verdict, and only one of them
+   is about what will be pushed.
