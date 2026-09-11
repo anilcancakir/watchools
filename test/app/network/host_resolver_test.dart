@@ -362,4 +362,73 @@ void main() {
       expect(resolver.setting, ResolverSetting.google);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // updateSetting.
+  //
+  // The app registers exactly ONE resolver and the credential carrying the
+  // choice can be replaced while the process runs, so a new choice has to reach
+  // this instance rather than a fresh one: the process-wide `HttpOverrides` and
+  // the settings screen both read this object's cache.
+  // ---------------------------------------------------------------------------
+
+  group('updateSetting', () {
+    test('gains the DoH rung a system-only setting never had', () async {
+      final _ScriptedLookup system = _ScriptedLookup();
+      final _ScriptedLookup doh = _ScriptedLookup(answer: dohAnswer);
+      final HostResolver resolver = HostResolver(
+        setting: ResolverSetting.system,
+        system: system,
+        doh: doh,
+        timeout: rungTimeout,
+      );
+
+      expect(await resolver.resolve('panel.example.com'), isNull);
+      expect(doh.calls, isEmpty);
+
+      resolver.updateSetting(ResolverSetting.cloudflare);
+
+      // The substitute passed at construction is still the rung being built,
+      // rather than a real DoH client that would reach the network from a test.
+      expect(await resolver.resolve('panel.example.com'), '104.20.23.154');
+      expect(doh.calls, <String>['panel.example.com']);
+      expect(resolver.setting, ResolverSetting.cloudflare);
+    });
+
+    test('loses the DoH rung when the new setting names no endpoint', () async {
+      final _ScriptedLookup system = _ScriptedLookup();
+      final _ScriptedLookup doh = _ScriptedLookup(answer: dohAnswer);
+      final HostResolver resolver = HostResolver(
+        setting: ResolverSetting.cloudflare,
+        system: system,
+        doh: doh,
+        timeout: rungTimeout,
+      );
+
+      expect(await resolver.resolve('panel.example.com'), '104.20.23.154');
+
+      resolver.updateSetting(ResolverSetting.system);
+
+      expect(await resolver.resolve('panel.example.com'), isNull);
+      expect(doh.calls, hasLength(1), reason: 'the rung the setting no longer authorises must not be consulted again');
+    });
+
+    test('empties the cache even when the setting did not move', () async {
+      final _ScriptedLookup system = _ScriptedLookup(answer: systemAnswer);
+      final HostResolver resolver = HostResolver(setting: ResolverSetting.system, system: system, timeout: rungTimeout);
+
+      await resolver.resolve('panel.example.com');
+      expect(resolver.cached('panel.example.com'), '185.15.58.224');
+
+      // The caller is a credential changing rather than a resolver changing: a
+      // new credential can be a new panel, and an address held for the previous
+      // one is a live pin onto a host the user no longer has.
+      resolver.updateSetting(ResolverSetting.system);
+
+      expect(resolver.cached('panel.example.com'), isNull);
+
+      await resolver.resolve('panel.example.com');
+      expect(system.calls, hasLength(2));
+    });
+  });
 }

@@ -5,6 +5,7 @@ import '../models/channel.dart';
 import '../models/programme.dart';
 import '../models/provider_fault.dart';
 import '../models/title_item.dart';
+import '../network/resolver_setting.dart';
 import '../protocol/xtream/xtream_account.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../protocol/xtream/xtream_credentials.dart';
@@ -151,6 +152,18 @@ class ProviderSession extends ChangeNotifier {
   /// every launch.
   final bool Function() _isPlaying;
 
+  /// Where a loaded credential's resolver choice goes.
+  ///
+  /// An injected sink rather than a `HostResolver` this class holds, the same
+  /// shape and for the same reason as [_isPlaying]: the composition root is what
+  /// knows there is exactly ONE resolver in the process, and it has to stay one,
+  /// because the process-wide `HttpOverrides` and the provider settings screen
+  /// read the same instance's cache. Pushing a setting rather than handing over
+  /// the object is what keeps a second one from ever being constructible here.
+  ///
+  /// Defaults to doing nothing, which is the fixture and test path.
+  final void Function(ResolverSetting) _applyResolverSetting;
+
   XtreamCredentials? _credentials;
   XtreamClient? _client;
   XtreamAccount? _account;
@@ -169,8 +182,10 @@ class ProviderSession extends ChangeNotifier {
     this._store = const CatalogueStore(),
     bool Function()? isPlaying,
     XtreamCredentials? Function()? developmentCredential,
+    void Function(ResolverSetting)? applyResolverSetting,
     this.epgFetchLimit = 20,
   }) : _isPlaying = isPlaying ?? _neverPlaying,
+       _applyResolverSetting = applyResolverSetting ?? _ignoreResolverSetting,
        _developmentCredential = developmentCredential ?? XtreamCredentials.fromEnvironment;
 
   /// Whether the user has a provider configured at all.
@@ -218,6 +233,26 @@ class ProviderSession extends ChangeNotifier {
   /// and `CLAUDE.md` records that ExoPlayer's lookup is case sensitive, so
   /// whatever builds the request must spell the name exactly `User-Agent`.
   String? get playbackUserAgent => _credentials?.userAgent;
+
+  /// The panel host this session addresses and the resolver the user chose for
+  /// it, or null before a credential is loaded.
+  ///
+  /// Public where the credential is not, for the reason [playbackUserAgent] is:
+  /// neither field is a secret, and the process-wide `HttpOverrides` cannot do
+  /// its job without both. The host is what it matches a request against, so
+  /// that it pins the user's own panel and leaves every other host in the
+  /// process alone; the setting is what `HostResolver` escalates to.
+  ///
+  /// The host is derived from [XtreamCredentials.baseUrl] rather than stored
+  /// beside it: the credential's constructor has already rejected a panel URL
+  /// with no scheme or no host, so there is exactly one spelling to read.
+  ({String host, ResolverSetting setting})? get providerResolution {
+    final XtreamCredentials? credentials = _credentials;
+
+    if (credentials == null) return null;
+
+    return (host: Uri.parse(credentials.baseUrl).host, setting: ResolverSetting.parse(credentials.resolver));
+  }
 
   /// The playable URL for [channel], or null when this session cannot produce
   /// one.
@@ -294,6 +329,7 @@ class ProviderSession extends ChangeNotifier {
 
     final XtreamCredentials? credentials = await _loadCredentials();
     _credentials = credentials;
+    _pushResolverSetting();
 
     if (credentials == null) {
       notifyListeners();
@@ -321,7 +357,11 @@ class ProviderSession extends ChangeNotifier {
   ///    against the new panel, and carrying the old panel's account into
   ///    [classifyProviderFault] would compare a denial from the new panel
   ///    against a handshake from the old one.
-  /// 4. Restore the cached catalogue for the new [CatalogueStore.accountKey],
+  /// 4. Push the new credential's resolver choice into the one registered
+  ///    `HostResolver`. Without this a user who changes their resolver keeps
+  ///    resolving through the previous one until the process restarts, and the
+  ///    cache would still hold an address looked up for the previous panel.
+  /// 5. Restore the cached catalogue for the new [CatalogueStore.accountKey],
   ///    the same shape [start] uses, so a screen has something to render
   ///    before the caller decides to [refresh].
   ///
@@ -349,12 +389,29 @@ class ProviderSession extends ChangeNotifier {
     _fault = null;
     _inFlight = null;
 
+    _pushResolverSetting();
+
     final String account = CatalogueStore.accountKey(credentials);
     _channels = _store.channelsFor(account);
     _titles = _store.titlesFor(account);
 
     notifyListeners();
   }
+
+  /// Hands the loaded credential's resolver choice to the one `HostResolver`
+  /// the composition root registered.
+  ///
+  /// Called from the two places a credential arrives, and both are load-bearing.
+  /// [adopt] is where a user who just changed their resolver would otherwise
+  /// keep resolving through the previous one for the life of the process.
+  /// [start] is where a STORED choice first becomes known at all: the
+  /// composition root builds the resolver synchronously in `register()`, long
+  /// before any vault read, so without this call a restart would silently drop
+  /// the user back to the system resolver.
+  ///
+  /// [ResolverSetting.system] with no credential, which is what the fixture path
+  /// and a signed-out session are entitled to.
+  void _pushResolverSetting() => _applyResolverSetting(providerResolution?.setting ?? ResolverSetting.system);
 
   /// Forgets the current provider: the vault entry, the handshake, the
   /// clock, and the held catalogue.
@@ -394,6 +451,13 @@ class ProviderSession extends ChangeNotifier {
     // be handed to the next `refresh()` after the NEXT credential is adopted,
     // and it belongs to the account this call is leaving.
     _inFlight = null;
+
+    // Back to the system resolver, and the point is the cache rather than the
+    // choice. Nothing pins anything once [providerResolution] is null, so the
+    // setting alone is inert here; what this drops is the address resolved for
+    // the panel the user just left, which is exactly what every other line in
+    // this method is doing for its own piece of that account's state.
+    _pushResolverSetting();
 
     _clock?.dispose();
     _clock = null;
@@ -876,4 +940,6 @@ class ProviderSession extends ChangeNotifier {
   );
 
   static bool _neverPlaying() => false;
+
+  static void _ignoreResolverSetting(ResolverSetting setting) {}
 }

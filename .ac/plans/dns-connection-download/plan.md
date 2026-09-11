@@ -232,7 +232,7 @@ rather than because one needs the other's output.
 
 ### Wave 3 (must run after wave 2)
 
-- [ ] **Step 4**: Install the resolver process-wide through HttpOverrides, and feed it the stored setting
+- [x] **Step 4**: Install the resolver process-wide through HttpOverrides, and feed it the stored setting
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-5-criticality: a connection factory that returns a plain socket for an https URL sends the subscription password in cleartext to port 443, and the Dart SDK's own factory skips the TLS branch, so this is the one place the whole feature can fail silently and dangerously.
@@ -265,7 +265,17 @@ rather than because one needs the other's output.
 
 ### Wave 4 (must run after wave 3)
 
-- [ ] **Step 5**: Bound the provider driver's own timeouts
+- [x] **Step 5**: Bound the provider driver's own timeouts
+    - **OUTCOME: the premise was refuted and no code was written.** magic's `DioNetworkDriver`
+      constructor (`magic/lib/src/network/drivers/dio_network_driver.dart:18-27`) declares
+      `this.timeout = 10000` and builds `BaseOptions(connectTimeout: ..., receiveTimeout: ...)` from
+      it, and `app_service_provider.dart:119` constructs the driver without passing one, so BOTH
+      timeouts are already 10000 ms. The Stage 1 explore read the `configureDriver` closure, saw only
+      `followRedirects`, and reported the timeout absent without opening the constructor. The
+      objective this step existed for is already met, writing the line would restate a default, and
+      its test would have been green before the edit. Surfaced to the user as a plan-spec question
+      during execution; no answer inside the wait, so it takes the recommended option. Ticked because
+      the objective holds, not because a change was made.
     - **Type**: code
     - **Tier**: quick
     - **Why this tier**: rule-none: one closure, two values, in a file the step above also touches but at a different site.

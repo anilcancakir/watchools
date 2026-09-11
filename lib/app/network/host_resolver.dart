@@ -120,20 +120,17 @@ class HostResolver {
   /// is not trusted to pin this app to one address for a day.
   static const Duration ttlCeiling = Duration(minutes: 5);
 
-  /// Which resolver the user picked.
-  ///
-  /// Held rather than derived, so the settings screen can show the choice and
-  /// [cached] side by side without reaching for a second object.
-  final ResolverSetting setting;
-
   /// How long each rung may take. See [defaultTimeout] for the default's
   /// reasoning.
   final Duration timeout;
 
   final HostLookup _system;
-  final HostLookup? _doh;
+  final HostLookup? _dohSubstitute;
   final DateTime Function() _clock;
   final Map<String, _CachedAddress> _cache = <String, _CachedAddress>{};
+
+  ResolverSetting _setting;
+  HostLookup? _doh;
 
   /// Builds a resolver for [setting].
   ///
@@ -142,16 +139,46 @@ class HostResolver {
   /// substitutes the implementation of a rung the setting has already
   /// authorised rather than creating one, so [ResolverSetting.system] has no
   /// second rung whatever is passed here; the setting stays the single place
-  /// that decides whether DoH happens at all.
+  /// that decides whether DoH happens at all. It is held as well as used, so
+  /// [updateSetting] can rebuild the rung without the test's substitute being
+  /// silently replaced by a real DoH client.
   HostResolver({
-    required this.setting,
+    required ResolverSetting setting,
     HostLookup? system,
     HostLookup? doh,
     this.timeout = defaultTimeout,
     DateTime Function()? clock,
-  }) : _system = system ?? const SystemHostLookup(),
+  }) : _setting = setting,
+       _system = system ?? const SystemHostLookup(),
+       _dohSubstitute = doh,
        _doh = _dohRung(setting, doh),
        _clock = clock ?? DateTime.now;
+
+  /// Which resolver the user picked.
+  ///
+  /// Held rather than derived, so the settings screen can show the choice and
+  /// [cached] side by side without reaching for a second object.
+  ResolverSetting get setting => _setting;
+
+  /// Takes [setting] as the choice from here on, and empties the cache.
+  ///
+  /// The app registers exactly ONE resolver and hands that same instance to the
+  /// process-wide `HttpOverrides` and to the screen that shows what is cached,
+  /// so a credential carrying a different choice has to be pushed into this
+  /// object rather than answered by building a second one: two instances would
+  /// show the user an address the requests never used.
+  ///
+  /// **The cache goes on every call, including one that names the same
+  /// setting.** The caller is `ProviderSession`, and what moved there is a
+  /// credential rather than a resolver: a new credential can be a new panel, and
+  /// an address cached for the previous one is worse than no address, because it
+  /// is a live pin onto a host the user no longer has. One extra lookup is the
+  /// whole cost of dropping it.
+  void updateSetting(ResolverSetting setting) {
+    _setting = setting;
+    _doh = _dohRung(setting, _dohSubstitute);
+    _cache.clear();
+  }
 
   /// Resolves [host] to one address, or null when no rung produced a usable
   /// one.
