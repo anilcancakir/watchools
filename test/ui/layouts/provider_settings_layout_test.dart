@@ -402,6 +402,70 @@ void main() {
       expect(provider.submitted, isNull);
     });
 
+    testWidgets('a custom address typed and then hidden again still reaches the facade', (WidgetTester tester) async {
+      // The field unmounts with the disclosure, and `Form.save()` runs `onSaved`
+      // only on a mounted field, so a value written at save time would be gone
+      // by the time this submits. Found in the running app: typed, hidden,
+      // submitted, and silently downgraded to the system resolver.
+      final _FakeProvider provider = _FakeProvider();
+
+      // `onSaved` supplied for the reason the three-field happy path records:
+      // this submit succeeds, and the default would navigate through
+      // `MagicRoute.to`, which `pumpScreen` never builds a router for.
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider, onSaved: () {}));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), '9.9.9.9');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarları gizle'));
+      await tester.pump();
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsNothing);
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(provider.submitted?.resolver, '9.9.9.9');
+    });
+
+    testWidgets('an unusable custom address is refused even with the disclosure closed', (WidgetTester tester) async {
+      // The validator cannot see an unmounted field, so `_submit` carries the
+      // same refusal. Without it `parse` falls back to the system resolver and
+      // the user is handed a setting they did not choose, with no reason why.
+      final _FakeProvider provider = _FakeProvider();
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), 'dns.example.com');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarları gizle'));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(find.text('Sunucu adı değil, IP adresi veya https adresi girin.'), findsOneWidget);
+      expect(provider.submitted, isNull);
+    });
+
     testWidgets('a resolver stored non-system reaches the facade even when the disclosure is never opened', (
       WidgetTester tester,
     ) async {

@@ -153,6 +153,16 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   late ResolverChoice _resolverChoice;
   late String _customResolver;
 
+  /// A refusal this screen decided for itself, rather than one the facade
+  /// reported back from a handshake.
+  ///
+  /// It exists for exactly one case: the custom resolver field unmounts with
+  /// the disclosure, so `Form.validate()` cannot see it, and [_submit] has to
+  /// be able to refuse without a field to hang the message on. Cleared at the
+  /// top of every submit so a corrected form does not keep showing the last
+  /// refusal.
+  String? _localFieldError;
+
   @override
   void initState() {
     super.initState();
@@ -179,7 +189,10 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   @override
   Widget build(BuildContext context) {
     final ProviderFault? fault = widget.provider.fault;
-    final String? fieldError = widget.provider.fieldError;
+    // The screen's own refusal wins, because it is the newer statement: the
+    // facade's error is whatever the LAST handshake reported, and a submit this
+    // screen refused never reached a handshake at all.
+    final String? fieldError = _localFieldError ?? widget.provider.fieldError;
     final String? sentence = fault == null ? null : _sentenceFor(fault);
 
     return WDiv(
@@ -361,7 +374,16 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
           label: 'Özel sunucu adresi',
           labelClassName: _labelClassName,
           validator: _validateCustomResolver,
-          onSaved: (String? value) => _customResolver = value?.trim() ?? '',
+          // `onChanged`, not `onSaved`, and this is the same trap the picker
+          // above documents from the other side. `Form.save()` runs `onSaved`
+          // only on a field that is still MOUNTED, and this one unmounts the
+          // moment the disclosure closes, so a value written at save time is a
+          // value that silently vanishes: typed, hidden, submitted, and gone,
+          // with the picker still reading `Özel sunucu` and the validator never
+          // running because there is no field left to validate. Writing on
+          // every keystroke means the state survives the unmount, which is what
+          // [initState]'s seeding relies on too.
+          onChanged: (String value) => _customResolver = value.trim(),
           autocorrect: false,
           enableSuggestions: false,
           textInputAction: TextInputAction.done,
@@ -595,6 +617,8 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     // first handshake is still out and take the user off the form.
     if (widget.provider.busy) return;
 
+    setState(() => _localFieldError = null);
+
     final FormState? form = _formKey.currentState;
 
     if (form == null || !form.validate()) return;
@@ -610,6 +634,19 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       ResolverChoice.google => ResolverSetting.google,
       ResolverChoice.custom => ResolverSetting.parse(_customResolver),
     };
+
+    // The validator only runs on a MOUNTED field, and the custom input unmounts
+    // with the disclosure, so this is the same check from the other side. Its
+    // job is not to duplicate the validator but to refuse the one path the
+    // validator cannot see: a user who chose `Özel sunucu`, left the literal
+    // unusable, and submitted with the disclosure closed. `parse` falls back to
+    // the system resolver for an unusable value, which would silently hand that
+    // user a setting they did not choose and no reason why.
+    if (_resolverChoice == ResolverChoice.custom && resolverSetting.choice != ResolverChoice.custom) {
+      setState(() => _localFieldError = _customResolverInvalid);
+
+      return;
+    }
 
     await widget.provider.submit(
       baseUrl: _baseUrl,

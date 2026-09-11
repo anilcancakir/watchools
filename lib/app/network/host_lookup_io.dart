@@ -79,6 +79,16 @@ class DohHostLookup implements HostLookup {
       throw HostLookupException('$endpoint failed its TLS handshake: ${error.message}');
     } on FormatException catch (error) {
       throw HostLookupException('$endpoint answered something that is not JSON: ${error.message}');
+    } on IOException catch (error) {
+      // The supertype, last, and it is what stops this rung from throwing past
+      // the ladder. `HostResolver._ask` catches [HostLookupException] and a
+      // timeout and nothing else, so anything escaping here fails the panel
+      // request outright instead of moving to the next rung. The three named
+      // above are the shapes worth their own sentence; `HttpException`
+      // ("Connection closed before full header was received"),
+      // `CertificateException` and a bare `TlsException` are just as reachable
+      // from a hostile or broken resolver and used to escape.
+      throw HostLookupException('$endpoint failed: $error');
     } finally {
       client.close();
     }

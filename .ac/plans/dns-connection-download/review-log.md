@@ -35,3 +35,47 @@ not a public block-page address; there is no flush on a network change; and the 
 endpoints are hostnames bootstrapped through the very resolver the ladder exists to escape.
 
 Gates after the remediation: analyze clean, 638 tests, `flutter build web --no-pub` green.
+
+### Code review (structural, ran against `540d185` and re-verified there)
+
+Compliance 21 of 22, the missing one being step 9's `http_multiple` runtime proof, which the plan
+already records as unmet. Must NOT clean on every step. Scope fidelity clean. Three CRITICAL, all
+fixed before Phase 4, and every fix proved to discriminate by breaking the source.
+
+**CRITICAL 1, and it was mine again.** The oracle's refutation reached the screen copy and stopped
+there: `CLAUDE.md:184` and `.ac/research/stack-decisions.md` still blamed the `302` for why the
+resolver misses playback, which step 8 had written from the old reason and `540d185` had refuted
+without going back to the documents. Both rewritten, and both now say the reason is that playback
+resolves every address itself, the panel's included.
+
+**CRITICAL 2, a user-facing data loss found in the running app.** A typed custom resolver was written
+only by the field's `onSaved`, and `Form.save()` skips a field that has unmounted, so picking
+`Özel sunucu`, typing an address, closing the disclosure and saving submitted the SYSTEM resolver
+with no error at all. This is the same class the step 6 briefing was written against, arriving
+through the door the briefing did not name: the briefing guarded the picker and the field slipped
+through. Fixed two ways, because one was not enough. The value is written on `onChanged` so it
+survives the unmount, and `_submit` refuses a custom choice whose literal does not parse, because the
+validator cannot run on a field that is not mounted. Two tests, both proved: with `onSaved` the value
+arrives null, and without the submit guard the refusal never renders.
+
+**CRITICAL 3, the security-relevant parser had never executed.** `host_lookup_io.dart` was 2 of 47
+lines covered. `DohHostLookup._readAnswer`, which reads an untrusted body, checks the DNS status,
+filters CNAME records and picks a TTL, had no test at all; the wave-2 wisdom line claiming "a test
+covers the shape" pointed at a test driving a scripted rung rather than the parser. Eight tests now
+run it against a real loopback server serving canned bodies, covering the valid answer, the CNAME
+drop, NXDOMAIN, a non-object body, a non-200, an empty answer section, a negative TTL and a
+pre-existing query on a custom endpoint. Coverage on that file: 40 of 49.
+
+**One IMPORTANT fixed alongside**: the DoH rung caught three exception types, so `HttpException`,
+`CertificateException` and a bare `TlsException` escaped both it and `HostResolver._ask`, failing the
+panel request outright instead of moving to the next rung. It catches `IOException` now, with the
+three named shapes kept ahead of it for their own messages.
+
+**Recorded rather than fixed**, in the report: `redact` does not cover a custom resolver's query
+string, which may carry a token; `Magic.put(hostResolver)` has no reader; no in-flight deduplication,
+so N concurrent cold connections each run the full ladder; a failed resolve is not cached; two test
+doubles (`_RawPanel`, `_ScriptedLookup`) now exist in three copies each and belong in `test/support/`;
+and `WSelect` emits three nested button semantics nodes for one picker, which is a wind observation
+for the pull request.
+
+Gates after the remediation: analyze clean, 648 tests, coverage 2896/3013 = 96.1%, web build green.
