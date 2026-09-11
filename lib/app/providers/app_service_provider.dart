@@ -6,6 +6,9 @@ import '../controllers/guide_controller.dart';
 import '../controllers/library_controller.dart';
 import '../controllers/playback_controller.dart';
 import '../controllers/provider_setup_controller.dart';
+import '../network/host_resolver.dart';
+import '../network/resolver_setting.dart';
+import '../network/resolving_http_overrides.dart';
 import '../playback/mpv_playback_engine.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../provider/provider_session.dart';
@@ -57,7 +60,28 @@ class AppServiceProvider extends ServiceProvider {
     // existed and had drifted apart from each other and from the original, so
     // deleting a clause of the real gate turned nothing red. One expression,
     // one place, and the test reads the same member the app does.
-    Magic.put(ProviderSession(isPlaying: () => Magic.find<PlaybackController>().holdsConnection));
+    // ONE resolver for the process, and the singleness is the requirement
+    // rather than a saving. The `HttpOverrides` installed at the bottom of this
+    // method consults it on every connection and the provider settings screen
+    // shows what it has cached, so a second instance would show the user an
+    // address the requests never used.
+    //
+    // It starts on the system resolver because `register()` is synchronous and
+    // no credential has been read yet; `ProviderSession.start()` pushes the
+    // stored choice in as soon as the vault has answered, and `adopt()` pushes
+    // every later one. The session pushes a setting rather than holding this
+    // object, for the reason the gate above is a predicate: only the
+    // composition root gets to know there is one of these, and a session that
+    // could reach the resolver could also build a second.
+    final HostResolver hostResolver = HostResolver(setting: ResolverSetting.system);
+
+    Magic.put(hostResolver);
+    Magic.put(
+      ProviderSession(
+        isPlaying: () => Magic.find<PlaybackController>().holdsConnection,
+        applyResolverSetting: hostResolver.updateSetting,
+      ),
+    );
 
     // Bound after the session, and the order IS load-bearing rather than
     // tidiness, which an earlier version of this comment got wrong.
@@ -95,7 +119,9 @@ class AppServiceProvider extends ServiceProvider {
     // happens rather than now, and `stop()` rather than a predicate plus a
     // stop: an expression written out here is asserted only by whatever a test
     // file transcribes, which is the drift the gate's own comment records.
-    Magic.put(ProviderSetupController(stopPlayback: () => Magic.find<PlaybackController>().stop()));
+    Magic.put(
+      ProviderSetupController(stopPlayback: () => Magic.find<PlaybackController>().stop(), hostResolver: hostResolver),
+    );
 
     // Provider traffic gets its own driver, and this is a security boundary
     // rather than tidiness. The shared `network` driver carries magic's
@@ -125,6 +151,22 @@ class AppServiceProvider extends ServiceProvider {
 
       return driver;
     });
+
+    // What makes the resolver above apply to the driver above, and to every
+    // other socket this process opens.
+    //
+    // There is no seam between the two: `configureDriver` hands over a `Dio`
+    // whose type this app never names, because that package is not a direct
+    // dependency and `CLAUDE.md` forbids reaching for it. Its IO adapter builds
+    // a plain `HttpClient`, and that constructor consults the process-wide
+    // override, so this reaches the same sockets with no new dependency and no
+    // sibling release.
+    //
+    // The panel host is a callback rather than a value because this lives for
+    // the process while the credential under it does not: `adopt()` can replace
+    // it at any point, and a captured string would keep pinning the panel the
+    // user just left.
+    installResolvingHttpOverrides(resolver: hostResolver, panelHost: () => session.providerResolution?.host);
   }
 
   @override

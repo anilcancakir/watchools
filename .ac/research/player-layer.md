@@ -262,6 +262,12 @@ directions into one `bufferSize` and defaults it to 32 MiB against mpv's own
 150 MiB forward and 50 MiB back, so a media_kit app is more cache-starved than
 stock mpv. media_kit also sets `network-timeout: 5` where mpv's default is 60.
 
+A large forward buffer largely does not protect a live stream, because the
+origin cannot serve a segment it has not published: the playlist window binds
+before the byte budget does. hls.js targets 30 s of live buffer and Shaka
+fetches one segment ahead; neither reaches for a deep cache on live, and the
+values below should not either.
+
 Starting values worth arguing from, all read from source rather than invented:
 
 | Source | Values |

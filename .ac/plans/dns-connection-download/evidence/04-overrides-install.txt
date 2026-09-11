@@ -1,0 +1,124 @@
+Step 4 — install the resolver process-wide through HttpOverrides
+Captured 2026-09-11, worktree .claude/worktrees/network-resolver
+
+================================================================================
+QA: the https branch discriminates, proved with a real TLS handshake
+================================================================================
+
+A local CA and a leaf issued for `localhost` are generated into ${TMPDIR} by
+`openssl` in setUpAll; nothing is committed. `_TlsPanel` is an HttpServer bound
+to 127.0.0.1 presenting that leaf, and the client trusts the CA and nothing else
+(a bare SecurityContext carries no roots). `badCertificateCallback` is NOT used
+anywhere: the handshake has to succeed on the certificate's own terms.
+
+  test: the https branch hands back a secured socket whose handshake ran
+        against the original name                                        PASS
+    HostResolver maps `localhost` to 127.0.0.1, the override connects by
+    address and upgrades with `SecureSocket.secure(socket, host: url.host)`.
+    GET https://localhost:<port>/player_api.php returns the body, and the
+    server records `Host: localhost`. Two failures are ruled out at once: a
+    plain socket would put a plaintext request line into a server expecting
+    TLS records, and a handshake run against the address would be refused by
+    a certificate carrying `DNS:localhost` and no IP at all.
+
+  test: a certificate for the name is refused against the address, which is
+        what host: carries                                               PASS
+    The control the QA asks for, at the same layer as the production call.
+    Socket.connect(127.0.0.1, port) then:
+      SecureSocket.secure(socket, context: trust)                 -> throws
+        HandshakeException, because the host defaults to the socket's own
+        address, which the certificate does not name.
+      SecureSocket.secure(socket, host: 'localhost', context: trust)
+                                                                  -> succeeds,
+        peerCertificate present.
+
+Break-proof (each fix removed on purpose, test confirmed red, source restored):
+  - `host: url.host` dropped from SecureSocket.secure   -> https test RED
+  - `if (!url.isScheme(_https)) return task` forced true (plain socket for
+    https)                                              -> https test RED
+  - `url.host != panel` dropped from the guard          -> "leaves a host that
+                                                           is not the panel"
+                                                           test RED
+  - null fall-through replaced with a throw             -> "falls through when
+                                                           the resolver answers
+                                                           null" test RED
+  - `Socket.startConnect(address, ...)` -> `url.host`   -> "goes to the address
+                                                           the resolver chose"
+                                                           test RED (timeout)
+  - `_cache.clear()` dropped from updateSetting         -> 2 resolver tests RED
+  - `_doh = _dohRung(...)` dropped from updateSetting   -> 2 resolver tests RED
+  - `_pushResolverSetting()` dropped from start()       -> start test RED
+  - `_pushResolverSetting()` dropped from adopt()       -> adopt test RED
+  - `_pushResolverSetting()` dropped from signOut()     -> signOut test RED
+
+Measured while building the fixture, and worth recording: `dart:io`'s verifier
+refuses a leaf that carries only a `subjectAltName`, with the same
+CERTIFICATE_VERIFY_FAILED a wrong hostname produces, while `openssl s_client`
+against the same server reports `Verification: OK`. Adding
+`extendedKeyUsage=serverAuth` to an otherwise identical certificate is what made
+it verify. A leaf trusted directly (no CA) is a partial chain and is refused too.
+
+================================================================================
+Done when
+================================================================================
+
+$ flutter test test/app/network/resolving_http_overrides_test.dart \
+               test/app/provider/provider_session_test.dart \
+               test/app/network/host_resolver_test.dart
+00:00 +68: All tests passed!                                        exit 0
+
+$ flutter test                                                      exit 0
+00:12 +623 ~1: All tests passed!
+
+$ flutter analyze --fatal-infos --fatal-warnings                    exit 0
+No issues found!
+
+$ dart format lib test
+Formatted 165 files (0 changed)
+
+$ rg -q 'super.createHttpClient' lib/app/network/resolving_http_overrides_io.dart
+exit 0
+
+$ rg -q 'SecureSocket.secure' lib/app/network/resolving_http_overrides_io.dart
+exit 0
+lib/app/network/resolving_http_overrides_io.dart:115:
+      task.socket.then<Socket>((Socket socket) => SecureSocket.secure(socket, host: url.host, context: context)),
+
+$ ! rg -q "import 'package:dio" lib/                                exit 0
+
+$ flutter build web --no-pub                                        exit 0
+Compiling lib/main.dart for the Web...                             47.1s
+✓ Built build/web
+
+================================================================================
+The four behavioural criteria
+================================================================================
+
+  a loopback ServerSocket receives the request for a host the resolver mapped
+  to 127.0.0.1, carrying the original Host                                PASS
+    `the pinned connection goes to the address the resolver chose, carrying
+    the original host`. The configured panel is 198.51.100.7 (TEST-NET-2,
+    never routed), the resolver answers 127.0.0.1, and the raw panel records
+    `host: 198.51.100.7:<port>`. Nothing listens on TEST-NET-2, so the request
+    arriving at a server bound to 127.0.0.1 is itself the proof.
+
+    An IP literal rather than a name because HostResolver refuses a loopback
+    answer for a real hostname (the documented Turkish tampering shape); a host
+    that is already a literal, and `localhost`, are its only two exemptions,
+    and `localhost` cannot discriminate the pin because the default connect
+    reaches 127.0.0.1 too.
+
+  a host other than the configured panel is not resolved at all           PASS
+    `leaves a host that is not the configured panel to the default connect`.
+    The scripted rung's `calls` list is empty and the request still lands.
+
+  when resolve returns null the request still goes out by the default path PASS
+    `falls through to the default connect when the resolver answers null`.
+    `calls` shows the rung WAS consulted and could not answer, and the request
+    still lands.
+
+  adopt with a different resolver changes which lookup the next resolve
+  consults                                                                PASS
+    `adopt() with a different resolver changes which rung the next resolve
+    consults`, plus `start() hands the stored credential its choice` and
+    `signOut() drops the address resolved for the panel being left`.

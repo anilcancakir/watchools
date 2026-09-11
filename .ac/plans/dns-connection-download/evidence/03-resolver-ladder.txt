@@ -1,0 +1,115 @@
+Step 3: the resolver ladder (system -> DoH), TTL cache, tamper rung
+Captured 2026-09-11 in worktree network-resolver
+
+== 1. Both shipped DoH endpoints re-checked before the client was written ==
+$ curl -sS -o /dev/null -w 'cloudflare status=%{http_code} time=%{time_total}\n' -H 'accept: application/dns-json' 'https://cloudflare-dns.com/dns-query?name=example.com&type=A'
+exit=0
+cloudflare status=200 time=0.041481
+$ curl -sS -o /dev/null -w 'google     status=%{http_code} time=%{time_total}\n' -H 'accept: application/dns-json' 'https://dns.google/resolve?name=example.com&type=A'
+exit=0
+google     status=200 time=0.123863
+Both 200. Same body shape (Status / Answer[] / type / data / TTL); Google writes
+the names fully qualified, which is not a field the parser reads, so one parser covers both.
+A CNAME chain returns type 5 records whose "data" is a hostname, on both endpoints,
+which is why records are filtered to type 1.
+
+== 2. TDD red phase: the test file before the implementation existed ==
+flutter test test/app/network/host_resolver_test.dart -> exit 1,
+"Error: 'HostResolver' isn't a type" / "Method not found: 'HostResolver'".
+
+== 3. Green ==
+$ flutter test test/app/network/host_resolver_test.dart 2>&1 | tail -2
+exit=0
+00:00 +20: cached keeps the setting the user picked, for the screen that shows both
+00:00 +21: All tests passed!
+
+== 4. QA: each test proved to discriminate by breaking the source ==
+Each break was applied to lib/app/network/host_resolver.dart alone, the single named
+test run, then the source restored byte for byte (asserted by the harness).
+
+--- break: ladder order reversed (DoH tried first)
+    test: stops at the system rung when its answer is good, never consulting DoH
+    exit: 1 -> RED (test discriminates)
+    00:00 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the ladder stops at the system rung when its answer is good, never consulting DoH
+
+--- break: timeout removed from the rung
+    test: abandons a system lookup that never answers and takes the DoH rung instead
+    exit: 1 -> RED (test discriminates)
+    00:30 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the ladder abandons a system lookup that never answers and takes the DoH rung instead
+
+--- break: tamper check dropped
+    test: escalates a loopback answer for a real host, the documented Turkish shape
+    exit: 1 -> RED (test discriminates)
+    00:00 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the tamper check escalates a loopback answer for a real host, the documented Turkish shape
+
+--- break: cache read disabled
+    test: a second resolve inside the TTL consults no rung at all
+    exit: 1 -> RED (test discriminates)
+    00:00 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the TTL cache a second resolve inside the TTL consults no rung at all
+
+--- break: localhost / literal exemption removed from the tamper check
+    test: keeps a loopback answer for localhost, where it is the truth
+    exit: 1 -> RED (test discriminates)
+    00:00 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the tamper check keeps a loopback answer for localhost, where it is the truth
+
+--- break: cache entries never expire
+    test: a resolve after the ceiling consults the rungs again
+    exit: 1 -> RED (test discriminates)
+    00:00 +0 -1: Some tests failed.
+    Failing tests:
+      /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/network/host_resolver_test.dart: the TTL cache a resolve after the ceiling consults the rungs again
+
+Note on the timeout break: with .timeout() removed the test did not fail fast, it hung
+for 30 s until flutter_test's own deadline. That is the proof the scripted rung really
+never settles and that the ladder timeout is the only thing that ends the wait.
+
+== 5. Live probe of DohHostLookup against both real endpoints ==
+(temporary test, run once, removed from the committed file)
+exit=0
+00:00 +0: LIVE PROBE (temporary, not committed) https://cloudflare-dns.com/dns-query parses a real answer
+PROBE https://cloudflare-dns.com/dns-query A -> [104.20.23.154, 172.66.147.243] ttl=0:04:42.000000
+PROBE https://cloudflare-dns.com/dns-query CNAME-chain -> [185.15.58.224] ttl=0:03:00.000000
+PROBE https://cloudflare-dns.com/dns-query NXDOMAIN -> HostLookupException: nope-does-not-exist-xyzq.com: the resolver answered DNS status 3
+00:00 +1: LIVE PROBE (temporary, not committed) https://dns.google/resolve parses a real answer
+PROBE https://dns.google/resolve A -> [172.66.147.243, 104.20.23.154] ttl=0:05:00.000000
+PROBE https://dns.google/resolve CNAME-chain -> [185.15.58.224] ttl=0:03:00.000000
+PROBE https://dns.google/resolve NXDOMAIN -> HostLookupException: nope-does-not-exist-xyzq.com: the resolver answered DNS status 3
+00:00 +2: All tests passed!
+The CNAME chain resolved to the A record 185.15.58.224 rather than to the hostname
+dyna.wikimedia.org., and NXDOMAIN raised HostLookupException on both endpoints.
+
+== 6. Done-when checks ==
+$ rg -q 'quad9' lib/app/network/; test $? -ne 0 && echo 'PASS: no quad9 under lib/app/network/'
+exit=0
+PASS: no quad9 under lib/app/network/
+$ rg -q "import 'dart:io'" lib/app/network/host_resolver.dart; test $? -ne 0 && echo 'PASS: the policy class imports no platform library'
+exit=0
+PASS: the policy class imports no platform library
+$ rg -l "import 'dart:io'" lib/
+exit=0
+lib/app/network/host_lookup_io.dart
+(the io half of the conditional trio is the only dart:io reach in lib/, by design)
+
+== 7. Gates ==
+$ flutter analyze --fatal-infos --fatal-warnings 2>&1 | tail -2
+exit=0
+Analyzing network-resolver...                                   
+No issues found! (ran in 4.3s)
+$ flutter test 2>&1 | tail -1
+exit=0
+00:11 +611 ~1: All tests passed!
+flutter build web --no-pub -> exit 0, "Built build/web".
+That is the gate for the conditional export: lib/ had zero dart:io imports before this
+step and CI does not build web, so a bare import here would have broken the web target
+with nothing to catch it.
+

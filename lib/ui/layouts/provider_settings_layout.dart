@@ -5,6 +5,7 @@ import 'package:magic/magic.dart';
 
 import '../../app/controllers/provider_setup_controller.dart';
 import '../../app/models/provider_fault.dart';
+import '../../app/network/resolver_setting.dart';
 import '../components/provider_notice/provider_notice.dart';
 import 'support/page_gutter.dart';
 
@@ -81,6 +82,20 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
 
   static const String _labelClassName = 'text-sm font-medium text-fg mb-1';
 
+  /// What the custom resolver field says about the format it refuses.
+  ///
+  /// Never a hostname, because a hostname would have to be resolved by the
+  /// resolver it is replacing, which bootstraps the ladder on itself.
+  static const String _customResolverInvalid = 'Sunucu adı değil, IP adresi veya https adresi girin.';
+
+  /// What the custom resolver field says about the consequence rather than
+  /// the format: this address receives every panel request, and a panel
+  /// request carries the subscription's username and password.
+  static const String _customResolverHint =
+      'Buraya yazdığınız sunucu, panel adresinizi çözümler. Panel istekleri '
+      'abonelik bilgilerinizi taşır, o yüzden yalnızca güvendiğiniz bir '
+      'sunucu girin.';
+
   /// What the form says when the panel rejected the credential just typed.
   ///
   /// Rendered instead of `expired`'s [ProviderNotice] on this one screen; see
@@ -100,6 +115,27 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       'Bu adres yanıt verdi ama bir Xtream paneli değil. Adresi ve port '
       'numarasını kontrol edin.';
 
+  /// What the resolver picker says about the half of the app it does not
+  /// cover.
+  ///
+  /// **The boundary is the player, not the redirect.** An earlier version of
+  /// this sentence blamed the panel's `302` to another origin, and that is not
+  /// the reason: a stream URL is built on the panel's own host
+  /// (`xtream_stream_url.dart:113-122`), so playback's FIRST request already
+  /// goes to the name the user picked a resolver for, and libmpv resolves it
+  /// through `getaddrinfo` before any redirect exists. So the honest statement
+  /// is that playback resolves every address itself, and the consequence a
+  /// user has to be told is the specific one: the catalogue can start working
+  /// while a channel still does not.
+  ///
+  /// Stated rather than left implied, because a setting that silently applies
+  /// to half of what the user thinks it applies to is worse than one that
+  /// applies to none of it.
+  static const String _resolverScope =
+      'Bu ayar panel isteklerine uygulanır. Oynatıcı adresleri kendi çözümler, '
+      'panelinki de dahil, o yüzden katalog açıldığı hâlde bir kanal yine de '
+      'açılmayabilir.';
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final FocusNode _userAgentFocusNode;
@@ -111,10 +147,37 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   String _password = '';
   String _userAgent = '';
 
+  /// The resolver picker's own state, seeded in [initState] rather than left
+  /// to the disclosure's clear-on-close rule. See that method's doc comment
+  /// for why this pair is the one exception to it.
+  late ResolverChoice _resolverChoice;
+  late String _customResolver;
+
+  /// A refusal this screen decided for itself, rather than one the facade
+  /// reported back from a handshake.
+  ///
+  /// It exists for exactly one case: the custom resolver field unmounts with
+  /// the disclosure, so `Form.validate()` cannot see it, and [_submit] has to
+  /// be able to refuse without a field to hang the message on. Cleared at the
+  /// top of every submit so a corrected form does not keep showing the last
+  /// refusal.
+  String? _localFieldError;
+
   @override
   void initState() {
     super.initState();
     _userAgentFocusNode = FocusNode();
+
+    // Seeded from the loaded credential rather than starting empty like
+    // `_baseUrl`, `_password` and `_userAgent`. Those three are safe empty
+    // because `_userAgent` falls back to `_defaultUserAgent`; a resolver's
+    // empty state IS the system resolver, the thing this feature exists to
+    // move a user away from. Without this, reopening the form to fix an
+    // unrelated field and submitting with the disclosure never opened would
+    // silently drop a working resolver back to the system default.
+    final ResolverSetting seeded = widget.provider.resolver;
+    _resolverChoice = seeded.choice;
+    _customResolver = seeded.customValue ?? '';
   }
 
   @override
@@ -126,7 +189,10 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   @override
   Widget build(BuildContext context) {
     final ProviderFault? fault = widget.provider.fault;
-    final String? fieldError = widget.provider.fieldError;
+    // The screen's own refusal wins, because it is the newer statement: the
+    // facade's error is whatever the LAST handshake reported, and a submit this
+    // screen refused never reached a handshake at all.
+    final String? fieldError = _localFieldError ?? widget.provider.fieldError;
     final String? sentence = fault == null ? null : _sentenceFor(fault);
 
     return WDiv(
@@ -170,6 +236,8 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                   ),
                   _disclosure(),
                   if (_advancedOpen) _userAgentField(),
+                  if (_advancedOpen) _resolverField(),
+                  if (_advancedOpen) _resolverScopeNote(),
                   if (fieldError != null) _fieldErrorBanner(fieldError),
                   // The two faults whose recovery is the credential itself
                   // never render as a panel HERE, because on this screen the
@@ -241,6 +309,117 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       enableSuggestions: false,
       textInputAction: TextInputAction.done,
       className: _fieldClassName,
+    );
+  }
+
+  /// The resolver picker, behind the disclosure beside [_userAgentField].
+  ///
+  /// `onChange` rather than `onSaved`, unlike every other field on this
+  /// screen: [_customResolverField] mounts only while [_resolverChoice] is
+  /// [ResolverChoice.custom], and that has to react the moment the picker
+  /// changes, not wait for `Form.save()` to run at submit time.
+  ///
+  /// Not reset on the disclosure's own close, unlike [_userAgentField]'s
+  /// [_userAgent]: see [initState] and [_disclosure] for why this pair is the
+  /// one exception.
+  Widget _resolverField() {
+    return WDiv(
+      className: 'w-full flex flex-col gap-4',
+      children: <Widget>[
+        WFormSelect<ResolverChoice>(
+          value: _resolverChoice,
+          options: const <SelectOption<ResolverChoice>>[
+            SelectOption(value: ResolverChoice.system, label: 'Sistem varsayılanı'),
+            SelectOption(value: ResolverChoice.cloudflare, label: 'Cloudflare'),
+            SelectOption(value: ResolverChoice.google, label: 'Google'),
+            SelectOption(value: ResolverChoice.custom, label: 'Özel sunucu'),
+          ],
+          onChange: (ResolverChoice? value) => setState(() => _resolverChoice = value ?? ResolverChoice.system),
+          label: 'DNS çözümleyici',
+          labelClassName: _labelClassName,
+          // Turkish, explicit: `WSelect`'s own semantics label always prefers
+          // this over the selected option's label (`w_select.dart:517-529`),
+          // and its default is the English `'Select an option'`.
+          placeholder: 'DNS çözümleyici seçin',
+          className: _fieldClassName,
+        ),
+        if (_resolverChoice == ResolverChoice.custom) _customResolverField(),
+      ],
+    );
+  }
+
+  /// The custom resolver's own field, mounted only while [ResolverChoice.custom]
+  /// is picked.
+  ///
+  /// `initialValue` rather than left empty, unlike [_userAgentField]: a
+  /// custom value seeded in [initState] must survive a remount of this field
+  /// (closing and reopening the disclosure, or the picker moving away from
+  /// and back to `custom`) the same way [_resolverChoice] itself does.
+  ///
+  /// [_customResolverHint] is a plain [WText] beside the field rather than
+  /// `WFormInput.hint`, following [_plaintextWarning]'s own shape. Measured
+  /// against the field's own semantics node: passing the same string as
+  /// `hint` instead left `find.bySemanticsLabel('Özel sunucu adresi')` finding
+  /// nothing, because the rendered node's label had become "Özel sunucu
+  /// adresi\n$_customResolverHint" (`WFormInput`'s `hint` is not excluded from
+  /// semantics the way its `label` caption is, and it ends up folded into the
+  /// field's own text-field node). A sibling `WText` outside the form field
+  /// keeps the field's own label exact.
+  Widget _customResolverField() {
+    return WDiv(
+      className: 'flex flex-col gap-1',
+      children: <Widget>[
+        WFormInput(
+          initialValue: _customResolver,
+          label: 'Özel sunucu adresi',
+          labelClassName: _labelClassName,
+          validator: _validateCustomResolver,
+          // `onChanged`, not `onSaved`, and this is the same trap the picker
+          // above documents from the other side. `Form.save()` runs `onSaved`
+          // only on a field that is still MOUNTED, and this one unmounts the
+          // moment the disclosure closes, so a value written at save time is a
+          // value that silently vanishes: typed, hidden, submitted, and gone,
+          // with the picker still reading `Özel sunucu` and the validator never
+          // running because there is no field left to validate. Writing on
+          // every keystroke means the state survives the unmount, which is what
+          // [initState]'s seeding relies on too.
+          onChanged: (String value) => _customResolver = value.trim(),
+          autocorrect: false,
+          enableSuggestions: false,
+          textInputAction: TextInputAction.done,
+          className: _fieldClassName,
+        ),
+        const WText(_customResolverHint, className: 'text-xs text-fg-muted'),
+      ],
+    );
+  }
+
+  /// Rejects anything [ResolverSetting.parse] would not read back as
+  /// [ResolverChoice.custom]: an empty field, a bare hostname, or anything
+  /// else neither an IP literal nor an `https` URL. Delegates rather than
+  /// re-implementing the check, so this cannot drift from the validation the
+  /// resolver itself performs (`resolver_setting.dart:124-138`). A hostname is
+  /// refused rather than resolved, because it would have to be resolved by
+  /// the resolver it is replacing, which bootstraps the ladder on itself.
+  String? _validateCustomResolver(String? value) {
+    return ResolverSetting.parse(value).choice == ResolverChoice.custom ? null : _customResolverInvalid;
+  }
+
+  /// The resolved address, when there is one, above the sentence naming what
+  /// the resolver does not cover.
+  ///
+  /// Renders no address line at all rather than a placeholder when
+  /// [ProviderSetupFacade.resolvedAddress] is null: a fresh install has
+  /// nothing cached yet, and an empty row would say less than nothing.
+  Widget _resolverScopeNote() {
+    final String? address = widget.provider.resolvedAddress;
+
+    return WDiv(
+      className: 'flex flex-col gap-1',
+      children: <Widget>[
+        if (address != null) WText('Panel adresi: $address', className: 'text-xs text-fg-muted'),
+        const WText(_resolverScope, className: 'text-xs text-fg-muted'),
+      ],
     );
   }
 
@@ -422,9 +601,11 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// 1. Refuse a form the shallow validators reject; nothing leaves this
   ///    widget.
   /// 2. Save, which is what fills [_baseUrl], [_username], [_password] and,
-  ///    when the disclosure was opened, [_userAgent].
+  ///    when the disclosure was opened, [_userAgent] and [_customResolver].
   /// 3. Fall back to [_defaultUserAgent] when the disclosure was never opened
-  ///    or was opened and left blank.
+  ///    or was opened and left blank. [_resolverChoice] needs no such
+  ///    fallback: it is seeded in [initState] and never reset, so it already
+  ///    carries the right value whether or not the disclosure was opened.
   /// 4. Ask the facade, then navigate only once it reports nothing wrong: a
   ///    submit that failed leaves the user on the form that explains why.
   Future<void> _submit() async {
@@ -436,6 +617,8 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     // first handshake is still out and take the user off the form.
     if (widget.provider.busy) return;
 
+    setState(() => _localFieldError = null);
+
     final FormState? form = _formKey.currentState;
 
     if (form == null || !form.validate()) return;
@@ -445,7 +628,33 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     final String typedUserAgent = _userAgent.trim();
     final String userAgent = typedUserAgent.isEmpty ? _defaultUserAgent : typedUserAgent;
 
-    await widget.provider.submit(baseUrl: _baseUrl, username: _username, password: _password, userAgent: userAgent);
+    final ResolverSetting resolverSetting = switch (_resolverChoice) {
+      ResolverChoice.system => ResolverSetting.system,
+      ResolverChoice.cloudflare => ResolverSetting.cloudflare,
+      ResolverChoice.google => ResolverSetting.google,
+      ResolverChoice.custom => ResolverSetting.parse(_customResolver),
+    };
+
+    // The validator only runs on a MOUNTED field, and the custom input unmounts
+    // with the disclosure, so this is the same check from the other side. Its
+    // job is not to duplicate the validator but to refuse the one path the
+    // validator cannot see: a user who chose `Özel sunucu`, left the literal
+    // unusable, and submitted with the disclosure closed. `parse` falls back to
+    // the system resolver for an unusable value, which would silently hand that
+    // user a setting they did not choose and no reason why.
+    if (_resolverChoice == ResolverChoice.custom && resolverSetting.choice != ResolverChoice.custom) {
+      setState(() => _localFieldError = _customResolverInvalid);
+
+      return;
+    }
+
+    await widget.provider.submit(
+      baseUrl: _baseUrl,
+      username: _username,
+      password: _password,
+      userAgent: userAgent,
+      resolver: resolverSetting.storedValue,
+    );
 
     if (!mounted) return;
 

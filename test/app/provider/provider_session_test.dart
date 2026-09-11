@@ -7,6 +7,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/models/title_item.dart';
+import 'package:watchools/app/network/host_resolver.dart';
+import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/provider/catalogue_store.dart';
@@ -95,6 +97,32 @@ class _MockPanel {
       default:
         return MagicResponse(data: const <dynamic>[], statusCode: 200);
     }
+  }
+}
+
+/// A rung that answers with [address], or fails the way a real rung fails when
+/// it is null.
+///
+/// [calls] is what turns "the session pushed the new choice in" into something
+/// observable: a DoH rung that was never authorised is never consulted at all.
+class _ScriptedLookup implements HostLookup {
+  /// The single address this rung answers with, or null to throw.
+  final String? address;
+
+  /// Every host this rung was asked about, in order.
+  final List<String> calls = <String>[];
+
+  _ScriptedLookup([this.address]);
+
+  @override
+  Future<HostAnswer> lookup(String host) async {
+    calls.add(host);
+
+    final String? answer = address;
+
+    if (answer == null) throw const HostLookupException('scripted rung failure');
+
+    return HostAnswer(<String>[answer]);
   }
 }
 
@@ -742,6 +770,106 @@ void main() {
 
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.series).favourite, isTrue);
       expect(session.titles.firstWhere((TitleItem t) => t.kind == TitleKind.movie).favourite, isFalse);
+    });
+  });
+
+  group('the resolver choice, pushed into the one registered HostResolver', () {
+    /// A resolver whose DoH rung is a recording double, so "which rung the next
+    /// resolve consults" is a readable fact rather than a network call.
+    (HostResolver, _ScriptedLookup) escalatingResolver() {
+      final _ScriptedLookup doh = _ScriptedLookup('203.0.113.5');
+
+      return (HostResolver(setting: ResolverSetting.system, system: _ScriptedLookup(), doh: doh), doh);
+    }
+
+    test('start() hands the stored credential its choice, so a restart keeps it', () async {
+      Vault.fake();
+      await XtreamCredentials(
+        baseUrl: 'http://panel.example:8080',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'watchools/test',
+        resolver: 'cloudflare',
+      ).save();
+
+      final (HostResolver resolver, _ScriptedLookup doh) = escalatingResolver();
+      final ProviderSession session = ProviderSession(applyResolverSetting: resolver.updateSetting);
+
+      // The composition root builds the resolver synchronously in `register()`,
+      // long before any vault read, so this is the only moment a STORED choice
+      // can reach it.
+      await session.start();
+
+      expect(session.providerResolution, (host: 'panel.example', setting: ResolverSetting.cloudflare));
+      expect(await resolver.resolve('panel.example'), '203.0.113.5');
+      expect(doh.calls, <String>['panel.example']);
+    });
+
+    test('adopt() with a different resolver changes which rung the next resolve consults', () async {
+      Vault.fake();
+
+      final (HostResolver resolver, _ScriptedLookup doh) = escalatingResolver();
+      final ProviderSession session = ProviderSession(applyResolverSetting: resolver.updateSetting);
+      await session.start();
+
+      // Nothing stored, so nothing to escalate to: the system rung fails and
+      // that is the whole ladder.
+      expect(await resolver.resolve('panel.example'), isNull);
+      expect(doh.calls, isEmpty);
+
+      await session.adopt(
+        XtreamCredentials(
+          baseUrl: 'http://panel.example:8080',
+          username: 'demo',
+          password: 'demo',
+          userAgent: 'watchools/test',
+          resolver: 'google',
+        ),
+      );
+
+      // Without this push the user would keep resolving through the previous
+      // choice until the process restarts.
+      expect(await resolver.resolve('panel.example'), '203.0.113.5');
+      expect(doh.calls, <String>['panel.example']);
+    });
+
+    test('reports no resolution at all before a credential is loaded', () async {
+      Vault.fake();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      expect(session.providerResolution, isNull);
+    });
+
+    test('signOut() drops the address resolved for the panel being left', () async {
+      Vault.fake();
+
+      final (HostResolver resolver, _ScriptedLookup doh) = escalatingResolver();
+      final ProviderSession session = ProviderSession(applyResolverSetting: resolver.updateSetting);
+      await session.start();
+      await session.adopt(
+        XtreamCredentials(
+          baseUrl: 'http://panel.example:8080',
+          username: 'demo',
+          password: 'demo',
+          userAgent: 'watchools/test',
+          resolver: 'cloudflare',
+        ),
+      );
+
+      expect(await resolver.resolve('panel.example'), '203.0.113.5');
+
+      await session.signOut();
+
+      // The setting alone is inert once there is no credential to pin, so what
+      // this asserts is the cache: without the push, the entry resolved for the
+      // account just signed out would still answer here, which is a live
+      // address for a panel the user no longer has.
+      expect(await resolver.resolve('panel.example'), isNull);
+      expect(doh.calls, <String>[
+        'panel.example',
+      ], reason: 'the DoH rung is gone with the setting, so it is not asked again');
     });
   });
 

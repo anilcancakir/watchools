@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:magic/magic.dart';
 
 import '../models/provider_fault.dart';
+import '../network/host_resolver.dart';
+import '../network/resolver_setting.dart';
 import '../protocol/xtream/xtream_account.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../protocol/xtream/xtream_credentials.dart';
@@ -38,13 +40,36 @@ abstract interface class ProviderSetupFacade {
   /// read, and a facade is defined beside its controller.
   bool get hasCredential;
 
+  /// The resolver the loaded credential carries, or [ResolverSetting.system]
+  /// before any credential is loaded or when the loaded one carries none.
+  ///
+  /// The form has no other way to see this: unlike the three visible fields,
+  /// which start empty and stay that way even when a credential exists (see
+  /// `ProviderSettingsLayout`'s own class doc block), a resolver's default IS
+  /// the system resolver, which is the very thing this feature exists to move
+  /// a user away from, so an unseeded picker would silently read as "no
+  /// override" every time the form reopens.
+  ResolverSetting get resolver;
+
+  /// The resolver's cached answer for the loaded credential's panel host, or
+  /// null when nothing has resolved yet, or before a credential is loaded.
+  ///
+  /// This reads [HostResolver.cached], which is synchronous and issues no
+  /// lookup, so a rebuild of the settings screen never provokes network
+  /// traffic. It is what turns "a resolver you pasted sends your credentials
+  /// somewhere" from invisible into inspectable: the destination becomes a
+  /// thing the user can read and compare against the panel they expect.
+  String? get resolvedAddress;
+
   /// Confirms the four typed values with the panel and stores them only if it
-  /// accepts them.
+  /// accepts them. [resolver] is [ResolverSetting.storedValue], the raw string
+  /// [XtreamCredentials.resolver] carries; null means the system resolver.
   Future<void> submit({
     required String baseUrl,
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   });
 
   /// Ends playback and forgets the current provider, in that order.
@@ -157,6 +182,17 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   /// the app.
   final ProviderSession? _sessionOverride;
 
+  /// The ONE resolver the process registers, handed in rather than looked up
+  /// or built here. `AppServiceProvider` and every test's `controllerFor` pass
+  /// the same instance the process-wide `HttpOverrides` consults, because a
+  /// second `HostResolver` would hold a different cache and show the user an
+  /// address the requests never used.
+  ///
+  /// Named apart from its `hostResolver` parameter for the same reason
+  /// [_endPlayback] is: a private initializing formal cannot be passed from
+  /// another library, and `AppServiceProvider` is one.
+  final HostResolver _dnsResolver;
+
   ProviderFault? _fault;
 
   String? _fieldError;
@@ -164,10 +200,15 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   bool _busy = false;
 
   /// Creates the controller. [stopPlayback] is what [signOut] calls before the
-  /// session clears; [session] is what a confirmed credential is adopted into.
-  ProviderSetupController({required Future<void> Function() stopPlayback, ProviderSession? session})
-    : _endPlayback = stopPlayback,
-      _sessionOverride = session;
+  /// session clears; [session] is what a confirmed credential is adopted into;
+  /// [hostResolver] is the registered resolver [resolvedAddress] reads.
+  ProviderSetupController({
+    required Future<void> Function() stopPlayback,
+    required HostResolver hostResolver,
+    ProviderSession? session,
+  }) : _endPlayback = stopPlayback,
+       _dnsResolver = hostResolver,
+       _sessionOverride = session;
 
   ProviderSession get _session => _sessionOverride ?? Magic.findOrPut(ProviderSession.new);
 
@@ -198,6 +239,24 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   /// to run.
   @override
   bool get hasCredential => _session.hasCredentials;
+
+  /// Read through to the session for the same reason [hasCredential] is:
+  /// [ProviderSession.providerResolution] is null before a credential loads,
+  /// which is exactly [ResolverSetting.system]'s own meaning here.
+  @override
+  ResolverSetting get resolver => _session.providerResolution?.setting ?? ResolverSetting.system;
+
+  /// Null before a credential is loaded, for the same reason [resolver]'s
+  /// system default is: there is no host yet to ask [HostResolver.cached]
+  /// about. With a credential loaded, reads through rather than caching a
+  /// local copy, because the answer changes as the process resolves without
+  /// this controller doing anything.
+  @override
+  String? get resolvedAddress {
+    final ({String host, ResolverSetting setting})? resolution = _session.providerResolution;
+
+    return resolution == null ? null : _dnsResolver.cached(resolution.host);
+  }
 
   /// Confirms the four typed values with the panel, and stores them only if it
   /// accepts them.
@@ -236,6 +295,7 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   }) async {
     if (_busy) return;
 
@@ -251,7 +311,13 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
     final XtreamCredentials credentials;
 
     try {
-      credentials = XtreamCredentials(baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+      credentials = XtreamCredentials(
+        baseUrl: baseUrl,
+        username: username,
+        password: password,
+        userAgent: userAgent,
+        resolver: resolver,
+      );
     } on ArgumentError {
       // The rejected value is never interpolated: it is exactly the string
       // that may carry `user:password@host`, which is the second shape

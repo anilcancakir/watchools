@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
 import 'package:watchools/app/models/provider_fault.dart';
+import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/ui/components/provider_notice/provider_notice.dart';
 import 'package:watchools/ui/layouts/provider_settings_layout.dart';
 
@@ -18,7 +19,14 @@ import '../../support/screen.dart';
 /// most on this screen is that the four typed values crossed the boundary
 /// intact, not that some request happened.
 class _FakeProvider implements ProviderSetupFacade {
-  _FakeProvider({this.fault, this.fieldError, this.hasCredential = false, this.busy = false});
+  _FakeProvider({
+    this.fault,
+    this.fieldError,
+    this.hasCredential = false,
+    this.busy = false,
+    this.resolver = ResolverSetting.system,
+    this.resolvedAddress,
+  });
 
   @override
   ProviderFault? fault;
@@ -32,9 +40,15 @@ class _FakeProvider implements ProviderSetupFacade {
   @override
   bool hasCredential;
 
+  @override
+  ResolverSetting resolver;
+
+  @override
+  String? resolvedAddress;
+
   int signOuts = 0;
 
-  ({String baseUrl, String username, String password, String userAgent})? submitted;
+  ({String baseUrl, String username, String password, String userAgent, String? resolver})? submitted;
 
   int submits = 0;
 
@@ -50,9 +64,10 @@ class _FakeProvider implements ProviderSetupFacade {
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   }) async {
     submits++;
-    submitted = (baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+    submitted = (baseUrl: baseUrl, username: username, password: password, userAgent: userAgent, resolver: resolver);
 
     final Completer<void>? pending = gate;
     if (pending == null) return;
@@ -332,6 +347,207 @@ void main() {
       await tester.pump();
 
       expect(provider.submitted!.userAgent, 'Watchools/1.0');
+    });
+  });
+
+  group('the resolver picker', () {
+    /// Opens the picker and taps [optionLabel], the shape every test below
+    /// shares: `WSelect` defers its overlay to the frame after the opening
+    /// tap (`w_select.dart:361-369`), so a single `pump()` is not enough.
+    Future<void> pickResolver(WidgetTester tester, String optionLabel) async {
+      await tester.tap(find.bySemanticsLabel('DNS çözümleyici seçin'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(optionLabel));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the custom resolver field is absent until the custom entry is picked', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsNothing);
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsOneWidget);
+    });
+
+    testWidgets('a bare hostname typed into the custom field is refused, and nothing is submitted', (
+      WidgetTester tester,
+    ) async {
+      // A hostname would have to be resolved by the resolver it is replacing,
+      // which bootstraps the ladder on itself.
+      final _FakeProvider provider = _FakeProvider();
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), 'dns.example.com');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(find.text('Sunucu adı değil, IP adresi veya https adresi girin.'), findsOneWidget);
+      expect(provider.submitted, isNull);
+    });
+
+    testWidgets('a custom address typed and then hidden again still reaches the facade', (WidgetTester tester) async {
+      // The field unmounts with the disclosure, and `Form.save()` runs `onSaved`
+      // only on a mounted field, so a value written at save time would be gone
+      // by the time this submits. Found in the running app: typed, hidden,
+      // submitted, and silently downgraded to the system resolver.
+      final _FakeProvider provider = _FakeProvider();
+
+      // `onSaved` supplied for the reason the three-field happy path records:
+      // this submit succeeds, and the default would navigate through
+      // `MagicRoute.to`, which `pumpScreen` never builds a router for.
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider, onSaved: () {}));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), '9.9.9.9');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarları gizle'));
+      await tester.pump();
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsNothing);
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(provider.submitted?.resolver, '9.9.9.9');
+    });
+
+    testWidgets('an unusable custom address is refused even with the disclosure closed', (WidgetTester tester) async {
+      // The validator cannot see an unmounted field, so `_submit` carries the
+      // same refusal. Without it `parse` falls back to the system resolver and
+      // the user is handed a setting they did not choose, with no reason why.
+      final _FakeProvider provider = _FakeProvider();
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), 'dns.example.com');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarları gizle'));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(find.text('Sunucu adı değil, IP adresi veya https adresi girin.'), findsOneWidget);
+      expect(provider.submitted, isNull);
+    });
+
+    testWidgets('a resolver stored non-system reaches the facade even when the disclosure is never opened', (
+      WidgetTester tester,
+    ) async {
+      // The trap this test exists to catch: `_baseUrl`, `_username` and
+      // `_password` all start empty and the disclosure clears its own field
+      // on close, but a resolver's default IS the system resolver, so an
+      // unseeded picker would silently drop a working setting the moment a
+      // user reopens this screen to fix something else. Proved to
+      // discriminate at `.ac/plans/dns-connection-download/evidence/
+      // 06-resolver-picker.txt` by removing the seeding in `initState` and
+      // watching this go red with `resolver` arriving as null.
+      final _FakeProvider provider = _FakeProvider(resolver: ResolverSetting.cloudflare);
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider, onSaved: () {}));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(provider.submitted!.resolver, 'cloudflare');
+    });
+  });
+
+  group('the resolver scope note', () {
+    testWidgets('states the resolver applies to panel requests, not the stream', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      // The consequence rather than the mechanism, and the mechanism this used
+      // to name was wrong: the sentence blamed the panel's redirect, when a
+      // stream URL is built on the panel's OWN host, so playback's first
+      // request already goes to the name the user picked a resolver for.
+      expect(find.textContaining('Oynatıcı adresleri kendi çözümler'), findsOneWidget);
+      expect(find.textContaining('bir kanal yine de açılmayabilir'), findsOneWidget);
+    });
+
+    testWidgets('renders no address line when nothing has resolved yet', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.textContaining('Panel adresi:'), findsNothing);
+    });
+
+    testWidgets('adds exactly one line naming the resolved address', (WidgetTester tester) async {
+      // Diffed against the no-address baseline rather than asserted by
+      // `contains`, following the fault-sentence test above: a `contains`
+      // check discriminates only by luck, as that test's own comment records.
+      // Keyed distinctly, because two `ProviderSettingsLayout`s with no key in
+      // the same slot keep the first's State (and its `_advancedOpen: true`)
+      // across the second `pumpScreen`, which would make the second tap close
+      // the disclosure it never reopened.
+      await pumpScreen(tester, ProviderSettingsLayout(key: const ValueKey('a'), provider: _FakeProvider()));
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+      final Set<String> withoutAddress = tester
+          .widgetList<WText>(find.byType(WText))
+          .map((WText each) => each.data)
+          .toSet();
+
+      await pumpScreen(
+        tester,
+        ProviderSettingsLayout(
+          key: const ValueKey('b'),
+          provider: _FakeProvider(resolvedAddress: '203.0.113.9'),
+        ),
+      );
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+      final Set<String> withAddress = tester
+          .widgetList<WText>(find.byType(WText))
+          .map((WText each) => each.data)
+          .toSet();
+
+      expect(withAddress.difference(withoutAddress), <String>{'Panel adresi: 203.0.113.9'});
     });
   });
 
