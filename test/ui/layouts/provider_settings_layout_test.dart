@@ -436,7 +436,12 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
       await tester.pump();
 
-      expect(find.textContaining('Yayın, panelin yönlendirdiği başka bir adresten geldiği için'), findsOneWidget);
+      // The consequence rather than the mechanism, and the mechanism this used
+      // to name was wrong: the sentence blamed the panel's redirect, when a
+      // stream URL is built on the panel's OWN host, so playback's first
+      // request already goes to the name the user picked a resolver for.
+      expect(find.textContaining('Oynatıcı adresleri kendi çözümler'), findsOneWidget);
+      expect(find.textContaining('bir kanal yine de açılmayabilir'), findsOneWidget);
     });
 
     testWidgets('renders no address line when nothing has resolved yet', (WidgetTester tester) async {

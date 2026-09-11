@@ -118,15 +118,23 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// What the resolver picker says about the half of the app it does not
   /// cover.
   ///
-  /// The panel answers a `302` to a different origin and libmpv follows it
-  /// and resolves that host itself through `getaddrinfo`, so pinning the
-  /// panel's address would pin the connection that gets redirected rather
-  /// than the one that carries video. Stated here rather than left implied,
-  /// because a setting that silently applies to half of what the user thinks
-  /// it applies to is worse than one that applies to none of it.
+  /// **The boundary is the player, not the redirect.** An earlier version of
+  /// this sentence blamed the panel's `302` to another origin, and that is not
+  /// the reason: a stream URL is built on the panel's own host
+  /// (`xtream_stream_url.dart:113-122`), so playback's FIRST request already
+  /// goes to the name the user picked a resolver for, and libmpv resolves it
+  /// through `getaddrinfo` before any redirect exists. So the honest statement
+  /// is that playback resolves every address itself, and the consequence a
+  /// user has to be told is the specific one: the catalogue can start working
+  /// while a channel still does not.
+  ///
+  /// Stated rather than left implied, because a setting that silently applies
+  /// to half of what the user thinks it applies to is worse than one that
+  /// applies to none of it.
   static const String _resolverScope =
-      'Bu ayar panel isteklerine uygulanır. Yayın, panelin yönlendirdiği '
-      'başka bir adresten geldiği için sistem çözümleyicisini kullanır.';
+      'Bu ayar panel isteklerine uygulanır. Oynatıcı adresleri kendi çözümler, '
+      'panelinki de dahil, o yüzden katalog açıldığı hâlde bir kanal yine de '
+      'açılmayabilir.';
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 

@@ -120,18 +120,26 @@ class ResolvingHttpOverrides extends HttpOverrides {
   /// The address to connect to instead of [url]'s host, or null to leave this
   /// connection alone.
   ///
-  /// Null in three cases, and the caller treats them alike because they mean the
+  /// Null in four cases, and the caller treats them alike because they mean the
   /// same thing: this override has no address to offer. A proxied connection is
   /// addressed to the proxy rather than to the panel, so pinning it would send
   /// the request to the wrong machine. A host that is not the configured panel
   /// is somebody else's traffic. And a [HostResolver] that answered null has
   /// already exhausted its ladder.
+  ///
+  /// The fourth is the resolver's own DoH request, and leaving it out is not a
+  /// tidiness: the DoH rung opens a plain `HttpClient`, which this override
+  /// intercepts like any other, so a user whose custom endpoint happens to sit
+  /// on the panel's own host would have `resolve` re-enter itself once per
+  /// level, forever, building a client each time. Narrow, because it needs the
+  /// endpoint and the panel to share a host, and unbounded when it happens.
   Future<String?> _addressFor(Uri url, String? proxyHost) async {
     if (proxyHost != null) return null;
 
     final String? panel = panelHost();
 
     if (panel == null || url.host != panel) return null;
+    if (url.host == resolver.setting.dohEndpoint?.host) return null;
 
     return resolver.resolve(url.host);
   }

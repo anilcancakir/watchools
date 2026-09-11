@@ -356,6 +356,52 @@ void main() {
       expect(system.calls, <String>[loopback]);
       expect(panel.requests, hasLength(1));
     });
+
+    test('leaves the connection alone when no credential names a panel', () async {
+      final _RawPanel panel = await _RawPanel.start();
+      addTearDown(panel.close);
+
+      final String loopback = InternetAddress.loopbackIPv4.address;
+      final (HostResolver resolver, _ScriptedLookup system) = resolverAnswering(loopback);
+
+      // What `ProviderSession.providerResolution` answers before a credential
+      // is loaded, which is every request a fresh install makes.
+      installResolvingHttpOverrides(resolver: resolver, panelHost: () => null);
+
+      final HttpClient client = HttpClient();
+      addTearDown(client.close);
+
+      expect(await get_(client, 'http://$loopback:${panel.port}/player_api.php'), '{}');
+      expect(system.calls, isEmpty, reason: 'no panel to pin, so the resolver is never consulted');
+    });
+
+    test('does not pin the resolver own DoH endpoint, which would re-enter forever', () async {
+      final _RawPanel panel = await _RawPanel.start();
+      addTearDown(panel.close);
+
+      final String loopback = InternetAddress.loopbackIPv4.address;
+
+      // The pathological case the guard exists for: a custom DoH endpoint on
+      // the panel's own host. The DoH rung opens a plain `HttpClient`, which
+      // this override intercepts like any other, so without the guard
+      // `resolve` calls itself once per level and never returns.
+      // The system rung fails (its default), so the ladder reaches for DoH,
+      // which is the rung that would re-enter.
+      final HostResolver resolver = HostResolver(
+        setting: ResolverSetting.parse('https://$loopback/dns-query'),
+        system: _ScriptedLookup(),
+      );
+
+      installResolvingHttpOverrides(resolver: resolver, panelHost: () => loopback);
+
+      final HttpClient client = HttpClient();
+      addTearDown(client.close);
+
+      expect(
+        await get_(client, 'http://$loopback:${panel.port}/player_api.php').timeout(const Duration(seconds: 5)),
+        '{}',
+      );
+    });
   });
 
   group('the https branch', () {

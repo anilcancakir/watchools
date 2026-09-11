@@ -453,12 +453,12 @@ class XtreamCredentials {
   ///
   /// The asymmetry with [_requireString] is deliberate. [_requireString]'s
   /// [FormatException] is caught in `ProviderSession._loadCredentials`
-  /// (`provider_session.dart:430-431`) and rendered as `ProviderFault.expired`,
+  /// (`provider_session.dart:494`) and rendered as `ProviderFault.expired`,
   /// which sends the user to re-enter a credential that is perfectly good
   /// over one optional field of the wrong shape. A bare nullable-string cast
   /// would be worse, not better: it throws [TypeError] for a wrong-typed
   /// value rather than returning null, and neither that catch nor the
-  /// `MagicVaultException` catch beside it (`:434`) handles a [TypeError], so
+  /// `MagicVaultException` catch beside it (`:498`) handles a [TypeError], so
   /// the app would boot to nothing, because `load()` is awaited inside
   /// `Magic.init()` before `runApp()`. A resolver value this cannot read
   /// means "use the system resolver", which is exactly what the user had
