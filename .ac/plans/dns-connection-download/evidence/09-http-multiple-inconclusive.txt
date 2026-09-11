@@ -1,0 +1,71 @@
+Step 9's runtime proof of `http_multiple=0`: ATTEMPTED, NOT ACHIEVED.
+
+This file exists because the attempt failed to discriminate, and a plan that
+claimed the option was proved when it was not would be worse than one that says
+this plainly.
+
+## What the step asked for
+
+Play the m3u8-only channel and show that no two segment requests overlap in
+time, then invert the option, rebuild, and show that they do. Both logs, or it
+is not evidence.
+
+## What had to be worked around first, and it is a finding of its own
+
+The app could not reach the HLS demuxer at all. `XtreamStreamUrl.live` takes a
+`channelFormats` argument, `Channel` carries no formats field, and
+`ProviderSession.streamUrlFor` never passes one, so `served` is always empty,
+`allowed` decides alone, and `ts` leads the preference
+(`xtream_stream_url.dart:39`). Measured: tapping channel 10007, whose catalogue
+entry is `formats: ['m3u8']`, produced
+
+    GET /live/demo/demo/10007.ts
+
+So **step 1's fix is not merely latent for most channels, it is unreachable from
+the app as it stands.** The option is still correct and costs nothing; what is
+missing is the plumbing that would ever select an m3u8 URL.
+
+To reach the HLS path at all, the mock's account was temporarily narrowed to
+`allowed_output_formats: ['m3u8']` (`server.mjs:174`), which is a legitimate
+provider configuration rather than a contrivance. That produced real HLS:
+
+    GET /live/demo/demo/10007.m3u8
+    GET /live/play/<token>/10007.m3u8
+    GET /segments/10007/init.mp4
+    GET /segments/10007/s-447275531.m4s
+    GET /segments/10007/s-447275532.m4s
+    GET /segments/10007/s-447275533.m4s
+
+## The measurement, and why it settles nothing
+
+The mock logs a line per request ARRIVAL and never a completion, so start
+timestamps cannot separate "sequential and fast" from "overlapping". The
+substitute was a direct count of established TCP connections from the app to the
+mock, sampled every two seconds through `lsof`.
+
+    http_multiple=0 (shipped)   2, 2, 1, 1, 1, 2
+    http_multiple=1 (control)   1, 1, 2, 2, 2, 1
+
+The two runs are indistinguishable. The count fluctuates in BOTH states, because
+a playlist reload and a segment fetch are separate `URLContext`s and briefly
+coexist whatever `http_multiple` says.
+
+This is an under-powered experiment rather than a negative result. The mock
+serves segments off local disk in single-digit milliseconds, so any overlap
+window `http_multiple` would open is far below a two second sampling interval.
+
+## What would settle it
+
+Either instrument the mock to hold each segment response open for a second or
+two, which makes an overlap window wide enough to see with the same instrument;
+or raise mpv's log level past the `msg-level=all=warn` the engine sets
+(`MpvEngine.swift:97`) and read FFmpeg's own option handling back out of the
+verbose log. Both are source changes outside this step's scope, and both are
+recorded in the plan's Deferred Ideas.
+
+## What IS established
+
+That the two option keys sit on the passthroughs that declare them, checked by
+the four greps in step 1, and that the macOS build compiles with them. That the
+option is ACCEPTED by FFmpeg rather than silently dropped is the specific claim
+this file declines to make.

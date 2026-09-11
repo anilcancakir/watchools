@@ -373,7 +373,24 @@ rather than because one needs the other's output.
 
 ### Wave 7 (must run after wave 6)
 
-- [ ] **Step 9**: Prove the options took effect and the gates are green
+- [x] **Step 9**: Prove the options took effect and the gates are green
+    - **OUTCOME: the gates are green, and the one criterion about `http_multiple` is NOT met.**
+      Five of the six criteria passed and their evidence is at `evidence/09-gates.txt`: analyze
+      clean, format clean, 636 tests, coverage 2850/3007 = 94.8% computed with CI's own inline
+      block, `flutter build macos --debug` exit 0, `flutter build web --no-pub` exit 0, and a clean
+      tree apart from two untracked Xcode `xcshareddata/swiftpm/` directories the build writes and
+      `CLAUDE.md` already records. The sixth, the overlapping-segment observation with its control,
+      was attempted in full and **failed to discriminate**; `evidence/09-http-multiple-inconclusive.txt`
+      carries the whole attempt. Two things came out of it. The mock's log has no completion
+      timestamps, so concurrent TCP connections were the substitute instrument, and that count
+      fluctuates between one and two in BOTH states because a playlist reload and a segment fetch
+      are separate contexts that briefly coexist whatever `http_multiple` says; the mock serves
+      segments off local disk in milliseconds, so the window the option governs is far below a two
+      second sample. And, found on the way, **the app cannot reach the HLS demuxer at all today**:
+      `Channel` carries no formats and `streamUrlFor` passes no `channelFormats`, so `ts` always
+      wins and a channel whose catalogue entry says `formats: ['m3u8']` still gets a `.ts` URL. The
+      option is correct and free; what is unproved is that FFmpeg accepts the inner key. Both
+      follow-ups are in Deferred Ideas.
     - **Type**: verification
     - **Files**: (no source edits, except one temporary and reverted option flip described below)
     - **Description**: Two things this plan cannot assert from source. **First, whether FFmpeg actually accepted `http_multiple=0`**, because an inner key on a passthrough is dropped silently when it is wrong, so every grep in step 1 can pass over an option that does nothing. The discriminating observation is the mock's own request log: play the m3u8-only channel at `tool/xtream-mock/catalogue.mjs:267` and look at whether two segment requests overlap in time. With the option ignored, FFmpeg opens the next segment while the current one is still being read (`hls.c:1720-1722`); with it applied, it does not. Capture the log twice. The control run needs the option inverted, which means **one temporary edit to `packages/watchools_player/macos/watchools_player/Sources/watchools_player/MpvEngine.swift`, changing `http_multiple=0` to `http_multiple=1`, rebuilt, captured, then reverted with `git checkout --` before the evidence files are written**. That flip is the only source change this step makes and it must not survive it: `git status` is clean at the end. Without the control, a log showing no overlap proves nothing, because a run where the option was silently dropped and a run where the panel happened to be slow look identical. **Second, the macOS build**, because CI compiles no Swift at all (`ci.yml` runs on `ubuntu-latest`), so a Swift edit is otherwise unverified until somebody runs the app.
@@ -489,6 +506,21 @@ path, so it is a plan about the playback path rather than about DNS.
 **Detecting a device whose strict-mode Private DNS points at a broken host**, via
 `LinkProperties.getPrivateDnsServerName` on Android. A diagnostic rather than a fix, and Android
 only, but it turns a confusing failure into a sentence that names the cause.
+
+**Plumb the per-channel format list through to the URL builder.** `XtreamStreamUrl.live` takes a
+`channelFormats` argument and nothing ever passes one, because `Channel` has no formats field, so
+`served` is always empty and `ts` always wins. The consequence found during step 9: a channel whose
+catalogue entry says `formats: ['m3u8']` is still asked for as `.ts`. On the mock the panel answers
+anyway; a real panel that serves only HLS for that channel would not. This needs a field on
+`Channel`, a column in `CatalogueStore` and the argument at the `streamUrlFor` call site. It is also
+what would make step 1's `http_multiple=0` reachable rather than latent.
+
+**Make the `http_multiple` claim provable.** Two routes, either of which turns step 9's inconclusive
+attempt into evidence: hold each mock segment response open for a second or two, which widens the
+overlap window past the sampling interval, or raise mpv's log level past the `msg-level=all=warn`
+the engine sets (`MpvEngine.swift:97`) and read FFmpeg's own option handling out of the verbose log.
+The first is a change to `tool/xtream-mock/server.mjs`, the second to the engine's option set; both
+were outside step 9's scope.
 
 **Pre-resolving the panel host when the channel list renders** was in the original scope and is
 dropped rather than deferred. It would have saved a lookup on tap, but taps open the stream host,
