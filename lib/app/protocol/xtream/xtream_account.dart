@@ -185,18 +185,23 @@ class XtreamAccount {
 ///
 /// 1. [ProviderFault.unreachable] when [statusCode] is `0`: no response
 ///    reached the app, so there is nothing else to reason about.
-/// 2. [ProviderFault.expired] when [account] is `null` or
+/// 2. `null` when [body] decoded as JSON and [account] is active, which is
+///    what a healthy call looks like whether the action answers an object or
+///    an array. The body is consulted before the status on purpose: a panel
+///    behind a proxy that mislabels its status is still a panel.
+/// 3. [ProviderFault.expired] when [body] decoded and [account] is `null` or
 ///    `XtreamAccount.active` is `false`. A denial landing on a subscription
-///    already known dead is still the dead subscription, not a fresh
-///    throttle.
-/// 3. [ProviderFault.evicted] when [account] is active, at its connection
+///    already known dead is still the dead subscription, not a fresh throttle.
+/// 4. [ProviderFault.wrongAddress] when the body did NOT decode and
+///    [statusCode] is a redirect or a 404. A statement about the address
+///    rather than the subscription, so it is read before [account] is
+///    consulted at all.
+/// 5. [ProviderFault.evicted] when [account] is active, at its connection
 ///    limit, and [body] is the generic non-JSON denial: retrying costs the
 ///    other device its slot.
-/// 4. [ProviderFault.throttled] for that same denial on an account that is
-///    active but not at its limit.
-/// 5. `null` when [account] is active and [body] decoded as JSON, which is
-///    what a healthy call looks like whether the action answers an object or
-///    an array.
+/// 6. [ProviderFault.throttled] for that same denial on an account that is
+///    active but not at its limit, and for the first-launch case where there
+///    is no account to reason with.
 ///
 /// Never call this with the result of parsing a list body as evidence of
 /// health: a dead subscription still returns its whole catalogue and fails
@@ -219,7 +224,29 @@ ProviderFault? classifyProviderFault({
     return (account == null || !account.active) ? ProviderFault.expired : null;
   }
 
-  // 3. The generic denial with no account behind it, which is the first-launch
+  // 3. The status says nothing at that address is answering as a panel. This
+  //    is the only place the status is consulted beyond `== 0`, and it is
+  //    consulted before the account, because it is a statement about the
+  //    ADDRESS rather than about the subscription: a 301 arrives the same way
+  //    whether the credential is a day old or three years old.
+  //
+  //    Narrow on purpose. A 3xx is a host handing the request somewhere else,
+  //    which `AppServiceProvider` already refuses to follow because a panel URL
+  //    carries the credential in its path, and a 404 is that path not existing.
+  //    Both mean the address or the port is wrong far more often than they mean
+  //    anything about the account.
+  //
+  //    401, 403 and every 5xx deliberately fall through to the arms below. A
+  //    blocked address and a blocked user agent are exactly what a reseller's
+  //    403 is, and a 5xx is the panel's own bad day; all three are conditions
+  //    that clear on their own or with a different `User-Agent`, so they keep
+  //    the fault that offers a retry rather than the one that sends the user
+  //    back to a field they typed correctly.
+  if (statusCode >= 300 && (statusCode < 400 || statusCode == 404)) {
+    return ProviderFault.wrongAddress;
+  }
+
+  // 4. The generic denial with no account behind it, which is the first-launch
   //    case: the handshake itself came back as unparseable text. That says
   //    nothing whatsoever about the credential, so it must not be read as
   //    `expired`, the one fault that withholds the retry. Retrying is the
@@ -230,11 +257,11 @@ ProviderFault? classifyProviderFault({
   //    recoverable.
   if (account == null) return ProviderFault.throttled;
 
-  // 4. A subscription already known dead stays dead, whatever this call
+  // 5. A subscription already known dead stays dead, whatever this call
   //    answered.
   if (!account.active) return ProviderFault.expired;
 
-  // 5. The denial against a live account, narrowed by whether answering it
+  // 6. The denial against a live account, narrowed by whether answering it
   //    would cost the other device its slot.
   return account.atConnectionLimit ? ProviderFault.evicted : ProviderFault.throttled;
 }
