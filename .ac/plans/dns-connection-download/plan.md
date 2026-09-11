@@ -326,7 +326,7 @@ rather than because one needs the other's output.
 
 ### Wave 6 (steps 7 and 8 are independent and run in parallel, after wave 5)
 
-- [ ] **Step 7**: Show which address the panel actually resolved to
+- [x] **Step 7**: Show which address the panel actually resolved to
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-none: one read path and one line of copy, but it is the mitigation that makes the custom-resolver risk inspectable rather than invisible.
@@ -349,7 +349,7 @@ rather than because one needs the other's output.
         - Trigger a resolution from the settings screen. This reads the cache and nothing else.
         - Render a placeholder when there is no cached address.
 
-- [ ] **Step 8**: Correct the three claims this research falsified
+- [x] **Step 8**: Correct the three claims this research falsified
     - **Type**: code
     - **Tier**: junior
     - **Why this tier**: rule-4-detail: prose edits to three files, but each one replaces a claim rather than appending to it, and each correction has to be read back against the source quote it rests on, which is past what this plan's calibration calls a single-file mechanical edit.

@@ -115,6 +115,19 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       'Bu adres yanıt verdi ama bir Xtream paneli değil. Adresi ve port '
       'numarasını kontrol edin.';
 
+  /// What the resolver picker says about the half of the app it does not
+  /// cover.
+  ///
+  /// The panel answers a `302` to a different origin and libmpv follows it
+  /// and resolves that host itself through `getaddrinfo`, so pinning the
+  /// panel's address would pin the connection that gets redirected rather
+  /// than the one that carries video. Stated here rather than left implied,
+  /// because a setting that silently applies to half of what the user thinks
+  /// it applies to is worse than one that applies to none of it.
+  static const String _resolverScope =
+      'Bu ayar panel isteklerine uygulanır. Yayın, panelin yönlendirdiği '
+      'başka bir adresten geldiği için sistem çözümleyicisini kullanır.';
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final FocusNode _userAgentFocusNode;
@@ -203,6 +216,7 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                   _disclosure(),
                   if (_advancedOpen) _userAgentField(),
                   if (_advancedOpen) _resolverField(),
+                  if (_advancedOpen) _resolverScopeNote(),
                   if (fieldError != null) _fieldErrorBanner(fieldError),
                   // The two faults whose recovery is the credential itself
                   // never render as a panel HERE, because on this screen the
@@ -359,6 +373,24 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// the resolver it is replacing, which bootstraps the ladder on itself.
   String? _validateCustomResolver(String? value) {
     return ResolverSetting.parse(value).choice == ResolverChoice.custom ? null : _customResolverInvalid;
+  }
+
+  /// The resolved address, when there is one, above the sentence naming what
+  /// the resolver does not cover.
+  ///
+  /// Renders no address line at all rather than a placeholder when
+  /// [ProviderSetupFacade.resolvedAddress] is null: a fresh install has
+  /// nothing cached yet, and an empty row would say less than nothing.
+  Widget _resolverScopeNote() {
+    final String? address = widget.provider.resolvedAddress;
+
+    return WDiv(
+      className: 'flex flex-col gap-1',
+      children: <Widget>[
+        if (address != null) WText('Panel adresi: $address', className: 'text-xs text-fg-muted'),
+        const WText(_resolverScope, className: 'text-xs text-fg-muted'),
+      ],
+    );
   }
 
   /// The one thing a client that cannot fix the transport can honestly say.

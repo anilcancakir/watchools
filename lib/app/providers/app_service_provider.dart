@@ -119,7 +119,9 @@ class AppServiceProvider extends ServiceProvider {
     // happens rather than now, and `stop()` rather than a predicate plus a
     // stop: an expression written out here is asserted only by whatever a test
     // file transcribes, which is the drift the gate's own comment records.
-    Magic.put(ProviderSetupController(stopPlayback: () => Magic.find<PlaybackController>().stop()));
+    Magic.put(
+      ProviderSetupController(stopPlayback: () => Magic.find<PlaybackController>().stop(), hostResolver: hostResolver),
+    );
 
     // Provider traffic gets its own driver, and this is a security boundary
     // rather than tidiness. The shared `network` driver carries magic's

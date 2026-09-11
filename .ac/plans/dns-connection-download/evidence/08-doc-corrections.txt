@@ -1,0 +1,41 @@
+Step 8: Correct the three claims this research falsified
+
+Done when checks, run from repo root:
+
+$ rg -q 'ships an in-app DNS setting' CLAUDE.md .ac/research/stack-decisions.md
+(no match, exit 1) -> ! rg -q ... exits 0: PASS
+
+$ rg -q 'OwnTV' CLAUDE.md
+exit 0: PASS
+
+$ rg -q 'http_multiple' CLAUDE.md
+exit 0: PASS
+
+QA: each corrected paragraph read against
+.ac/plans/dns-connection-download/research/external-findings.md.
+
+- CLAUDE.md Provider requests section (was line 184): replaced "no app in this
+  category ships an in-app DNS setting" with the OwnTV README line 94 quote
+  and the XCIPTV/IBO Multi DNS trap, matching the VERIFIED section
+  "our own documentation is wrong about the competition" verbatim in claim
+  (OwnTV ships it, wiring into mpv's byte fetch not visible, Multi DNS is
+  portal failover not name resolution). No claim beyond the source: does not
+  say how OwnTV wires the resolver into mpv.
+- CLAUDE.md and stack-decisions.md DNS section: reframed from "no player
+  exposes a hook, therefore onboarding not code" to "the hook is missing but
+  pinning does not need one; HttpOverrides covers the app's own HTTP; libmpv's
+  byte fetch is not reachable because it resolves inside FFmpeg following the
+  panel's own 302 redirect". Cites player-layer.md:26-28 (302 to a different
+  origin) and libavformat/http.c:487-509 (s->location replaced, goto redo,
+  s->headers untouched), matching the VERIFIED "302" measurement text and the
+  redirect-loop citation given in the briefing.
+- player-layer.md buffer section (before the "Starting values" table at
+  line ~265): added the hls.js 30 s / Shaka one-segment-ahead reference points
+  and the "playlist window binds before the byte budget does" framing, matching
+  the REPORTED "peak-hour classification" paragraph verbatim.
+- CLAUDE.md Provider requests section: added the http_multiple paragraph,
+  matching the VERIFIED "FFmpeg opens a second connection by default on HLS"
+  section (hls.c:1710-1716 auto-on for HTTP/1.1 and HTTP/2, eviction measured
+  at player-layer.md:218-231, http_multiple=0 via demuxer-lavf-o).
+
+No em dash or en dash used. No file outside the three-file scope touched.

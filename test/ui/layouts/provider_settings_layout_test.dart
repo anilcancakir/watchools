@@ -25,6 +25,7 @@ class _FakeProvider implements ProviderSetupFacade {
     this.hasCredential = false,
     this.busy = false,
     this.resolver = ResolverSetting.system,
+    this.resolvedAddress,
   });
 
   @override
@@ -41,6 +42,9 @@ class _FakeProvider implements ProviderSetupFacade {
 
   @override
   ResolverSetting resolver;
+
+  @override
+  String? resolvedAddress;
 
   int signOuts = 0;
 
@@ -422,6 +426,59 @@ void main() {
       await tester.pump();
 
       expect(provider.submitted!.resolver, 'cloudflare');
+    });
+  });
+
+  group('the resolver scope note', () {
+    testWidgets('states the resolver applies to panel requests, not the stream', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.textContaining('Yayın, panelin yönlendirdiği başka bir adresten geldiği için'), findsOneWidget);
+    });
+
+    testWidgets('renders no address line when nothing has resolved yet', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.textContaining('Panel adresi:'), findsNothing);
+    });
+
+    testWidgets('adds exactly one line naming the resolved address', (WidgetTester tester) async {
+      // Diffed against the no-address baseline rather than asserted by
+      // `contains`, following the fault-sentence test above: a `contains`
+      // check discriminates only by luck, as that test's own comment records.
+      // Keyed distinctly, because two `ProviderSettingsLayout`s with no key in
+      // the same slot keep the first's State (and its `_advancedOpen: true`)
+      // across the second `pumpScreen`, which would make the second tap close
+      // the disclosure it never reopened.
+      await pumpScreen(tester, ProviderSettingsLayout(key: const ValueKey('a'), provider: _FakeProvider()));
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+      final Set<String> withoutAddress = tester
+          .widgetList<WText>(find.byType(WText))
+          .map((WText each) => each.data)
+          .toSet();
+
+      await pumpScreen(
+        tester,
+        ProviderSettingsLayout(
+          key: const ValueKey('b'),
+          provider: _FakeProvider(resolvedAddress: '203.0.113.9'),
+        ),
+      );
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+      final Set<String> withAddress = tester
+          .widgetList<WText>(find.byType(WText))
+          .map((WText each) => each.data)
+          .toSet();
+
+      expect(withAddress.difference(withoutAddress), <String>{'Panel adresi: 203.0.113.9'});
     });
   });
 

@@ -129,13 +129,13 @@ On iOS the only working mechanism for **arbitrary** headers is an unsupported pr
 
 ### DNS: not our problem to solve in the app
 
-No player exposes a resolver hook. ExoPlayer, AVPlayer, libmpv and hls.js each resolve independently. The full mpv option manual has no `dns` or `resolve` option, and `--http-proxy` is not used for https URLs.
+No player exposes a resolver hook. ExoPlayer, AVPlayer, libmpv and hls.js each resolve independently. The full mpv option manual has no `dns` or `resolve` option, and `--http-proxy` is not used for https URLs. The hook is genuinely missing, but the conclusion drawn from it does not follow: pinning an address does not need a hook, only a caller that reaches the request before it goes out. `HttpOverrides` reaches every request this app makes over its own HTTP client, and that is as far as an in-app resolver decision goes. It does not reach libmpv's byte fetch, which resolves and connects inside FFmpeg on its own: the panel answers a `302` to a different origin (`.ac/research/player-layer.md:26-28`), so the redirect target is what a resolver decision has to apply to rather than the host the user typed, and `libavformat/http.c:487-509` replaces `s->location` and jumps to `redo` on that redirect while `s->headers` survives untouched, with no point in the loop where a Dart-side override is consulted.
 
-More decisive: **no player in this category ships an in-app DNS setting.** Not TiViMate, not OTT Navigator, not IPTV Smarters. Every one of them defers DNS to the device or the router. The instruction a provider gives its users is a device-level setup step, not a feature request aimed at us.
+**OwnTV ships an in-app custom DNS setting**, so this is not an untried category. README line 94: "App-wide custom DNS, System, Google, Cloudflare, Quad9, custom DNS or DNS-over-HTTPS; the selected resolver persists across restarts", on an Android TV, libmpv-based client. How it wires the resolver into mpv's byte fetch is not visible in its public tree. The "Multi DNS" feature XCIPTV and IBO Player advertise is portal-address failover, not name resolution: vendor marketing is not evidence here.
 
 Android cannot set Private DNS programmatically at all. The only route is `VpnService`, and [Play policy](https://support.google.com/googleplay/android-developer/answer/12564964) permits it only for apps "with core VPN functionality or those requiring a remote server for essential features". A media player is not on that list.
 
-**Decision: answer the DNS requirement with onboarding, not code.** A good setup screen per platform, detecting the failure and explaining the fix, beats an entitlement that gets us rejected.
+**Decision: `HttpOverrides` covers the app's own HTTP, and that is the whole reach of an in-app resolver.** libmpv's byte fetch follows the panel's own redirect inside FFmpeg, where no Dart-side override is consulted; a setup screen per platform still carries the case neither mechanism reaches.
 
 ### The local loopback proxy
 

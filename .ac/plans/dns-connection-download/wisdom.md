@@ -142,3 +142,21 @@
 - **`WSelect` defers its overlay by a frame** (`w_select.dart:361-369`), so a widget test that taps
   the picker and pumps once finds nothing. The test group's shared helper uses `pumpAndSettle` twice
   and records the line.
+
+## Wave 6
+
+- **Two unkeyed widgets in the same slot share `State` across two `pumpScreen` calls.** The label-diff
+  test mounts the baseline screen, snapshots every `WText`, then mounts the variant and diffs. Without
+  distinct `ValueKey`s the second mount reused the first's `State`, disclosure already open, so the
+  diff measured nothing. Found by running it and reading the failure rather than by reasoning about
+  it, which is the only way this class of thing gets found.
+- **`prefer_initializing_formals` pushes toward a private initializing formal that a test cannot
+  name.** `this._hostResolver` makes the parameter private to the library, so `AppServiceProvider`
+  cannot pass it. `provider_setup_controller.dart` already documents this for `_endPlayback`; the new
+  dependency follows it by naming the field differently from the parameter. Worth knowing before the
+  next constructor dependency on this class.
+- **A correction has to replace the conclusion as well as the premise.** `stack-decisions.md`'s DNS
+  section ended with "Decision: answer the DNS requirement with onboarding, not code", which rested
+  entirely on the "no hook, therefore nothing to do in code" premise being corrected above it. The
+  worker rewrote the decision line too rather than leaving a contradicted conclusion standing under a
+  corrected argument, which is the failure the step's own Must NOT names.

@@ -4,6 +4,7 @@ import 'package:magic/testing.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
 import 'package:watchools/app/models/provider_fault.dart';
+import 'package:watchools/app/network/host_resolver.dart';
 import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
@@ -47,6 +48,18 @@ class _FakePanel {
 
     return MagicResponse(data: const <dynamic>[], statusCode: 200);
   }
+}
+
+/// A [HostLookup] rung that always answers with the same address, for seeding
+/// [HostResolver.cached] ahead of a [ProviderSetupController.resolvedAddress]
+/// read. Follows `host_resolver_test.dart`'s own scripted rung shape.
+class _FixedLookup implements HostLookup {
+  final String address;
+
+  const _FixedLookup(this.address);
+
+  @override
+  Future<HostAnswer> lookup(String host) async => HostAnswer(<String>[address]);
 }
 
 /// A handshake body in the wire's own drifted shape: `auth` bare, the rest
@@ -121,12 +134,14 @@ void main() {
 
   /// The controller over [session], with the playback seam appending to [order]
   /// instead of reaching an engine.
-  ProviderSetupController controllerFor(ProviderSession session, {List<String>? order}) => ProviderSetupController(
-    stopPlayback: () async {
-      order?.add('playback stopped');
-    },
-    session: session,
-  );
+  ProviderSetupController controllerFor(ProviderSession session, {List<String>? order, HostResolver? hostResolver}) =>
+      ProviderSetupController(
+        stopPlayback: () async {
+          order?.add('playback stopped');
+        },
+        session: session,
+        hostResolver: hostResolver ?? HostResolver(setting: ResolverSetting.system),
+      );
 
   group('submit(), the moment a typed credential becomes a stored one', () {
     test('stores the credential the panel accepted, and sends the user agent it was given', () async {
@@ -429,6 +444,35 @@ void main() {
       final ProviderSetupController controller = controllerFor(session);
 
       expect(controller.resolver, ResolverSetting.google);
+    });
+  });
+
+  group('resolvedAddress', () {
+    test('is null before any credential is loaded', () async {
+      final ProviderSession session = await emptySession();
+      final ProviderSetupController controller = controllerFor(session);
+
+      expect(controller.resolvedAddress, isNull);
+    });
+
+    test('is null with a credential loaded but nothing cached yet', () async {
+      final ProviderSession session = await configuredSession();
+      final ProviderSetupController controller = controllerFor(session);
+
+      expect(controller.resolvedAddress, isNull);
+    });
+
+    test('is the registered resolver\'s cached answer for the credential\'s panel host', () async {
+      final ProviderSession session = await configuredSession();
+      final HostResolver hostResolver = HostResolver(
+        setting: ResolverSetting.system,
+        system: const _FixedLookup('203.0.113.9'),
+      );
+      await hostResolver.resolve(Uri.parse(stored.baseUrl).host);
+
+      final ProviderSetupController controller = controllerFor(session, hostResolver: hostResolver);
+
+      expect(controller.resolvedAddress, '203.0.113.9');
     });
   });
 

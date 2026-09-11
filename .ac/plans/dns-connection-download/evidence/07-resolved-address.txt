@@ -1,0 +1,47 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/app/controllers/provider_setup_controller_test.dart: (setUpAll)
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +1: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +2: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +3: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +4: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +5: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +6: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +7: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +8: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +9: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +10: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +11: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +12: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +13: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +14: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +15: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +16: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +17: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +18: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out offers no way back when there is no credential, because there is nowhere to go
+00:00 +19: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out the back affordance is a disc, not a pill spanning the window
+00:00 +20: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out renders at a mobile width as well as a desktop one
+00:00 +21: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields are exactly three, before the disclosure ever opens
+00:00 +22: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields carry autocorrect and enableSuggestions both off, and the password field is obscured
+00:00 +23: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields entering three values and submitting reaches the facade intact
+00:00 +24: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields a second Kaydet while the first handshake is out sends nothing and navigates nowhere
+00:00 +25: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields an empty user name blocks submit, shows a message, and never reaches the facade
+00:00 +26: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure the user agent field is absent until the disclosure is opened
+00:01 +27: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure the revealed field keeps the same FocusNode instance across an unmount and remount
+00:01 +28: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure a user agent saved once and then hidden again is not sent
+00:01 +29: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker the custom resolver field is absent until the custom entry is picked
+00:01 +30: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker a bare hostname typed into the custom field is refused, and nothing is submitted
+00:01 +31: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker a resolver stored non-system reaches the facade even when the disclosure is never opened
+00:01 +32: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver scope note states the resolver applies to panel requests, not the stream
+00:01 +33: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver scope note renders no address line when nothing has resolved yet
+00:01 +34: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver scope note adds exactly one line naming the resolved address
+00:01 +35: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out is absent when there is no credential to sign out of
+00:01 +36: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out is present and reaches the facade when a credential exists
+00:01 +37: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out cannot be tapped while a submit is in flight
+00:01 +38: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors the panel renders a ProviderNotice for the controller's fault
+00:01 +39: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors every fault whose recovery is the credential gets a sentence, and none gets a panel
+00:01 +40: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors a fault whose recovery is a retry still gets the panel
+00:01 +41: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors expired is a sentence about the two fields, not the panel that offers a pointless retry
+00:01 +42: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors a field error renders, and nothing navigates on
+00:01 +43: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the plaintext transport says the connection is unencrypted and the password should not be reused
+00:01 +44: All tests passed!

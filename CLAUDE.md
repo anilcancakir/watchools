@@ -181,7 +181,11 @@ Components get a preview file alongside them and `./bin/fsa previews:refresh` re
 
 Any HTTP call to a user's IPTV provider carries a per-provider `User-Agent`. Normalise the header key to exactly `User-Agent`: ExoPlayer's lookup is case sensitive and a lowercase key silently ships `User-Agent: ExoPlayer` instead. Treat `Referer` as optional, because Tizen cannot send it at all.
 
-Custom DNS is an onboarding problem, not a feature. No player engine exposes a resolver hook and no app in this category ships an in-app DNS setting.
+No player engine exposes a resolver hook, but pinning an address does not need one. `HttpOverrides` reaches every request this app makes over its own HTTP client. It does not reach libmpv's byte fetch, which resolves and connects inside FFmpeg on its own: the panel answers a `302` to a different origin (`.ac/research/player-layer.md:26-28`), so the redirect target is what a resolver decision has to apply to rather than the host the user typed, and `libavformat/http.c:487-509` replaces `s->location` and jumps to `redo` on that redirect while `s->headers` survives untouched, with no point in the loop where a Dart-side override is consulted.
+
+OwnTV ships an in-app custom DNS setting (README line 94: System, Google, Cloudflare, Quad9, custom DNS or DNS-over-HTTPS, persisted across restarts), on an Android TV, libmpv-based client, so this is not an untried category; how it wires the resolver into mpv's byte fetch is not visible in its public tree. The "Multi DNS" feature XCIPTV and IBO Player advertise is portal-address failover, not name resolution: vendor marketing is not evidence here.
+
+FFmpeg's HLS demuxer defaults `http_multiple` to on for any HTTP/1.1 or HTTP/2 server (`libavformat/hls.c:1710-1716`), which opens a second connection for the next segment while the current one is still live. On a `max_connections: 1` account that second connection is the one that evicts the older stream (`.ac/research/player-layer.md:218-231`): the player kills itself. The app sets `http_multiple=0` through `demuxer-lavf-o`.
 
 Never log a provider credential, never put one in a job payload, never commit one. `.env.local` is gitignored and holds a development credential, four keys: `XTREAM_BASE_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` and the optional `XTREAM_USER_AGENT`.
 
