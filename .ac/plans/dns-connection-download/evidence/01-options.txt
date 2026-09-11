@@ -1,0 +1,10 @@
+1 demuxer-lavf-o present: exit=0
+2 http_multiple=0 present: exit=0
+3 NOT stream-lavf-o.*http_multiple: exit=0
+4 NOT demuxer-lavf-o.*seekable: exit=0
+
+Read-back confirmation:
+  stream-lavf-o = "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=[4xx,5xx],reconnect_max_retries=3,seekable=0" (line 72)
+  demuxer-lavf-o = "http_multiple=0" (line 89)
+  seekable declared in http.c (protocol) -> correctly on stream-lavf-o
+  http_multiple declared in hls.c (demuxer) -> correctly on demuxer-lavf-o

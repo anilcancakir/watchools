@@ -7,8 +7,13 @@ import 'package:watchools/app/protocol/xtream/xtream_account.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/protocol/xtream/xtream_stream_url.dart';
 
-XtreamCredentials _record({String baseUrl = 'http://panel.example:8080'}) =>
-    XtreamCredentials(baseUrl: baseUrl, username: 'bob', password: 's3cret', userAgent: 'Watchools/1.0');
+XtreamCredentials _record({String baseUrl = 'http://panel.example:8080', String? resolver}) => XtreamCredentials(
+  baseUrl: baseUrl,
+  username: 'bob',
+  password: 's3cret',
+  userAgent: 'Watchools/1.0',
+  resolver: resolver,
+);
 
 /// A credential whose secrets need escaping, so the three spellings of one
 /// secret are three different strings: `b@b` encodes to `b%40b` either way,
@@ -112,6 +117,57 @@ void main() {
       Vault.fake({XtreamCredentials.vaultKey: 'not json at all'});
 
       expect(XtreamCredentials.load, throwsFormatException);
+    });
+
+    test('load() reads the exact four-key blob the previous version wrote, resolver null', () async {
+      // Every existing install has exactly this shape on disk right now.
+      // If load() throws on it, ProviderSession renders ProviderFault.expired
+      // and tells the user their working subscription has lapsed.
+      Vault.fake({
+        XtreamCredentials.vaultKey: jsonEncode(<String, String>{
+          'base_url': 'http://host:8080',
+          'username': 'bob',
+          'password': 's3cret',
+          'user_agent': 'Watchools/1.0',
+        }),
+      });
+
+      final XtreamCredentials? loaded = await XtreamCredentials.load();
+
+      expect(loaded?.resolver, isNull);
+    });
+
+    test('load() reads resolver null, throwing neither FormatException nor TypeError, when it is a number', () async {
+      Vault.fake({
+        XtreamCredentials.vaultKey: jsonEncode(<String, Object>{
+          'base_url': 'http://host:8080',
+          'username': 'bob',
+          'password': 's3cret',
+          'user_agent': 'Watchools/1.0',
+          'resolver': 42,
+        }),
+      });
+
+      final XtreamCredentials? loaded = await XtreamCredentials.load();
+
+      expect(loaded?.resolver, isNull);
+    });
+
+    test('save() then load() round-trips a resolver value', () async {
+      Vault.fake();
+
+      await _record(resolver: 'cloudflare').save();
+
+      expect((await XtreamCredentials.load())?.resolver, 'cloudflare');
+    });
+
+    test('save() omits the resolver key entirely when the setting is the system one', () async {
+      Vault.fake();
+
+      await _record().save();
+
+      final String payload = (await Vault.get(XtreamCredentials.vaultKey))!;
+      expect(jsonDecode(payload), isNot(contains('resolver')));
     });
 
     test('load() throws when a field is missing or not a string', () async {

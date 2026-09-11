@@ -77,6 +77,16 @@ class XtreamCredentials {
   /// ships `User-Agent: ExoPlayer` instead.
   final String userAgent;
 
+  /// The user's chosen resolver, or null for the system default.
+  ///
+  /// A raw stored string exactly as [ResolverSetting.storedValue] wrote it
+  /// (`'cloudflare'`, `'google'`, an IP literal, or an `https` DoH endpoint),
+  /// left unparsed here because this class is only the storage boundary:
+  /// [ResolverSetting.parse] is what turns it back into a validated choice.
+  /// Null is also what a wrong-typed or missing stored value reads back as;
+  /// see [_optionalString].
+  final String? resolver;
+
   /// Creates a credential, normalising and validating [baseUrl].
   ///
   /// Throws [ArgumentError] when [baseUrl] carries no `http`/`https` scheme,
@@ -85,8 +95,13 @@ class XtreamCredentials {
   /// configured `base_url` to any path not matching `https?:`
   /// (`dio-5.9.2/lib/src/options.dart:630`), so a scheme-less panel URL does
   /// not fail loudly, it silently addresses the wrong server.
-  XtreamCredentials({required String baseUrl, required this.username, required this.password, required this.userAgent})
-    : baseUrl = _normaliseBaseUrl(baseUrl);
+  XtreamCredentials({
+    required String baseUrl,
+    required this.username,
+    required this.password,
+    required this.userAgent,
+    this.resolver,
+  }) : baseUrl = _normaliseBaseUrl(baseUrl);
 
   /// Writes the record over whatever [vaultKey] held before.
   Future<void> save() => Vault.put(vaultKey, jsonEncode(_toJson()));
@@ -172,6 +187,7 @@ class XtreamCredentials {
       username: _requireString(decoded, 'username'),
       password: _requireString(decoded, 'password'),
       userAgent: _requireString(decoded, 'user_agent'),
+      resolver: _optionalString(decoded, 'resolver'),
     );
   }
 
@@ -360,10 +376,11 @@ class XtreamCredentials {
       other.baseUrl == baseUrl &&
       other.username == username &&
       other.password == password &&
-      other.userAgent == userAgent;
+      other.userAgent == userAgent &&
+      other.resolver == resolver;
 
   @override
-  int get hashCode => Object.hash(baseUrl, username, password, userAgent);
+  int get hashCode => Object.hash(baseUrl, username, password, userAgent, resolver);
 
   /// Names the provider and the user, and redacts the password.
   ///
@@ -373,14 +390,19 @@ class XtreamCredentials {
   @override
   String toString() =>
       'XtreamCredentials(baseUrl: $baseUrl, username: $username, '
-      'password: $_redaction, userAgent: $userAgent)';
+      'password: $_redaction, userAgent: $userAgent, resolver: $resolver)';
 
   /// The wire shape stored under [vaultKey].
+  ///
+  /// [resolver] is omitted rather than written as `null` when the setting is
+  /// the system one, so a user who never touches this feature keeps writing
+  /// the same four-key blob every existing install already has on disk.
   Map<String, String> _toJson() => <String, String>{
     'base_url': baseUrl,
     'username': username,
     'password': password,
     'user_agent': userAgent,
+    'resolver': ?resolver,
   };
 
   /// Trims, strips trailing slashes, and rejects anything Dio would treat as a
@@ -424,5 +446,26 @@ class XtreamCredentials {
     }
 
     return value;
+  }
+
+  /// Reads an optional string field, returning null rather than throwing for
+  /// both a missing key and a value present with the wrong type.
+  ///
+  /// The asymmetry with [_requireString] is deliberate. [_requireString]'s
+  /// [FormatException] is caught in `ProviderSession._loadCredentials`
+  /// (`provider_session.dart:430-431`) and rendered as `ProviderFault.expired`,
+  /// which sends the user to re-enter a credential that is perfectly good
+  /// over one optional field of the wrong shape. A bare nullable-string cast
+  /// would be worse, not better: it throws [TypeError] for a wrong-typed
+  /// value rather than returning null, and neither that catch nor the
+  /// `MagicVaultException` catch beside it (`:434`) handles a [TypeError], so
+  /// the app would boot to nothing, because `load()` is awaited inside
+  /// `Magic.init()` before `runApp()`. A resolver value this cannot read
+  /// means "use the system resolver", which is exactly what the user had
+  /// before this feature existed.
+  static String? _optionalString(Map<String, Object?> json, String field) {
+    final Object? value = json[field];
+
+    return value is String ? value : null;
   }
 }

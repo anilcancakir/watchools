@@ -65,10 +65,28 @@ final class MpvEngine {
         // while the demuxer reads 3 to 7 s of content, and `state()` still
         // reports `gpu-next` and a picture. A bounded failure is recoverable,
         // an indefinite silent stall is not.
-        "stream-lavf-o": "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=[4xx,5xx],reconnect_max_retries=3",
+        // `seekable` belongs to `http.c`, the protocol, not `hls.c`, the
+        // demuxer, so it rides on this key rather than the demuxer
+        // passthrough below. Nothing here is ever seekable, so this saves
+        // the initial probe request FFmpeg would otherwise issue to check.
+        "stream-lavf-o": "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=[4xx,5xx],reconnect_max_retries=3,seekable=0",
         // Nothing here is a YouTube URL and the hook costs a subprocess probe
         // on every load.
         "ytdl": "no",
+        // `http_multiple` belongs to `hls.c`, the HLS demuxer, not `http.c`,
+        // the protocol, so it rides on `demuxer-lavf-o` rather than
+        // `stream-lavf-o`; swapping the two is not an error, it is a silent
+        // drop (see the `stream-lavf-o` comment above), which is exactly how
+        // this would go unnoticed. FFmpeg's HLS demuxer defaults it to -1,
+        // which resolves to ON for any HTTP/1.1 or HTTP/2 server, and once on
+        // it opens the NEXT segment on a SECOND connection while the current
+        // one is still live. This account's `max_connections` is 1 and the
+        // panel evicted the older stream at 5.79 s when a second connection
+        // opened, so on an m3u8 channel this option is what stops the player
+        // evicting itself. Latent rather than live today: `ts` leads the
+        // container preference, so most channels never reach the HLS
+        // demuxer at all.
+        "demuxer-lavf-o": "http_multiple=0",
     ]
 
     /// Renders into `layerPointer`, which must be a `CAMetalLayer`.
