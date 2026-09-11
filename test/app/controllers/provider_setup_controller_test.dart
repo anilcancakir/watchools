@@ -4,6 +4,7 @@ import 'package:magic/testing.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
 import 'package:watchools/app/models/provider_fault.dart';
+import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/app/protocol/xtream/xtream_client.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/provider/provider_session.dart';
@@ -160,6 +161,42 @@ void main() {
       // invented: a reseller keys access control to it, and a silently
       // defaulted one makes their rejection unexplainable.
       driver.assertSent((MagicRequest request) => request.headers['User-Agent'] == 'watchools/test');
+    });
+
+    test('threads the chosen resolver into the stored credential', () async {
+      panel.handshakeBody = _handshake(auth: 1, status: 'Active', maxConnections: 2);
+
+      final ProviderSession session = await emptySession(playing: true);
+      final ProviderSetupController controller = controllerFor(session);
+
+      await controller.submit(
+        baseUrl: 'http://panel.example:8080',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'watchools/test',
+        resolver: 'cloudflare',
+      );
+
+      final XtreamCredentials? persisted = await XtreamCredentials.load();
+      expect(persisted, isNotNull);
+      expect(persisted!.resolver, 'cloudflare');
+    });
+
+    test('a submit with no resolver chosen stores none, the same four-key blob every existing install has', () async {
+      panel.handshakeBody = _handshake(auth: 1, status: 'Active', maxConnections: 2);
+
+      final ProviderSession session = await emptySession(playing: true);
+      final ProviderSetupController controller = controllerFor(session);
+
+      await controller.submit(
+        baseUrl: 'http://panel.example:8080',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'watchools/test',
+      );
+
+      final XtreamCredentials? persisted = await XtreamCredentials.load();
+      expect(persisted!.resolver, isNull);
     });
 
     test(
@@ -366,6 +403,32 @@ void main() {
       expect(controller.fieldError, isNull);
       expect(controller.fault, isNull);
       expect(session.hasCredentials, isTrue);
+    });
+  });
+
+  group('resolver', () {
+    test('reads the system default before any credential is loaded', () async {
+      final ProviderSession session = await emptySession();
+      final ProviderSetupController controller = controllerFor(session);
+
+      expect(controller.resolver, ResolverSetting.system);
+    });
+
+    test('reads the loaded credential\'s own choice', () async {
+      final XtreamCredentials withResolver = XtreamCredentials(
+        baseUrl: 'http://panel.example:8080',
+        username: 'demo',
+        password: 'demo',
+        userAgent: 'watchools/test',
+        resolver: 'google',
+      );
+      await withResolver.save();
+
+      final ProviderSession session = ProviderSession(developmentCredential: () => null);
+      await session.start();
+      final ProviderSetupController controller = controllerFor(session);
+
+      expect(controller.resolver, ResolverSetting.google);
     });
   });
 

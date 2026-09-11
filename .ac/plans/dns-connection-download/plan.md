@@ -296,7 +296,7 @@ rather than because one needs the other's output.
 
 ### Wave 5 (must run after wave 4)
 
-- [ ] **Step 6**: Put the resolver in the settings form as a named picker, and stop the disclosure eating it
+- [x] **Step 6**: Put the resolver in the settings form as a named picker, and stop the disclosure eating it
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-4-detail: the widget work is ordinary, but two behaviours already in this file (clear-on-close, and no prefill) turn a naive addition into silent data loss the user would blame on something else.

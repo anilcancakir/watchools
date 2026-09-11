@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:magic/magic.dart';
 
 import '../models/provider_fault.dart';
+import '../network/resolver_setting.dart';
 import '../protocol/xtream/xtream_account.dart';
 import '../protocol/xtream/xtream_client.dart';
 import '../protocol/xtream/xtream_credentials.dart';
@@ -38,13 +39,26 @@ abstract interface class ProviderSetupFacade {
   /// read, and a facade is defined beside its controller.
   bool get hasCredential;
 
+  /// The resolver the loaded credential carries, or [ResolverSetting.system]
+  /// before any credential is loaded or when the loaded one carries none.
+  ///
+  /// The form has no other way to see this: unlike the three visible fields,
+  /// which start empty and stay that way even when a credential exists (see
+  /// `ProviderSettingsLayout`'s own class doc block), a resolver's default IS
+  /// the system resolver, which is the very thing this feature exists to move
+  /// a user away from, so an unseeded picker would silently read as "no
+  /// override" every time the form reopens.
+  ResolverSetting get resolver;
+
   /// Confirms the four typed values with the panel and stores them only if it
-  /// accepts them.
+  /// accepts them. [resolver] is [ResolverSetting.storedValue], the raw string
+  /// [XtreamCredentials.resolver] carries; null means the system resolver.
   Future<void> submit({
     required String baseUrl,
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   });
 
   /// Ends playback and forgets the current provider, in that order.
@@ -199,6 +213,12 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   @override
   bool get hasCredential => _session.hasCredentials;
 
+  /// Read through to the session for the same reason [hasCredential] is:
+  /// [ProviderSession.providerResolution] is null before a credential loads,
+  /// which is exactly [ResolverSetting.system]'s own meaning here.
+  @override
+  ResolverSetting get resolver => _session.providerResolution?.setting ?? ResolverSetting.system;
+
   /// Confirms the four typed values with the panel, and stores them only if it
   /// accepts them.
   ///
@@ -236,6 +256,7 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   }) async {
     if (_busy) return;
 
@@ -251,7 +272,13 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
     final XtreamCredentials credentials;
 
     try {
-      credentials = XtreamCredentials(baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+      credentials = XtreamCredentials(
+        baseUrl: baseUrl,
+        username: username,
+        password: password,
+        userAgent: userAgent,
+        resolver: resolver,
+      );
     } on ArgumentError {
       // The rejected value is never interpolated: it is exactly the string
       // that may carry `user:password@host`, which is the second shape

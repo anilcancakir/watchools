@@ -1,0 +1,73 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart
+00:00 +0: the resolver picker a resolver stored non-system reaches the facade even when the disclosure is never opened
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: 'cloudflare'
+  Actual: <null>
+   Which: not an <Instance of 'String'>
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure>.<anonymous closure> (file:///Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart:424:9)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1953:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart line 424
+The test description was:
+  a resolver stored non-system reaches the facade even when the disclosure is never opened
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: the resolver picker a resolver stored non-system reaches the facade even when the disclosure is never opened [E]
+  Test failed. See exception logs above.
+  The test description was: a resolver stored non-system reaches the facade even when the disclosure is never opened
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker a resolver stored non-system reaches the facade even when the disclosure is never opened
+
+--- with the seeding restored ---
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +1: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +2: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +3: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +4: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +5: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +6: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +7: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +8: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +9: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +10: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +11: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +12: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +13: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +14: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out names the screen and offers a way back
+00:00 +15: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out offers no way back when there is no credential, because there is nowhere to go
+00:00 +16: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out the back affordance is a disc, not a pill spanning the window
+00:00 +17: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the heading and the way out renders at a mobile width as well as a desktop one
+00:00 +18: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields are exactly three, before the disclosure ever opens
+00:00 +19: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields carry autocorrect and enableSuggestions both off, and the password field is obscured
+00:00 +20: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields entering three values and submitting reaches the facade intact
+00:00 +21: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields a second Kaydet while the first handshake is out sends nothing and navigates nowhere
+00:00 +22: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the three visible fields an empty user name blocks submit, shows a message, and never reaches the facade
+00:00 +23: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure the user agent field is absent until the disclosure is opened
+00:01 +24: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure the revealed field keeps the same FocusNode instance across an unmount and remount
+00:01 +25: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the advanced disclosure a user agent saved once and then hidden again is not sent
+00:01 +26: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker the custom resolver field is absent until the custom entry is picked
+00:01 +27: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker a bare hostname typed into the custom field is refused, and nothing is submitted
+00:01 +28: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the resolver picker a resolver stored non-system reaches the facade even when the disclosure is never opened
+00:01 +29: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out is absent when there is no credential to sign out of
+00:01 +30: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out is present and reaches the facade when a credential exists
+00:01 +31: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: sign-out cannot be tapped while a submit is in flight
+00:01 +32: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors the panel renders a ProviderNotice for the controller's fault
+00:01 +33: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors every fault whose recovery is the credential gets a sentence, and none gets a panel
+00:01 +34: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors a fault whose recovery is a retry still gets the panel
+00:01 +35: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors expired is a sentence about the two fields, not the panel that offers a pointless retry
+00:01 +36: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: faults and field errors a field error renders, and nothing navigates on
+00:01 +37: /Users/anilcan/Code/watchools/.claude/worktrees/network-resolver/test/ui/layouts/provider_settings_layout_test.dart: the plaintext transport says the connection is unencrypted and the password should not be reused
+00:01 +38: All tests passed!

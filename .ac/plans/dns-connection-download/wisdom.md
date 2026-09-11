@@ -123,3 +123,22 @@
   `CERTIFICATE_VERIFY_FAILED` a wrong hostname produces, while `openssl s_client` against the same
   server reports `Verification: OK`. That divergence cost the worker about eight probe runs. Recorded
   in the fixture itself at `resolving_http_overrides_test.dart:201`.
+
+## Wave 5
+
+- **The validator delegates to `ResolverSetting.parse` instead of re-checking the format.** One
+  expression, `parse(value).choice == ResolverChoice.custom`, and its doc block says why: a second
+  implementation of "is this an IP literal or an https URL" would drift from the one the resolver
+  itself runs, and the drift would show up as a value the form accepts and the resolver then ignores.
+- **`WFormSelect` needs `onChange`, not `onSaved`, when another field's visibility depends on it.**
+  Every other field on this screen writes its state in `onSaved` at submit time; the custom-resolver
+  input mounts only while the picker reads `custom`, so the picker has to `setState` the moment it
+  changes rather than waiting for `Form.save()`.
+- **`WFormInput.hint` is folded into the field's own semantics node.** The worker measured the label
+  reading back as `"Özel sunucu adresi\n<hint>"`, which broke an exact `find.bySemanticsLabel` match
+  and would reach a screen reader as one run-on sentence. The consequence copy is a sibling `WText`
+  instead, matching `_plaintextWarning`'s shape. Worth knowing before the next long hint on this
+  screen.
+- **`WSelect` defers its overlay by a frame** (`w_select.dart:361-369`), so a widget test that taps
+  the picker and pumps once finds nothing. The test group's shared helper uses `pumpAndSettle` twice
+  and records the line.

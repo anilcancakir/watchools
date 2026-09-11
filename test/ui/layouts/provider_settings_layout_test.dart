@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
 import 'package:watchools/app/models/provider_fault.dart';
+import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/ui/components/provider_notice/provider_notice.dart';
 import 'package:watchools/ui/layouts/provider_settings_layout.dart';
 
@@ -18,7 +19,13 @@ import '../../support/screen.dart';
 /// most on this screen is that the four typed values crossed the boundary
 /// intact, not that some request happened.
 class _FakeProvider implements ProviderSetupFacade {
-  _FakeProvider({this.fault, this.fieldError, this.hasCredential = false, this.busy = false});
+  _FakeProvider({
+    this.fault,
+    this.fieldError,
+    this.hasCredential = false,
+    this.busy = false,
+    this.resolver = ResolverSetting.system,
+  });
 
   @override
   ProviderFault? fault;
@@ -32,9 +39,12 @@ class _FakeProvider implements ProviderSetupFacade {
   @override
   bool hasCredential;
 
+  @override
+  ResolverSetting resolver;
+
   int signOuts = 0;
 
-  ({String baseUrl, String username, String password, String userAgent})? submitted;
+  ({String baseUrl, String username, String password, String userAgent, String? resolver})? submitted;
 
   int submits = 0;
 
@@ -50,9 +60,10 @@ class _FakeProvider implements ProviderSetupFacade {
     required String username,
     required String password,
     required String userAgent,
+    String? resolver,
   }) async {
     submits++;
-    submitted = (baseUrl: baseUrl, username: username, password: password, userAgent: userAgent);
+    submitted = (baseUrl: baseUrl, username: username, password: password, userAgent: userAgent, resolver: resolver);
 
     final Completer<void>? pending = gate;
     if (pending == null) return;
@@ -332,6 +343,85 @@ void main() {
       await tester.pump();
 
       expect(provider.submitted!.userAgent, 'Watchools/1.0');
+    });
+  });
+
+  group('the resolver picker', () {
+    /// Opens the picker and taps [optionLabel], the shape every test below
+    /// shares: `WSelect` defers its overlay to the frame after the opening
+    /// tap (`w_select.dart:361-369`), so a single `pump()` is not enough.
+    Future<void> pickResolver(WidgetTester tester, String optionLabel) async {
+      await tester.tap(find.bySemanticsLabel('DNS çözümleyici seçin'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(optionLabel));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the custom resolver field is absent until the custom entry is picked', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsNothing);
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      expect(find.bySemanticsLabel('Özel sunucu adresi'), findsOneWidget);
+    });
+
+    testWidgets('a bare hostname typed into the custom field is refused, and nothing is submitted', (
+      WidgetTester tester,
+    ) async {
+      // A hostname would have to be resolved by the resolver it is replacing,
+      // which bootstraps the ladder on itself.
+      final _FakeProvider provider = _FakeProvider();
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickResolver(tester, 'Özel sunucu');
+
+      await tester.enterText(find.bySemanticsLabel('Özel sunucu adresi'), 'dns.example.com');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+
+      expect(find.text('Sunucu adı değil, IP adresi veya https adresi girin.'), findsOneWidget);
+      expect(provider.submitted, isNull);
+    });
+
+    testWidgets('a resolver stored non-system reaches the facade even when the disclosure is never opened', (
+      WidgetTester tester,
+    ) async {
+      // The trap this test exists to catch: `_baseUrl`, `_username` and
+      // `_password` all start empty and the disclosure clears its own field
+      // on close, but a resolver's default IS the system resolver, so an
+      // unseeded picker would silently drop a working setting the moment a
+      // user reopens this screen to fix something else. Proved to
+      // discriminate at `.ac/plans/dns-connection-download/evidence/
+      // 06-resolver-picker.txt` by removing the seeding in `initState` and
+      // watching this go red with `resolver` arriving as null.
+      final _FakeProvider provider = _FakeProvider(resolver: ResolverSetting.cloudflare);
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider, onSaved: () {}));
+
+      await tester.enterText(find.bySemanticsLabel('Panel adresi'), 'http://panel.example.com');
+      await tester.enterText(find.bySemanticsLabel('Kullanıcı adı'), 'anilcan');
+      await tester.enterText(find.bySemanticsLabel('Şifre'), 'topsecret');
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Kaydet'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(provider.submitted!.resolver, 'cloudflare');
     });
   });
 
