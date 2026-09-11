@@ -203,7 +203,7 @@ rather than because one needs the other's output.
 
 ### Wave 2 (must run after wave 1)
 
-- [ ] **Step 3**: Build the resolver: system first, DoH on failure, with a TTL cache and a tamper rung
+- [x] **Step 3**: Build the resolver: system first, DoH on failure, with a TTL cache and a tamper rung
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-1-cross-layer: this is new infrastructure plus the first DNS test double in the suite, and its failure modes are the ones the whole feature exists to handle.

@@ -19,3 +19,26 @@
 - **Dart 3.13's `use_null_aware_elements` lint forces `'key': ?value` in a map literal.** The
   `if (x != null) 'key': x!` shape a conditional map entry would normally take is an analyzer info,
   and `--fatal-infos` makes it a failure. Worth knowing before writing the next conditional entry.
+
+## Wave 2
+
+- **Both shipped DoH endpoints return CNAME records inside `Answer`.** Measured by the worker against
+  `www.wikipedia.org` on Cloudflare and Google alike: a `type: 5` record whose `data` is a hostname,
+  not an address. A parser taking `Answer[0].data` would hand `dyna.wikimedia.org.` to the caller as
+  an address. Records are filtered to `type == 1` and the resolver additionally refuses anything that
+  does not parse as an IP literal, so the leak is closed twice. A test covers the shape.
+- **`flutter build web` is the only gate on the conditional-export seam.** CI never builds web, and
+  `flutter analyze` does not see a platform-library violation, so a bare `dart:io` import in `lib/`
+  would have shipped silently. The worker ran the web build itself and it passed. Any later wave that
+  touches `lib/app/network/` has to run it again.
+- **[REMEDIATION] A doc block claimed a wider range than its code checked.** `_isBlackhole` said
+  `0.0.0.0/8 unspecified` while the code matched only the single address `0.0.0.0`. Corrected the
+  comment rather than widening the code, because widening is a behaviour change no test covers, and
+  recorded why in the comment itself.
+- **magic gap, read at source before filing**: `magic/lib/src/auth/auth_interceptor.dart:17-33` sets
+  `request.headers[header] = '$prefix $token'` for any request whenever `guard.cachedToken` is
+  non-empty, with no host, scheme or origin test. So any third-party call through the `Http` facade
+  ships our own user's bearer token to that third party. Local opt-out here is a plain `HttpClient`
+  for the DoH rung. The fix in magic is an origin allowlist on the interceptor, or at minimum
+  attaching only when the request URI's origin matches the configured API base. Report this in the
+  pull request per `CLAUDE.md`'s ecosystem rule.
