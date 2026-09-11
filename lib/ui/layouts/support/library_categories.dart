@@ -26,13 +26,20 @@ class LibraryCategories extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scoped to the two fields it reads, neither of which is the query. See
+    // `CategoryStrip`, which records the same reasoning in full and includes
+    // the list in the selected value for the same future.
+    return MagicSelector<LibraryController, (List<String>, String)>(
+      controller: controller,
+      selector: (LibraryController c) => (c.categories, c.category),
+      builder: ((List<String>, String) state) => _strip(state.$1, selected: state.$2),
+    );
+  }
+
+  /// The scrolling row of pills, built from its arguments and nothing else.
+  Widget _strip(List<String> categories, {required String selected}) {
     // Exactly the chip's own height, so the page above and below owns all the
     // spacing. See `PageGutter.stripHeight`.
-    final List<String> categories = controller.categories;
-
-    // `ListView.builder` for the reason `CategoryStrip` records in full: the
-    // list form allocates a widget per category on every controller notify,
-    // even though only the mounted ones are built.
     return SizedBox(
       height: PageGutter.stripHeight,
       child: ListView.builder(
@@ -40,12 +47,12 @@ class LibraryCategories extends StatelessWidget {
         padding: PageGutter.horizontal,
         itemCount: categories.length,
         addAutomaticKeepAlives: false,
-        itemBuilder: (BuildContext context, int index) => _item(categories[index]),
+        itemBuilder: (BuildContext context, int index) => _item(categories[index], selected: selected),
       ),
     );
   }
 
-  Widget _item(String category) {
+  Widget _item(String category, {required String selected}) {
     final IconData? icon = _icons[category];
 
     return WAnchor(
@@ -61,7 +68,7 @@ class LibraryCategories extends StatelessWidget {
           focus:ring-2 focus:ring-focus-ring
           selected:bg-inverse selected:text-on-inverse
         ''',
-        states: controller.category == category ? const <String>{'selected'} : const <String>{},
+        states: selected == category ? const <String>{'selected'} : const <String>{},
         children: <Widget>[
           if (icon != null) WIcon(icon, className: 'text-sm'),
           WText(category, className: 'text-sm font-semibold'),

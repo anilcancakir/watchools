@@ -93,7 +93,7 @@ class ShowcaseLayout extends StatelessWidget {
 
     return CustomScrollView(
       slivers: <Widget>[
-        SliverToBoxAdapter(child: _hero(wide)),
+        SliverToBoxAdapter(child: _heroScope(wide: wide)),
         const SliverToBoxAdapter(child: PageGutter.gap),
         if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
         SliverList.builder(
@@ -117,12 +117,57 @@ class ShowcaseLayout extends StatelessWidget {
     return LibraryEmpty(controller: controller);
   }
 
-  /// The promoted title: what the viewer left unfinished, or the first entry.
-  TitleItem get _featured =>
-      controller.continueWatching.isEmpty ? controller.matches.first : controller.continueWatching.first;
+  /// The promoted title: what the viewer left unfinished, or the first entry,
+  /// or null when the current filter matched nothing.
+  ///
+  /// Nullable because [_heroScope]'s selector reads it on every notification
+  /// rather than only during a build, and one of those notifications is the
+  /// keystroke that empties the catalogue. It arrives BEFORE the rebuild that
+  /// swaps this subtree out: `refreshUI` notifies the view and the selector in
+  /// one loop and `setState` only marks the view dirty, so the selector runs
+  /// against the emptied controller while its element is still mounted. A
+  /// non-nullable version threw `Bad state: No element` once per emptying
+  /// keystroke, and it was the search-focus test that caught it rather than
+  /// anything in this file.
+  TitleItem? get _featured {
+    final List<TitleItem> resumable = controller.continueWatching;
+    if (resumable.isNotEmpty) return resumable.first;
 
-  Widget _hero(bool wide) {
-    final TitleItem title = _featured;
+    final List<TitleItem> all = controller.matches;
+
+    return all.isEmpty ? null : all.first;
+  }
+
+  /// The hero, rebuilt only when the promoted title or the width moves.
+  ///
+  /// The promoted title survives a keystroke far more often than the catalogue
+  /// under it does, and that is what makes this worth scoping. [_featured] is
+  /// the first entry of `continueWatching`, and narrowing the catalogue rebuilds
+  /// that LIST while leaving the same `TitleItem` objects in it, so the selected
+  /// value compares equal by identity and the hero holds. It stops holding
+  /// exactly when it should: when the query pushes the promoted title out of the
+  /// result, or when starring it replaces the instance.
+  ///
+  /// `wide` is in the selected value for the reason `now_layout` records at
+  /// length: the builder captures it from the enclosing build, and a cached
+  /// subtree cannot see anything its closure captured.
+  Widget _heroScope({required bool wide}) {
+    return MagicSelector<LibraryController, (TitleItem?, bool)>(
+      controller: controller,
+      selector: (LibraryController c) => (_featured, wide),
+      builder: ((TitleItem?, bool) state) {
+        final TitleItem? title = state.$1;
+
+        // The null case is the one notification between the keystroke that
+        // emptied the catalogue and the rebuild that replaces this whole branch
+        // with `LibraryEmpty`, so nothing here reaches the screen. It exists
+        // because the selector has already run by then. See [_featured].
+        return title == null ? const SizedBox.shrink() : _hero(title, wide: state.$2);
+      },
+    );
+  }
+
+  Widget _hero(TitleItem title, {required bool wide}) {
     final Episode? next = title.upNext;
     final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
 

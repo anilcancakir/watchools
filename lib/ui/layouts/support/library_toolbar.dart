@@ -66,18 +66,28 @@ class LibraryToolbar extends StatelessWidget {
     );
   }
 
+  /// The scope switch, scoped to the one field it reads.
+  ///
+  /// It is the catalogue's counterpart to `GuideViewSwitch` and the same free
+  /// saving: the rest of this toolbar has to rebuild on a keystroke because it
+  /// reads the query, and without this the switch went along with it, redrawing
+  /// three anchors and three labels to show the same three words.
   Widget _scopes() {
-    return WDiv(
-      className: 'flex flex-row gap-1 p-1 rounded-full shrink-0 bg-surface-container',
-      children: <Widget>[
-        _scope(LibraryScope.all, 'Tümü'),
-        _scope(LibraryScope.movies, 'Filmler'),
-        _scope(LibraryScope.series, 'Diziler'),
-      ],
+    return MagicSelector<LibraryController, LibraryScope>(
+      controller: controller,
+      selector: (LibraryController c) => c.scope,
+      builder: (LibraryScope current) => WDiv(
+        className: 'flex flex-row gap-1 p-1 rounded-full shrink-0 bg-surface-container',
+        children: <Widget>[
+          _scope(LibraryScope.all, 'Tümü', current: current),
+          _scope(LibraryScope.movies, 'Filmler', current: current),
+          _scope(LibraryScope.series, 'Diziler', current: current),
+        ],
+      ),
     );
   }
 
-  Widget _scope(LibraryScope scope, String label) {
+  Widget _scope(LibraryScope scope, String label, {required LibraryScope current}) {
     return WAnchor(
       onTap: () => controller.showScope(scope),
       semanticLabel: '$label göster',
@@ -90,7 +100,7 @@ class LibraryToolbar extends StatelessWidget {
           focus:ring-2 focus:ring-focus-ring
           selected:bg-inverse selected:text-on-inverse
         ''',
-        states: controller.scope == scope ? const <String>{'selected'} : const <String>{},
+        states: current == scope ? const <String>{'selected'} : const <String>{},
         child: WText(label, className: 'text-xs font-semibold'),
       ),
     );
