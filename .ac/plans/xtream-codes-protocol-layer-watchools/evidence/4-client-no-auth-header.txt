@@ -1,0 +1,119 @@
+Step 4 evidence: no watchools credential reaches a provider panel
+Captured 2026-09-09T14:04:31Z from the player-reconnect worktree.
+
+== 1. The client never resolves the shared driver ==
+$ ! grep -q "Http\." lib/app/protocol/xtream/xtream_client.dart
+PASS (no match, exit 1)
+
+== 2. flutter test test/app/protocol/xtream/xtream_client_test.dart ==
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart
+00:00 +0: no watchools credential reaches the panel the registered provider driver ships no Authorization header with a token cached
+00:00 +1: no watchools credential reaches the panel the same request through a driver carrying AuthInterceptor does ship it
+00:00 +2: no watchools credential reaches the panel the registered provider driver carries no interceptor and follows no redirect
+00:00 +3: no watchools credential reaches the panel a 302 is surfaced rather than followed
+00:00 +4: no watchools credential reaches the panel a 401 from the panel is surfaced without a refresh or a replay
+00:00 +5: no watchools credential reaches the panel the User-Agent header key reaches the wire with its casing intact
+  Skip: Needs magic with preserveHeaderCase, fluttersdk/magic#151 (branch fix/dio-preserve-header-case). It passes against the local override and fails against the published constraint, so it stays skipped until the commit that bumps `magic:` unskips it.
+00:00 +5 ~1: endpoint and credentials the handshake sends the credential and no action
+00:00 +6 ~1: endpoint and credentials the credential rides in the query map and never in the URL string
+00:00 +7 ~1: endpoint and credentials every action reaches the panel under its own name
+00:00 +8 ~1: endpoint and credentials the client addresses the stored panel and ignores server_info.url
+00:00 +9 ~1: endpoint and credentials the header key is spelled exactly User-Agent, which ExoPlayer needs
+00:00 +10 ~1: query shape the stream lists send the credential and the action and nothing else
+00:00 +11 ~1: query shape get_short_epg sends stream_id and the limit the action honours
+00:00 +12 ~1: query shape get_simple_data_table sends stream_id and no limit, being the unlimited sibling
+00:00 +13 ~1: query shape get_vod_info sends vod_id
+00:00 +14 ~1: response reading an object body arriving as a raw String still parses
+00:00 +15 ~1: response reading a list body arriving as a raw String still parses
+00:00 +16 ~1: response reading a 200 carrying the plain word blocked keeps the body and decodes to null
+00:00 +17 ~1: response reading a transport failure surfaces as status 0 rather than a throw
+00:00 +18 ~1: response reading an unknown action answering with an array reads as empty rather than unreadable
+00:00 +19 ~1: response reading the EPG actions unwrap the epg_listings envelope
+00:00 +20 ~1: get_simple_date_table fallback an empty data table retries the typo spelling
+00:00 +21 ~1: get_simple_date_table fallback a populated data table does not retry
+00:00 +22 ~1: get_simple_date_table fallback two empty answers return the documented spelling, which is the truthful one
+00:00 +23 ~1: get_simple_date_table fallback a refused data table is surfaced rather than retried
+00:00 +24 ~1: All tests passed!
+
+The one skip is the wire-level User-Agent casing assertion: it needs
+magic with preserveHeaderCase (fluttersdk/magic#151), which is unpublished,
+so it would pass against the local override and fail against the pub.dev
+constraint CI resolves. The client-level spelling assertion beside it is live.
+
+== 3. The load-bearing assertion is falsifiable ==
+A mutation run with `driver.addInterceptor(AuthInterceptor())` added to the
+provider_network registration, reverted immediately afterwards. Four gates
+fail, and the raw bytes show exactly the leak this step exists to prevent:
+
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart
+00:00 +0: no watchools credential reaches the panel the registered provider driver ships no Authorization header with a token cached
+00:00 +0 -1: no watchools credential reaches the panel the registered provider driver ships no Authorization header with a token cached [E]
+  Expected: not contains 'authorization'
+    Actual: 'get /player_api.php?username=bob&password=s3cret http/1.1\r\n'
+              'user-agent: watchools/1.0 (provider)\r\n'
+              'accept-encoding: gzip\r\n'
+              'authorization: bearer watchools-jwt-do-not-leak\r\n'
+              'host: 127.0.0.1:53632\r\n'
+              '\r\n'
+              ''
+  
+  package:matcher                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18      expect
+  test/app/protocol/xtream/xtream_client_test.dart 161:7  main.<fn>.<fn>
+  
+00:00 +0 -1: no watchools credential reaches the panel the same request through a driver carrying AuthInterceptor does ship it
+00:00 +1 -1: no watchools credential reaches the panel the registered provider driver carries no interceptor and follows no redirect
+00:00 +1 -2: no watchools credential reaches the panel the registered provider driver carries no interceptor and follows no redirect [E]
+  Expected: <1>
+    Actual: <2>
+  
+  package:matcher                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18      expect
+  test/app/protocol/xtream/xtream_client_test.dart 195:7  main.<fn>.<fn>
+  
+00:00 +1 -2: no watchools credential reaches the panel a 302 is surfaced rather than followed
+00:00 +1 -3: no watchools credential reaches the panel a 302 is surfaced rather than followed [E]
+  Expected: <302>
+    Actual: <0>
+  
+  package:matcher                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18      expect
+  test/app/protocol/xtream/xtream_client_test.dart 208:7  main.<fn>.<fn>
+  
+00:00 +1 -3: no watchools credential reaches the panel a 401 from the panel is surfaced without a refresh or a replay
+00:00 +1 -4: no watchools credential reaches the panel a 401 from the panel is surfaced without a refresh or a replay [E]
+  Expected: <401>
+    Actual: <0>
+  
+  package:matcher                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18      expect
+  test/app/protocol/xtream/xtream_client_test.dart 222:7  main.<fn>.<fn>
+  
+00:00 +1 -4: no watchools credential reaches the panel the User-Agent header key reaches the wire with its casing intact
+  Skip: Needs magic with preserveHeaderCase, fluttersdk/magic#151 (branch fix/dio-preserve-header-case). It passes against the local override and fails against the published constraint, so it stays skipped until the commit that bumps `magic:` unskips it.
+00:00 +1 ~1 -4: endpoint and credentials the handshake sends the credential and no action
+00:00 +2 ~1 -4: endpoint and credentials the credential rides in the query map and never in the URL string
+00:00 +3 ~1 -4: endpoint and credentials every action reaches the panel under its own name
+00:00 +4 ~1 -4: endpoint and credentials the client addresses the stored panel and ignores server_info.url
+00:00 +5 ~1 -4: endpoint and credentials the header key is spelled exactly User-Agent, which ExoPlayer needs
+00:00 +6 ~1 -4: query shape the stream lists send the credential and the action and nothing else
+00:00 +7 ~1 -4: query shape get_short_epg sends stream_id and the limit the action honours
+00:00 +8 ~1 -4: query shape get_simple_data_table sends stream_id and no limit, being the unlimited sibling
+00:00 +9 ~1 -4: query shape get_vod_info sends vod_id
+00:00 +10 ~1 -4: response reading an object body arriving as a raw String still parses
+00:00 +11 ~1 -4: response reading a list body arriving as a raw String still parses
+00:00 +12 ~1 -4: response reading a 200 carrying the plain word blocked keeps the body and decodes to null
+00:00 +13 ~1 -4: response reading a transport failure surfaces as status 0 rather than a throw
+00:00 +14 ~1 -4: response reading an unknown action answering with an array reads as empty rather than unreadable
+00:00 +15 ~1 -4: response reading the EPG actions unwrap the epg_listings envelope
+00:00 +16 ~1 -4: get_simple_date_table fallback an empty data table retries the typo spelling
+00:00 +17 ~1 -4: get_simple_date_table fallback a populated data table does not retry
+00:00 +18 ~1 -4: get_simple_date_table fallback two empty answers return the documented spelling, which is the truthful one
+00:00 +19 ~1 -4: get_simple_date_table fallback a refused data table is surfaced rather than retried
+00:00 +20 ~1 -4: Some tests failed.
+
+Failing tests:
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart: no watchools credential reaches the panel a 302 is surfaced rather than followed
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart: no watchools credential reaches the panel a 401 from the panel is surfaced without a refresh or a replay
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart: no watchools credential reaches the panel the registered provider driver carries no interceptor and follows no redirect
+  /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/protocol/xtream/xtream_client_test.dart: no watchools credential reaches the panel the registered provider driver ships no Authorization header with a token cached

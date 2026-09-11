@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:watchools/app/controllers/guide_controller.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/models/programme.dart';
+import 'package:watchools/app/models/provider_fault.dart';
+import 'package:watchools/app/provider/provider_session.dart';
 import 'package:watchools/app/support/guide_clock.dart';
 import 'package:watchools/app/support/guide_fixture.dart';
 
@@ -168,11 +170,11 @@ void main() {
     });
 
     test('starring the selected channel keeps the selection on the new instance', () {
-      final Channel target = controller.channel;
+      final Channel target = controller.channel!;
       controller.toggleFavourite(target);
 
-      expect(controller.channel.favourite, isTrue);
-      expect(controller.channel.name, target.name);
+      expect(controller.channel!.favourite, isTrue);
+      expect(controller.channel!.name, target.name);
       expect(controller.channel, isNot(same(target)), reason: 'Channel is immutable, so this is a new object');
     });
 
@@ -420,6 +422,148 @@ void main() {
       expect(controller.windowStart + GuideController.windowMinutes, greaterThanOrEqualTo(lastEnd));
     });
   });
+
+  group('the provider session', () {
+    test('a session with no credentials still yields the fixture line-up', () {
+      // This is the perf harness's own path: `tool/dusk/perf.sh` starts the
+      // app with no `Vault` entry, so `hasCredentials` is false and the
+      // compile-time `WATCHOOLS_SCALE` fixture must still be what renders.
+      final GuideController fromSession = GuideController(session: ProviderSession());
+
+      expect(fromSession.channels.length, guideFixture.length);
+      expect(fromSession.channels.first.name, guideFixture.first.name);
+    });
+
+    test('an empty provider catalogue does not throw', () {
+      final GuideController empty = GuideController(session: _FakeProviderSession(channels: const <Channel>[]));
+
+      // Mutation check: reverting `channel`/`programme` to the old
+      // `late ... = channels.first` shape makes this throw a `StateError`
+      // instead of returning null.
+      expect(() => empty.channel, returnsNormally);
+      expect(empty.channel, isNull);
+      expect(empty.programme, isNull);
+      expect(empty.matches, isEmpty);
+    });
+
+    test('provider channels reach matches and groups', () {
+      final List<Channel> twoChannels = <Channel>[
+        const Channel(number: 1, name: 'Anadolu Spor', group: 'Spor', status: ChannelStatus.idle, streamId: 10),
+        const Channel(number: 2, name: 'Anadolu Haber', group: 'Haber', status: ChannelStatus.idle, streamId: 11),
+      ];
+      final GuideController fromSession = GuideController(session: _FakeProviderSession(channels: twoChannels));
+
+      expect(fromSession.matches.length, 2);
+      expect(fromSession.groups, containsAll(<String>['Spor', 'Haber']));
+    });
+
+    test('a fault on the session surfaces without emptying matches', () {
+      final List<Channel> oneChannel = <Channel>[
+        const Channel(number: 1, name: 'Anadolu Spor', group: 'Spor', status: ChannelStatus.idle, streamId: 10),
+      ];
+      final GuideController fromSession = GuideController(
+        session: _FakeProviderSession(channels: oneChannel, fault: ProviderFault.throttled),
+      );
+
+      expect(fromSession.fault, ProviderFault.throttled);
+      expect(fromSession.matches, isNotEmpty);
+    });
+
+    test('starring on the provider path routes through the session', () {
+      const Channel channel = Channel(
+        number: 1,
+        name: 'Anadolu Spor',
+        group: 'Spor',
+        status: ChannelStatus.idle,
+        streamId: 10,
+      );
+      final _FakeProviderSession session = _FakeProviderSession(channels: <Channel>[channel]);
+      final GuideController fromSession = GuideController(session: session);
+
+      fromSession.toggleFavourite(channel);
+
+      expect(session.favouriteCalls, <({int streamId, bool favourite})>[(streamId: 10, favourite: true)]);
+    });
+
+    test('now reads the session clock once a refresh has anchored one', () {
+      final GuideController fromSession = GuideController(
+        session: _FakeProviderSession(channels: const <Channel>[], clock: FixedGuideClock(9 * 60)),
+      );
+
+      expect(fromSession.now, 9 * 60);
+    });
+
+    test('a catalogue arriving after the first frame repaints the screen', () async {
+      // `AppServiceProvider.boot()` fires `refresh()` unawaited, so the
+      // catalogue lands AFTER the first build. A controller that only polled
+      // the session from a getter could not see it: the getter runs during a
+      // build and the value arrives between builds, so the line-up would stay
+      // invisible until an unrelated gesture happened to rebuild.
+      final _NotifyingSession session = _NotifyingSession();
+      final GuideController controller = GuideController(session: session);
+
+      expect(controller.channels, isEmpty);
+
+      int repaints = 0;
+      controller.addListener(() => repaints++);
+
+      session.arrive(const <Channel>[
+        Channel(number: 1, name: 'Anadolu Spor', group: 'Spor', status: ChannelStatus.idle, streamId: 10),
+      ]);
+
+      expect(repaints, 1, reason: 'the session notified and the controller has to pass it on');
+      expect(controller.channels, hasLength(1));
+      expect(controller.matches, hasLength(1));
+      expect(controller.groups, contains('Spor'));
+    });
+
+    test('a fault arriving after the first frame repaints too', () async {
+      final _NotifyingSession session = _NotifyingSession();
+      final GuideController controller = GuideController(session: session);
+
+      expect(controller.fault, isNull);
+
+      int repaints = 0;
+      controller.addListener(() => repaints++);
+
+      session.fail(ProviderFault.unreachable);
+
+      expect(repaints, 1);
+      expect(controller.fault, ProviderFault.unreachable);
+    });
+
+    test('the tick subscription moves onto the session clock, so a minute change repaints', () {
+      // Reading the right minute is not the same as being told when it
+      // changes. Without the move, `now` would report a live value that
+      // nothing repainted, and the progress bars, the countdown and the
+      // grid's now line would sit at whatever minute the last unrelated
+      // rebuild happened to catch.
+      final _StubClock sessionClock = _StubClock(9 * 60);
+      final _StubClock fixtureClock = _StubClock(20 * 60 + 12);
+      final GuideController controller = GuideController(
+        clock: fixtureClock,
+        session: _FakeProviderSession(
+          channels: const <Channel>[
+            Channel(number: 1, name: 'Anadolu Spor', group: 'Spor', status: ChannelStatus.idle, streamId: 10),
+          ],
+          clock: sessionClock,
+        ),
+      );
+
+      // Reading the line-up is what observes the session, which is where the
+      // subscription moves.
+      expect(controller.channels, hasLength(1));
+      expect(sessionClock.listeners, 1);
+      expect(fixtureClock.listeners, 0, reason: 'the subscription moved rather than doubling up');
+
+      int repaints = 0;
+      controller.addListener(() => repaints++);
+      sessionClock.set(9 * 60 + 1);
+
+      expect(repaints, 1);
+      expect(controller.now, 9 * 60 + 1);
+    });
+  });
 }
 
 /// A clock the test sets by hand.
@@ -453,5 +597,64 @@ class _StubClock extends GuideClock {
   void set(int value) {
     _minute = value;
     notifyListeners();
+  }
+}
+
+/// A session double whose catalogue and fault arrive AFTER construction, the
+/// way a real refresh does, and which notifies when they do.
+///
+/// The fixed [_FakeProviderSession] cannot show this: it reports its values
+/// from the moment it is built, so a controller that never subscribed would
+/// still read them. Only a value that arrives later distinguishes a
+/// subscription from a poll.
+class _NotifyingSession extends ProviderSession {
+  List<Channel> _channels = const <Channel>[];
+  ProviderFault? _fault;
+
+  @override
+  bool get hasCredentials => true;
+
+  @override
+  List<Channel> get channels => _channels;
+
+  @override
+  ProviderFault? get fault => _fault;
+
+  /// A refresh landing its line-up.
+  void arrive(List<Channel> channels) {
+    _channels = channels;
+    notifyListeners();
+  }
+
+  /// A refresh landing a fault instead.
+  void fail(ProviderFault fault) {
+    _fault = fault;
+    notifyListeners();
+  }
+}
+
+/// A session double that reports whatever the test built it with, so the
+/// provider path is exercised without a network, a `Vault` entry or SQLite.
+class _FakeProviderSession extends ProviderSession {
+  _FakeProviderSession({required this.channels, this.fault, this.clock});
+
+  @override
+  final List<Channel> channels;
+
+  @override
+  bool get hasCredentials => true;
+
+  @override
+  final ProviderFault? fault;
+
+  @override
+  final GuideClock? clock;
+
+  /// Every call [GuideController.toggleFavourite] made, in order.
+  final List<({int streamId, bool favourite})> favouriteCalls = <({int streamId, bool favourite})>[];
+
+  @override
+  void setChannelFavourite({required int streamId, required bool favourite}) {
+    favouriteCalls.add((streamId: streamId, favourite: favourite));
   }
 }

@@ -296,6 +296,27 @@ failing; stated once it becomes a fact about their subscription.
 Devam, and everything beside them is a ghost or an icon. This product follows
 that without exception.
 
+**A provider fault names itself and ends in one action.** Our login is a third
+party credential that expires, gets throttled and goes unreachable, and the
+three are opposite from where the user sits: one wants a minute, one wants a new
+password, one wants a retry. `ProviderNotice` renders all three, one component
+for every surface, because an unreachable host means the same thing on a line-up
+as in a catalogue. Each says what happened, why they are seeing it, what the
+provider actually replied, and then the one verb that can change it. A retry
+offered for a lapsed subscription fails identically every time and teaches the
+user that the app is broken rather than that their subscription is.
+
+Severity lives in the disc behind the icon rather than in the glyph, and only
+the lapsed credential carries it. That is forced by the palette rather than
+chosen: `destructive` is defined below as a button colour, so there is no
+`text-destructive` to spend, and `warning` shares its hue with `primary` and
+`accent` to within two degrees, so a warning-tinted panel above an amber primary
+button reads as part of the button.
+
+Loading is not one of these. It is not a fault, and it is drawn as a skeleton of
+the layout it replaces rather than as a message, so it belongs to each surface
+rather than to a shared component.
+
 ## Colors
 
 Seventeen semantic roles drive everything; nothing else is hardcoded. The dark
@@ -416,6 +437,21 @@ kept for later, which is what happened to four of them when the losing layouts
 went. And nothing here paints a colour outside the semantic aliases; a component
 that needs a value the theme does not carry is a gap in the theme.
 
-The player chrome does not exist yet. When it does it is transparent over video
-and must never use a scrim heavier than 40 percent, which is the ceiling Plex
-holds and the reason their artwork stays legible underneath.
+The player chrome does not wash the picture: no scrim spans the frame. Contrast
+is bounded to the panel carrying the text, at the theme's `scrim-strong`
+weight, which is the measured minimum for a line of text over a frame whose
+brightness we do not control.
+
+This line read "never a scrim heavier than 40 percent" until the chrome was
+built, and the number turned out to be the wrong half of the rule. What keeps
+Plex's artwork legible is that nothing covers it, and 40 percent was this
+document's guess at how to say so. But the theme ships exactly two scrim
+weights, 45 and 72 (`lib/config/watchools_status_tokens.dart:108-109`), and
+records 72 as what a line of text needs to clear AA over an arbitrary frame, so
+a rule capped at 40 had no token that satisfied it and no reading under which
+the text stayed readable. Bounding the contrast rather than weakening it keeps
+both: the picture is untouched everywhere the chrome is not, and the chrome is
+legible where it is. `lib/ui/layouts/playback_layout.dart` is the worked
+example, and its first version (two full-bleed ramps out of `Scrim`, which are
+built for a still image behind a text block and bottom out at 85 percent and
+at opaque) is what the rule now forbids in as many words.

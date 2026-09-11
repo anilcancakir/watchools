@@ -1,0 +1,26 @@
+Step 9: magic PR unblocking an unsigned checkout
+Repository: /Users/anilcan/Code/fluttersdk/magic
+Branch: fix/macos-vault-unsigned-keychain (off origin/master)
+
+=== git log (2 commits) ===
+8682f12 feat(testing): let FakeVaultService simulate a get/put failure
+d972f6b fix(security): let a consumer configure the macOS vault keychain
+820d316 Make the plugin references true again, and stamp them for the releases going out (#152)
+
+=== dart analyze ===
+Analyzing magic...
+No issues found!
+
+=== dart format --set-exit-if-changed . ===
+Formatted 336 files (0 changed) in 0.55 seconds.
+
+=== gh pr view 153 ===
+{"state":"OPEN","title":"fix(security): configurable macOS vault keychain, plus a throwing FakeVaultService","url":"https://github.com/fluttersdk/magic/pull/153"}
+
+=== flutter test --coverage (tail) ===
+[warning, unrelated to this change] Could not register localization interceptor: Exception: Service [network] is not registered in the container.
+00:51 +1446: .../test/session/session_test.dart: MagicFormData auto-flash integration validate() flashes form data on failure
+00:52 +1447: .../test/session/session_test.dart: MagicFormData auto-flash integration validate() does not flash on success
+00:53 +1448: All tests passed!
+
+PR: https://github.com/fluttersdk/magic/pull/153

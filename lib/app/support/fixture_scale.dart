@@ -64,8 +64,22 @@ abstract final class FixtureScale {
   /// ratio a real playlist lands near, capped so the strip stays a strip.
   static int get groups => (channels ~/ 25).clamp(1, 400);
 
-  /// A catalogue is smaller than a line-up on every provider I have seen.
-  static int get titles => channels ~/ 2;
+  /// The raw title-scale define, before the release gate and the clamp.
+  ///
+  /// Independent of [_requested]. `channels ~/ 2` is the only lever [titles]
+  /// had before this existed, and it can never reach a real provider's ratio
+  /// (2,976 channels against 38,247 titles on the measured real subscription,
+  /// roughly 12.9 to 1) because it is pinned to a FRACTION of the channel
+  /// count clamped alongside it: at the 50,000 channel ceiling it tops out at
+  /// 25,000 titles, so the library screen has never been measured above
+  /// that. Zero means "no override".
+  static const int _requestedTitles = int.fromEnvironment('WATCHOOLS_TITLE_SCALE');
+
+  /// A catalogue is smaller than a line-up on every provider I have seen,
+  /// which is why `channels ~/ 2` stays the default; [_requestedTitles]
+  /// overrides it when set, clamped the same as [channels], so a session can
+  /// push the title count past where it is pinned to half the line-up.
+  static int get titles => _requestedTitles > 0 ? _requestedTitles.clamp(0, 50000) : channels ~/ 2;
 
   /// Catalogue categories, on the same ratio as [groups].
   static int get categories => (titles ~/ 25).clamp(1, 400);

@@ -189,8 +189,12 @@ abstract final class TitleSections {
 
     return <FactEntry>[
       FactEntry(label: 'Tür', value: title.genres.isEmpty ? 'Belirtilmemiş' : title.genres.join(', ')),
-      FactEntry(label: 'Yıl', value: '${title.year}'),
-      FactEntry(label: 'Süre', value: title.lengthLabel),
+      // `Belirtilmemiş` rather than `0` and `0 dk`. A provider's
+      // `get_vod_streams` entry carries neither a year nor a runtime, and this
+      // row already uses that word for the two facts below it that can also be
+      // absent, so a sentinel here would be the only one claiming a value.
+      FactEntry(label: 'Yıl', value: title.year > 0 ? '${title.year}' : 'Belirtilmemiş'),
+      FactEntry(label: 'Süre', value: title.lengthLabel ?? 'Belirtilmemiş'),
       const FactEntry(label: 'Sağlayıcı', value: 'Ana sağlayıcı'),
       FactEntry(label: 'Video', value: video.isEmpty ? 'Bilinmiyor' : video.join(' · ')),
       FactEntry(label: 'Ses', value: audio ?? 'Bilinmiyor'),

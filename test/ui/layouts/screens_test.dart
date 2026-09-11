@@ -8,6 +8,7 @@ import 'package:watchools/app/models/title_item.dart';
 import 'package:watchools/ui/layouts/curtain_layout.dart';
 import 'package:watchools/ui/layouts/now_layout.dart';
 import 'package:watchools/ui/layouts/showcase_layout.dart';
+import 'package:watchools/ui/layouts/support/guide_view_switch.dart';
 import 'package:watchools/ui/layouts/time_layout.dart';
 
 import '../../support/screen.dart';
@@ -77,6 +78,66 @@ void main() {
           // pumped only in its own mode never builds half the control.
           controller.showMode(entry.key == 'Şimdi' ? GuideMode.grid : GuideMode.now);
           await pumpScreen(tester, entry.value(), size: size);
+        });
+      }
+    }
+
+    // Three widths rather than the two above, and the middle one is why. The
+    // count overflowed its toolbar by 110 pixels on the running app at an 800
+    // pixel window, which sits between the two sizes this file otherwise
+    // pumps: wide enough for the single-line arrangement and the nav rail,
+    // narrow enough that a full sentence does not fit beside a 470 pixel
+    // search field. Neither `desktop` nor `mobile` could see it.
+    for (final Size size in <Size>[
+      desktop,
+      const Size(900, 600),
+      const Size(840, 600),
+      const Size(800, 600),
+      const Size(740, 600),
+      const Size(660, 600),
+      mobile,
+    ]) {
+      final String width = '${size.width.round()}';
+
+      for (final MapEntry<String, Widget Function()> entry in views().entries) {
+        testWidgets('${entry.key} keeps the toolbar count inside its row at $width', (WidgetTester tester) async {
+          // A FIT rather than an absence of an overflow error, which is what
+          // makes this survive the square test font: that font is wider than
+          // the real one, so a row that fits under it fits in Schibsted
+          // Grotesk too. The assertion is conservative in the direction that
+          // matters, and it is not one of the phantoms
+          // `test/support/screen.dart` warns about, because nothing here reads
+          // the word `overflowed` off an error.
+          //
+          // The cause was the count being `shrink-0`, which left its
+          // `line-clamp-1` with no bounded width to clamp against.
+          await pumpScreen(tester, entry.value(), size: size);
+
+          final Finder countText = find.textContaining('kanal ·');
+          expect(
+            countText,
+            findsOneWidget,
+            reason: 'the fixture carries a missing-guide note, so the long form renders',
+          );
+
+          final Finder row = find.ancestor(of: countText, matching: find.byType(Row)).first;
+          final Finder last = find.descendant(of: row, matching: find.byType(GuideViewSwitch));
+
+          // The LAST child's right edge against the row's, not the count's own
+          // width against the row's. This is equivalent to "nothing spills"
+          // only because the switch IS last, which nothing here enforces:
+          // reorder the row and this assertion quietly starts measuring the
+          // wrong element. The looser version passed at this width
+          // with the defect in place: a 324 pixel count sits happily inside a
+          // 688 pixel row and still spills the row, because the search field
+          // and the switch had already taken 506 of it. An overflowing `Row`
+          // lays its children out from the left regardless, so what runs past
+          // the edge is whatever is last.
+          expect(
+            tester.getRect(last).right,
+            lessThanOrEqualTo(tester.getRect(row).right),
+            reason: 'nothing on this row may spill off its right edge',
+          );
         });
       }
     }

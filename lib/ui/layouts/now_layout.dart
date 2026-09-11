@@ -3,20 +3,24 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/guide_controller.dart';
+import '../../app/controllers/playback_controller.dart';
 import '../../app/models/channel.dart';
 import '../../app/models/programme.dart';
+import '../../app/models/provider_fault.dart';
 import '../components/artwork/index.dart';
 import '../components/channel_mark/index.dart';
 import '../components/fact_chip/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/live_tile/index.dart';
 import '../components/play_progress/index.dart';
+import '../components/provider_notice/index.dart';
 import '../components/rail/index.dart';
 import '../components/scrim/index.dart';
 import '../components/section_header/index.dart';
 import '../components/status_badge/index.dart';
 import 'support/category_strip.dart';
 import 'support/guide_empty.dart';
+import 'support/guide_toolbar_metrics.dart';
 import 'support/guide_view_switch.dart';
 import 'support/nav_rail.dart';
 import 'support/page_gutter.dart';
@@ -43,8 +47,36 @@ class NowLayout extends StatelessWidget {
   /// The shared line-up state.
   final GuideController controller;
 
+  /// Where the hero's play affordance goes, defaulting to pushing the route.
+  ///
+  /// Only the **navigation** is a seam, because `MagicRouter` throws `Router
+  /// not initialized` without a `MaterialApp.router` above it and a widget test
+  /// has none. Everything else the affordance does (select, then hand the
+  /// channel to the playback controller) runs in a test as it runs in the app,
+  /// which is the correction to a first version where the whole sequence sat in
+  /// an untested default branch.
+  final VoidCallback? onNavigate;
+
+  /// The playback handle, or null to resolve one from the container.
+  final PlaybackFacade? playbackOverride;
+
   /// Creates the [NowLayout].
-  const NowLayout({super.key, required this.controller});
+  const NowLayout({super.key, required this.controller, this.onNavigate, this.playbackOverride});
+
+  /// Starts [channel] and goes to the playback screen.
+  ///
+  /// Selects first, so returning from playback finds the hero showing what was
+  /// just watched rather than whatever was selected before it.
+  ///
+  /// `play` before the push and not after, which reads backwards and is
+  /// correct: the controller **holds** a channel chosen before a surface
+  /// exists and opens it when the screen's `attach` arrives. Pushing first and
+  /// playing after would race the platform view's creation instead.
+  void _play(Channel channel) {
+    controller.selectChannel(channel);
+    (playbackOverride ?? Magic.find<PlaybackController>()).play(channel);
+    (onNavigate ?? () => MagicRoute.to('/izle'))();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +99,13 @@ class NowLayout extends StatelessWidget {
             // produced `zqxv`. A `GlobalKey` carried the element but not the
             // web text-editing connection, and neither did forcing the focus
             // back. One position is the only shape that works.
-            _toolbar(wide: wide),
+            // The toolbar reads its OWN width, not the window's: it sits inside a
+            // column the nav rail has narrowed, and `wide` is the rail's own
+            // viewport breakpoint. See `guideToolbarOneLineAt`.
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  _toolbar(oneLine: constraints.maxWidth >= guideToolbarOneLineAt),
+            ),
             PageGutter.gap,
             // Out of the branch for the same reason as the toolbar, one rung
             // down. It is a horizontal `ListView.builder`, so it owns a scroll
@@ -76,28 +114,48 @@ class NowLayout extends StatelessWidget {
             // matching. `Zaman` puts it in this exact place.
             CategoryStrip(controller: controller),
             PageGutter.gap,
-            WDiv(
-              className: 'flex-1 w-full',
-              child: controller.matches.isEmpty
-                  ? _emptyBody()
-                  : CustomScrollView(
-                      slivers: <Widget>[
-                        SliverToBoxAdapter(child: _heroScope(wide: wide)),
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                        SliverList.builder(
-                          itemCount: controller.rails.length,
-                          itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
-                        ),
-                        // One gutter, not the 96 that used to clear the
-                        // floating switcher. The switch is in the toolbar now,
-                        // so a tail that size is just an unexplained hole under
-                        // the last rail.
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                      ],
-                    ),
-            ),
+            WDiv(className: 'flex-1 w-full', child: _body(wide)),
           ],
         ),
+      ],
+    );
+  }
+
+  /// The body: a provider fault, an empty result, or the hero plus the rails.
+  ///
+  /// A fault takes precedence over an empty result, because they are
+  /// different statements: an empty [matches] can mean a search found
+  /// nothing while the line-up is healthy, while a fault means the provider
+  /// itself is the problem, and the fault is the more specific of the two.
+  Widget _body(bool wide) {
+    final ProviderFault? fault = controller.fault;
+    if (fault != null) {
+      return ProviderNotice(
+        fault: fault,
+        onRetry: controller.reload,
+        onOpenSettings: () => MagicRoute.to('/saglayici'),
+      );
+    }
+
+    if (controller.matches.isEmpty) return _emptyBody();
+
+    // Non-null: `matches` is a filtered subset of `channels`, so a non-empty
+    // match list guarantees `channels` is non-empty and `channel` (which
+    // falls back to `channels.first`) cannot be null on this branch.
+    final Channel channel = controller.channel!;
+
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverToBoxAdapter(child: _heroScope(channel, wide: wide)),
+        const SliverToBoxAdapter(child: PageGutter.gap),
+        SliverList.builder(
+          itemCount: controller.rails.length,
+          itemBuilder: (BuildContext context, int index) => _rail(controller.rails[index], wide),
+        ),
+        // One gutter, not the 96 that used to clear the floating switcher.
+        // The switch is in the toolbar now, so a tail that size is just an
+        // unexplained hole under the last rail.
+        const SliverToBoxAdapter(child: PageGutter.gap),
       ],
     );
   }
@@ -131,15 +189,29 @@ class NowLayout extends StatelessWidget {
   /// move. `MediaQuery` read INSIDE the subtree would not need this, because a
   /// dependent element is rebuilt directly rather than through its parent;
   /// `wide` is read outside it.
-  Widget _heroScope({required bool wide}) {
+  /// [channel] arrives as an argument rather than being read off the
+  /// controller inside the selector, and that is about the branch above rather
+  /// than about caching. `_body` reaches this line only after ruling out a
+  /// fault and an empty result, which is what makes `controller.channel`
+  /// non-null; the selector closure runs again on every notification, including
+  /// the one that empties the line-up, so reading it there would put a `!` on a
+  /// field that is null at exactly that moment. It is still IN the selected
+  /// tuple, so a change of channel still busts the cache: the parent rebuilds,
+  /// the new closure returns a different record, and the cached subtree is
+  /// discarded.
+  Widget _heroScope(Channel channel, {required bool wide}) {
     return MagicSelector<GuideController, (Channel, Programme?, int, bool)>(
       controller: controller,
-      selector: (GuideController c) => (c.channel, c.programme, c.now, wide),
+      selector: (GuideController c) => (channel, c.programme, c.now, wide),
       builder: ((Channel, Programme?, int, bool) state) => _hero(state.$1, state.$2, now: state.$3, wide: state.$4),
     );
   }
 
   /// The hero: what is on the selected channel right now.
+  ///
+  /// Every input is a parameter, none is read off the controller. A cached
+  /// subtree cannot see anything its closure captured, so a field read here
+  /// would hold whatever it said when the subtree was first built.
   Widget _hero(Channel channel, Programme? live, {required int now, required bool wide}) {
     final Programme? next = channel.nextAfter(now);
 
@@ -207,37 +279,63 @@ class NowLayout extends StatelessWidget {
   /// `bg-scrim-strong` chip here would be a dark pill on a dark page with
   /// nothing behind it to justify the contrast.
   ///
-  /// One line on a wide screen and two on a narrow one. Stacked is not a
-  /// fallback: at 414 pixels the count is a whole sentence
+  /// One line when the row can hold one, two when it cannot, and the threshold
+  /// is the row's OWN width rather than the window's. That distinction is the
+  /// whole defect this method shipped: the arrangement used to key off `wide`,
+  /// which is the nav rail's 640 pixel viewport breakpoint, while the single
+  /// line needs the fixed 470 pixel field plus both gaps plus the switch plus
+  /// enough of the count to be worth reading. Between those two numbers the row
+  /// spilled, by 110 pixels on the running app and by up to 148 measured in a
+  /// widget test at 640. `CLAUDE.md` names this exact trap first among the
+  /// four, and prescribes this exact fix: a component whose columns depend on
+  /// real width takes a `double` and decides in Dart.
+  ///
+  /// Stacked is not a fallback. At 414 pixels the count is a whole sentence
   /// (`1 sonuç · 1 kanalda akış yok`), and once the field has text its clear
   /// button appears and the row runs 5.6 pixels past the screen. The catalogue
   /// toolbar reached the same conclusion for the same reason.
   ///
-  /// The switch is last on the line at both widths, and it is the fixed-width
-  /// element, so the count grows leftwards into the spacer instead of pushing a
+  /// The switch is last on the line at both widths and is the fixed-width
+  /// element, so the count grows leftwards into the space instead of pushing a
   /// control around as the user types.
   ///
   /// The count carries the missing-guide note as the grid view does. Without it
   /// this one stated the count and left the EPG gap to a rail below the fold,
   /// so a user met it one blank card at a time and read it as the app failing
-  /// rather than as their provider not sending it.
-  Widget _toolbar({required bool wide}) {
+  /// rather than as their provider not sending it. That note is also why the
+  /// threshold reserves the count a readable minimum rather than letting it
+  /// ellipsise to nothing: a single line whose count has been squeezed to a few
+  /// pixels has dropped the sentence entirely and says less than two lines do.
+  Widget _toolbar({required bool oneLine}) {
     final String? note = controller.noGuideNote;
 
-    final Widget count = WDiv(
-      className: 'shrink-0',
+    // `flex-1 min-w-0` and not `shrink-0`, and this is the fix rather than a
+    // preference: the count is the only element on this row that has no width
+    // of its own, so it has to be the one that gives. It used to be
+    // `shrink-0`, which made `line-clamp-1` decorative, since a clamp with no
+    // bounded width has nothing to clamp against. Measured on the running app
+    // against a real provider: a 110 pixel overflow at an 800 pixel window,
+    // where the note makes the sentence `8 kanal · 8 kanalda akış yok`.
+    //
+    // The alignment is per branch rather than shared, because the count sits
+    // against the switch on one line and against the left edge on two. Only
+    // the wide branch reads as "grows leftwards into the space", and passing
+    // `text-right` there is what preserves that; the narrow branch keeps the
+    // count where the eye already finds it.
+    Widget count({required String align}) => WDiv(
+      className: 'flex-1 min-w-0',
       child: WText(
         note == null ? controller.countLabel : '${controller.countLabel} · $note',
-        className: 'text-xs text-fg-muted line-clamp-1',
+        className: 'text-xs text-fg-muted $align line-clamp-1',
       ),
     );
 
     final Widget search = WDiv(
-      className: wide ? 'w-[470px] shrink-0' : 'w-full',
+      className: oneLine ? 'w-[470px] shrink-0' : 'w-full',
       child: SearchField(value: controller.query, onChanged: controller.search),
     );
 
-    if (!wide) {
+    if (!oneLine) {
       return WDiv(
         className: 'flex flex-col items-start gap-2 w-full ${PageGutter.x} ${PageGutter.top}',
         children: <Widget>[
@@ -245,8 +343,7 @@ class NowLayout extends StatelessWidget {
           WDiv(
             className: 'flex flex-row items-center gap-2 w-full',
             children: <Widget>[
-              count,
-              const WDiv(className: 'flex-1'),
+              count(align: 'text-left'),
               GuideViewSwitch(controller: controller),
             ],
           ),
@@ -257,15 +354,13 @@ class NowLayout extends StatelessWidget {
     return WDiv(
       className: 'flex flex-row items-center gap-3 w-full ${PageGutter.x} ${PageGutter.top}',
       children: <Widget>[
+        // No bare spacer any more: the count is the flexible child now, so a
+        // second one would split the free space between them and the count
+        // would start truncating while half the row stood empty. It is still
+        // three children, and the switch is still the fixed element anchoring
+        // the right edge.
         search,
-        // A bare spacer, then each trailing element as a `shrink-0` child of
-        // the row itself. The grid view's toolbar uses the same shape, and the
-        // reason to copy it rather than nest is that a `flex-1` wrapper around
-        // a `flex flex-row justify-end` puts two classes of one parser family
-        // on one element: the last wins and the grow claim is the one that
-        // loses. Written that way this overflowed the hero by 22 pixels.
-        const WDiv(className: 'flex-1'),
-        count,
+        count(align: 'text-right'),
         GuideViewSwitch(controller: controller),
       ],
     );
@@ -324,7 +419,11 @@ class NowLayout extends StatelessWidget {
             WDiv(
               className: 'shrink-0',
               child: WAnchor(
-                onTap: () {},
+                // The play affordance is what navigates; the tile's own tap
+                // keeps selecting. The hero exists to preview, so a tap that
+                // both previewed and left the screen would make the preview
+                // unreachable.
+                onTap: () => _play(channel),
                 semanticLabel: live == null ? '${channel.name} izle' : '${live.title} izle',
                 child: const WDiv(
                   className: '''

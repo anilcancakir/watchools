@@ -114,6 +114,53 @@ void main() {
     });
   });
 
+  group('the destructive family, which is a button colour and not a text one', () {
+    testWidgets('bg-destructive-container resolves, which is what tints the fault disc', (WidgetTester tester) async {
+      final WindStyle style = await resolve(tester, 'bg-destructive-container');
+
+      expect(style.decoration?.color, const Color(0xFF4A1216));
+    });
+
+    testWidgets('text-destructive resolves to nothing, and that shapes the design', (WidgetTester tester) async {
+      // A regression marker in the same spirit as `n-3`. DESIGN.md defines
+      // `destructive` as a button colour (`button-destructive`: a background
+      // plus its foreground), so `design:sync` emits `bg-destructive`,
+      // `bg-destructive-container` and `text-on-destructive` and no text tone.
+      // `ProviderNotice` therefore encloses its icon in a tinted disc instead
+      // of tinting the glyph, and this assertion is what stops that being
+      // "simplified" back to a `text-destructive` that silently does nothing.
+      final WindStyle style = await resolve(tester, 'text-destructive');
+
+      expect(style.color, isNull);
+    });
+
+    testWidgets('warning is indistinguishable from the brand, so a fault cannot wear it', (WidgetTester tester) async {
+      // Doctrine rule 4 reserves the amber for the primary action, progress and
+      // live status. This is the measurement behind it: in dark mode `warning`
+      // is #F0A93A while `primary` is #F59B14 and `accent` is #FAB338, so a
+      // warning-tinted panel above an amber primary button reads as part of the
+      // button rather than as a warning.
+      // Asserted on hue rather than on the channels. Channel deltas need a
+      // threshold nobody can defend, while hue is the claim itself: these are
+      // two values of one colour, and a viewer reads hue long before they read
+      // a few percent of lightness.
+      final WindStyle warning = await resolve(tester, 'bg-warning');
+      final WindStyle brand = await resolve(tester, 'bg-primary');
+      final WindStyle accent = await resolve(tester, 'bg-accent');
+
+      final double warningHue = HSLColor.fromColor(warning.decoration!.color!).hue;
+      final double brandHue = HSLColor.fromColor(brand.decoration!.color!).hue;
+      final double accentHue = HSLColor.fromColor(accent.decoration!.color!).hue;
+
+      expect((warningHue - brandHue).abs(), lessThan(2), reason: 'warning and the brand are one hue');
+      expect((warningHue - accentHue).abs(), lessThan(2), reason: 'and so is the accent');
+
+      // Distinct tokens, so this is not asserting an identity. They are three
+      // values of the same amber, which is the whole problem.
+      expect(warning.decoration!.color, isNot(brand.decoration!.color));
+    });
+  });
+
   group('the status tokens every layout spends', () {
     testWidgets('the playback states resolve in dark mode', (WidgetTester tester) async {
       expect((await resolve(tester, 'bg-live')).decoration?.color, const Color(0xFFE83730));

@@ -1,5 +1,6 @@
-// Import Magic to access Kernel, middleware base classes, etc.:
-// import 'package:magic/magic.dart';
+import 'package:magic/magic.dart';
+
+import 'middleware/ensure_provider.dart';
 
 /// The HTTP Kernel.
 ///
@@ -34,16 +35,13 @@ void registerKernel() {
   // ---------------------------------------------------------------------------
   // Global Middleware
   // ---------------------------------------------------------------------------
-  // Kernel.global([
-  //   () => LoggingMiddleware(),
-  // ]);
+  // None yet.
 
   // ---------------------------------------------------------------------------
   // Route Middleware
   // ---------------------------------------------------------------------------
-  // Uncomment and add your middleware aliases below:
-  // Kernel.registerAll({
-  //   'auth': () => EnsureAuthenticated(),
-  //   'guest': () => RedirectIfAuthenticated(),
-  // });
+  // `'provider'` guards every route that needs a real catalogue, so a
+  // credential-less user lands on `/saglayici` rather than the fixture. See
+  // `lib/app/middleware/ensure_provider.dart` and `lib/routes/app.dart`.
+  Kernel.registerAll({'provider': () => EnsureProvider()});
 }

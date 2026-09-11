@@ -44,11 +44,21 @@ jobs:
       # names paths from one developer's machine. One such lock reached master
       # carrying seven `source: path` entries under /Users/, and the whole
       # pipeline went green.
-      - name: Check the lock is the hosted-only one
+      # The check is on `relative: false`, not on `source: path`. A package that
+      # lives in this repository under packages/ is a legitimate path
+      # dependency and pub records it as relative, so it resolves on any
+      # machine; a sibling resolved through pubspec_overrides.yaml is recorded
+      # absolute, under one developer's home directory, and resolves nowhere
+      # else. Counting the two is how an older lock entry that carries no
+      # `relative` key at all is caught rather than waved through.
+      - name: Check the lock names no machine-specific path
         run: |
-          if grep -q 'source: path' pubspec.lock; then
-            echo "pubspec.lock carries path dependencies:"
-            grep -B4 'source: path' pubspec.lock
+          set -euo pipefail
+          paths=$(grep -c 'source: path' pubspec.lock || true)
+          relative=$(grep -c 'relative: true' pubspec.lock || true)
+          if [ "$paths" != "$relative" ]; then
+            echo "pubspec.lock carries $paths path dependencies of which only $relative are relative:"
+            grep -B6 'source: path' pubspec.lock
             echo
             echo "Regenerate it without the overrides active:"
             echo "  mv pubspec_overrides.yaml /tmp/ && flutter pub get && git add pubspec.lock"
@@ -69,6 +79,33 @@ jobs:
 
       - name: Analyze
         run: flutter analyze --fatal-infos --fatal-warnings
+
+      # The root analysis excludes packages/, because recursing into a plugin's
+      # example app finds `package:` imports that are unresolved until somebody
+      # runs `pub get` inside it. So each package is resolved and analysed on
+      # its own here, and the exclusion narrows the root gate instead of
+      # dropping one. A package whose own analysis is red fails this job.
+      - name: Analyze the packages
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for manifest in packages/*/pubspec.yaml; do
+            package="$(dirname "$manifest")"
+            echo "::group::$package"
+            flutter pub get --directory "$package"
+            if [ -f "$package/example/pubspec.yaml" ]; then
+              flutter pub get --directory "$package/example"
+            fi
+            (cd "$package" && flutter analyze --fatal-infos --fatal-warnings)
+            # The root format step covers lib and test only, so without this a
+            # package's own Dart is formatted by nothing.
+            (cd "$package" && dart format --output=none --set-exit-if-changed lib example/lib)
+            if [ -d "$package/test" ]; then
+              (cd "$package" && dart format --output=none --set-exit-if-changed test)
+              (cd "$package" && flutter test)
+            fi
+            echo "::endgroup::"
+          done
 
       - name: Test with coverage
         run: flutter test --coverage

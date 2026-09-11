@@ -1,0 +1,140 @@
+Step 5: define the PlaybackEngine contract, and a fake that satisfies it
+Captured 2026-09-10, macOS 26.5 (Darwin 25.6.0), Flutter 3.47 / Dart 3.13
+Worktree /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect
+
+Files
+  lib/app/playback/playback_engine.dart          (new)
+  lib/app/playback/fake_playback_engine.dart     (new)
+  test/app/playback/fake_playback_engine_test.dart (new)
+
+
+=== 1. RED: flutter test test/app/playback/ before any implementation ===
+
+$ flutter test test/app/playback/
+00:00 +0: loading .../test/app/playback/fake_playback_engine_test.dart
+test/app/playback/fake_playback_engine_test.dart:4:8: Error: Error when reading 'lib/app/playback/fake_playback_engine.dart': No such file or directory
+import 'package:watchools/app/playback/fake_playback_engine.dart';
+       ^
+test/app/playback/fake_playback_engine_test.dart:5:8: Error: Error when reading 'lib/app/playback/playback_engine.dart': No such file or directory
+import 'package:watchools/app/playback/playback_engine.dart';
+       ^
+test/app/playback/fake_playback_engine_test.dart:9:7: Error: Type 'PlaybackSurface' not found.
+const PlaybackSurface _surface = PlaybackSurface(platformViewId: 3);
+      ^^^^^^^^^^^^^^^
+test/app/playback/fake_playback_engine_test.dart:22:1: Error: Type 'PlaybackTick' not found.
+PlaybackTick _tick({
+^^^^^^^^^^^^
+test/app/playback/fake_playback_engine_test.dart:43:8: Error: Type 'FakePlaybackEngine' not found.
+Future<FakePlaybackEngine> _loaded() async {
+       ^^^^^^^^^^^^^^^^^^
+  [...]
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  .../test/app/playback/fake_playback_engine_test.dart: loading .../test/app/playback/fake_playback_engine_test.dart
+
+Red for the right reason: the interface, the value types and the fake do not
+exist. No assertion ran.
+
+
+=== 2. GREEN: flutter test test/app/playback/ ===
+
+$ flutter test test/app/playback/
+00:00 +0: the interface, satisfied without a platform a fake is a PlaybackEngine and reports idle before anything is loaded
+00:00 +1: the interface, satisfied without a platform records every command in the order the consumer called them
+00:00 +2: the interface, satisfied without a platform pause and resume move no verdict of their own
+00:00 +3: the interface, satisfied without a platform loading without a surface is a programming error rather than a silent no-op
+00:00 +4: the interface, satisfied without a platform a surface compares by its identifier, which is what a runtime-built one needs
+00:00 +5: health, driven by a scripted tick sequence idle while a load has produced no position yet
+00:00 +6: health, driven by a scripted tick sequence playing once the position advances
+00:00 +7: health, driven by a scripted tick sequence paused, whatever the position does
+00:00 +8: health, driven by a scripted tick sequence notPresenting for the measured idle-display shape, never stalled
+00:00 +9: health, driven by a scripted tick sequence starving while frozen and out of data inside the grace
+00:00 +10: health, driven by a scripted tick sequence stalled only once the freeze reaches the grace
+00:00 +11: health, driven by a scripted tick sequence an unreported underrun is never read as health
+00:00 +12: health, driven by a scripted tick sequence one sequence reaches every member of PlaybackHealth
+00:00 +13: the session stamp health is idle between a load and its first tick
+00:00 +14: the session stamp stop and dispose return health to idle
+00:00 +15: the session stamp a tick from the load that was replaced is not read as the current one
+00:00 +16: the session stamp a new session resets the freeze anchor
+00:00 +17: the ticks stream is broadcast, so a second reader does not take it from the first
+00:00 +18: the ticks stream closes on dispose
+00:00 +19: All tests passed!
+
+
+=== 3. The QA assertions, and which test carries each ===
+
+- the fake satisfies the interface with no platform
+  "a fake is a PlaybackEngine and reports idle before anything is loaded"
+  (no method channel, no widget mount, no clock injection: StallDetector reads
+  the tick's own monotonicNs)
+
+- the measured idle-display shape reads as notPresenting rather than stalled
+  "notPresenting for the measured idle-display shape, never stalled": frozen
+  timePos with underrun false and demuxerIdle true, held at 1 s, 5 s, 20 s and
+  60 s, so it is asserted well past the 12 s grace and never accumulates.
+  The shape is `player-layer.md:587`, read from the research itself: time-pos
+  frozen, underrun **false**, demuxerIdle **true**, fw-bytes to the cap.
+  (`research/explore-existing-player-research.md:40` reproduces that row with
+  demuxerIdle as "-"; the primary table says true. A sequence scripted from the
+  summary would carry demuxerIdle null and classify as stalled, which is why
+  this was checked against the measurement rather than the summary.)
+
+- a frozen timePos with underrun true crosses into stalled only after the grace
+  "stalled only once the freeze reaches the grace": anchor at 10 s, frozen at
+  21.9 s is starving (11.9 s), frozen at 22.0 s is stalled (12.0 s, the
+  boundary is >= grace). Plus "starving while frozen and out of data inside the
+  grace" at the measured 8 s starvation.
+
+- a session change resets the freeze anchor
+  "a new session resets the freeze anchor": starving in session 7, then a load,
+  then session 8 advancing at 3 s and frozen at 14 s reads starving (11 s from
+  the new anchor) rather than stalled (14 s from the old one).
+
+- a tick from a previous session is not read as the current session's
+  "a tick from the load that was replaced is not read as the current one": the
+  session-7 straggler arriving after the second load reaches neither health
+  (idle) nor the ticks stream (seen == [7, 7, 8]).
+
+
+=== 4. Done-when guard, run literally ===
+
+$ ! grep -qE '^\s*(Future<[^>]*>|void|Duration\??|int\??|double\??)\s+(seek|duration|position)\b' lib/app/playback/playback_engine.dart
+exit=0
+
+$ grep -nE '(seek|duration|position)' lib/app/playback/playback_engine.dart
+116:///   named for a position invites a scrubber to bind to it, and the window
+190:  /// freezes the position with the renderer still reporting health, is invisible
+
+Both hits are doc prose explaining the absences, which is why the criterion is
+anchored to a declaration shape rather than to the bare words.
+
+
+=== 5. Analyzer, formatter, coverage, full suite ===
+
+$ dart format lib/app/playback test/app/playback
+Formatted 3 files (0 changed) in 0.01 seconds.
+
+$ flutter analyze --fatal-infos --fatal-warnings
+No issues found! (ran in 5.0s)
+
+$ flutter test --coverage test/app/playback/   # lines hit / lines found
+SF:lib/app/playback/fake_playback_engine.dart -> 43/43
+SF:lib/app/playback/playback_engine.dart -> 7/7
+
+$ flutter test
+00:09 +412 ~1: All tests passed!
+(393 pass + 1 skip before this step, + 19 here = 412 + 1 skip)
+
+
+=== 6. Caller impact ===
+
+Both lib files are new and nothing imports them yet.
+
+$ grep -rnE "PlaybackEngine|PlaybackSurface|PlaybackTick|FakePlaybackCommand|app/playback" --include=*.dart .
+lib/app/provider/provider_session.dart:107   doc prose ("no `PlaybackEngine` in this repository yet")
+packages/watchools_player/lib/watchools_player.dart:9,86   doc prose
+
+No code reference outside the three files of this step. The two pre-existing
+mentions are doc comments; provider_session.dart:107 is now stale prose and
+belongs to the step that gives a controller an engine.

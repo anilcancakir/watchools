@@ -1,0 +1,36 @@
+=== RED (before signing changes) ===
+Command: ./bin/fsa tinker --eval "Vault.put('probe','hello').then((_) => Vault.get('probe')).then((v) => debugPrint('ROUNDTRIP: $v')).catchError((e) => debugPrint('VAULT_ERROR: $e'))"
+Captured from ~/.artisan/sessions/b0ba65aca429/flutter-dev.log:
+
+flutter: VAULT_ERROR: MagicVaultException: Failed to write to vault (PlatformException(Unexpected security result code, Code: -34018, Message: A required entitlement isn't present., -34018, null))
+
+
+=== GREEN (after signing changes): BLOCKED ===
+`flutter build macos --debug` fails before the app can be built or run, so the QA round trip
+could not be re-executed. Captured directly:
+
+  /Users/.../macos/Runner.xcodeproj: error: No profiles for 'com.watchools.app' were found: Xcode
+  couldn't find any Mac App Development provisioning profiles matching 'com.watchools.app'.
+  Automatic signing is disabled and unable to generate a profile. To enable automatic signing,
+  pass -allowProvisioningUpdates to xcodebuild. (in target 'Runner' from project 'Runner')
+
+Ran xcodebuild directly with -allowProvisioningUpdates to see whether that flag (which flutter
+build macos has no CLI option to pass) would clear it. It surfaces the real blocker:
+
+  /Users/.../macos/Runner.xcodeproj: error: No Account for Team "936TDTZJN9". Add a new account
+  in Accounts settings or verify that your accounts have valid credentials. (in target 'Runner'
+  from project 'Runner')
+
+`defaults read com.apple.dt.Xcode.plist IDEProvisioningTeamByIdentifier` confirms only one Apple
+ID is signed into Xcode, for team 883V9SVA54; no account is registered for 936TDTZJN9, even
+though its Development certificate is present in the keychain (per `security find-identity`).
+A local certificate is not the same precondition as a signed-in Xcode account: automatic signing
+needs the account to query the developer portal, and manual signing (tested with
+CODE_SIGN_STYLE=Manual, empty PROVISIONING_PROFILE_SPECIFIER) fails identically ("Runner"
+requires a provisioning profile), because keychain-access-groups is a restricted entitlement.
+No provisioning profile for com.watchools.app exists locally under either team.
+
+This is a machine precondition outside the four files this step is allowed to touch: it needs an
+interactive Apple ID sign-in in Xcode > Settings > Accounts for team 936TDTZJN9, which is a
+credentialed action outside this step's authority. Once that account is added, Debug should build
+as configured and the QA round trip above can be re-run for the green capture.

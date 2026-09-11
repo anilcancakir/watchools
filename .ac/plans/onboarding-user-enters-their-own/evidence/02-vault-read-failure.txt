@@ -1,0 +1,39 @@
+QA: flutter test test/app/provider/provider_session_test.dart, then remove the new `on MagicVaultException` clause and re-run, then restore.
+
+=== RUN 1: full suite, with the catch clause in place ===
+$ flutter test test/app/provider/provider_session_test.dart
+00:00 +0: loading .../test/app/provider/provider_session_test.dart
+00:00 +0: (setUpAll)
+... 29 tests ...
+00:00 +24: the guards a real caller trips a keychain read failure becomes unreachable, not a boot failure
+00:00 +25: the guards a real caller trips an unreadable stored credential becomes a fault, not a boot failure
+00:00 +29: (tearDownAll)
+00:00 +29: All tests passed!
+
+=== RUN 2: `on MagicVaultException` clause deleted from _loadCredentials ===
+$ flutter test test/app/provider/provider_session_test.dart --plain-name "keychain read failure"
+00:00 +0: loading .../test/app/provider/provider_session_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: the guards a real caller trips a keychain read failure becomes unreachable, not a boot failure
+00:00 +0 -1: the guards a real caller trips a keychain read failure becomes unreachable, not a boot failure [E]
+  MagicVaultException: Keychain read failed (simulated OSStatus failure)
+  test/support/throwing_vault.dart 20:5                                 ThrowingVaultService.get
+  package:magic/src/facades/vault.dart 25:21                            Vault.get
+  package:watchools/app/protocol/xtream/xtream_credentials.dart 160:41  XtreamCredentials.load
+  package:watchools/app/provider/provider_session.dart 320:65           ProviderSession._loadCredentials
+  package:watchools/app/provider/provider_session.dart 295:50           ProviderSession.start
+  test/app/provider/provider_session_test.dart 648:33                   main.<fn>.<fn>
+
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  .../test/app/provider/provider_session_test.dart: the guards a real caller trips a keychain read failure becomes unreachable, not a boot failure
+
+Failure is the uncaught MagicVaultException propagating out of start(), not an assertion mismatch.
+The `on MagicVaultException` clause was restored immediately after this run.
+
+=== RUN 3: catch clause restored, full suite green again ===
+$ flutter test test/app/provider/provider_session_test.dart
+... 29 tests, all pass ...
+00:00 +29: All tests passed!

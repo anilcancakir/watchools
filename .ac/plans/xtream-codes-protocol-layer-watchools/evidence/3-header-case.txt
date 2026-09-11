@@ -1,0 +1,81 @@
+Step 3: Fix magic's lost header case, in the sibling repository
+=================================================================
+
+Repo: /Users/anilcan/Code/fluttersdk/magic
+Branch: fix/dio-preserve-header-case (off origin/master)
+PR: https://github.com/fluttersdk/magic/pull/151 (open, awaiting CI)
+
+Three-link evidence chain, re-verified at the version magic actually resolves
+------------------------------------------------------------------------------
+magic's pubspec.lock resolves dio to 5.9.2, not 5.11.1 as the briefing cited.
+Re-checked all three links against the resolved version:
+
+1. Dio's flag defaults to false: HELD.
+   /Users/anilcan/.pub-cache/hosted/pub.dev/dio-5.9.2/lib/src/headers.dart:11
+   /Users/anilcan/.pub-cache/hosted/pub.dev/dio-5.9.2/lib/src/options.dart:151
+
+2. Dio's IO adapter forwards it: HELD.
+   /Users/anilcan/.pub-cache/hosted/pub.dev/dio-5.9.2/lib/src/adapters/io_adapter.dart:109
+   `request.headers.set(key, value, preserveHeaderCase: options.preserveHeaderCase)`
+
+3. magic never sets it: HELD (before the fix).
+   grep 'preserveHeaderCase' dio_network_driver.dart returned no match.
+
+All three links hold at the resolved version, only the line number for link 1
+in dio's options.dart moved from :152 (5.11.1) to :151 (5.9.2).
+
+Web adapter: does NOT forward the flag
+---------------------------------------
+Checked /Users/anilcan/.pub-cache/hosted/pub.dev/dio-5.9.2/lib/src/adapters/browser_adapter.dart
+and dio_web_adapter-2.2.2/lib/src/adapter_impl.dart:66,68. The web adapter writes headers via
+`xhr.setRequestHeader(key, value)`, a browser API with no case-preservation hook of any kind.
+This is a platform limitation of XMLHttpRequest, not a magic gap, and the fix in this PR does not
+and cannot reach it. Scope observation only, per the briefing's instruction not to widen the PR.
+
+The fix
+-------
+lib/src/network/drivers/dio_network_driver.dart: added `preserveHeaderCase: true` to the
+driver's BaseOptions constructor.
+
+Red phase (before the fix)
+---------------------------
+test/network/preserve_header_case_test.dart opens a loopback ServerSocket, sends a request
+through DioNetworkDriver with headers: {'User-Agent': 'Watchools/1.0'}, and asserts on the raw
+bytes captured off the socket (an HttpHeaders-based assertion cannot prove this: the receiving
+side's HttpHeaders lowercases on parse regardless of what the client sent on the wire).
+
+  $ flutter test test/network/preserve_header_case_test.dart
+  Expected: contains 'User-Agent: Watchools/1.0'
+    Actual: 'GET / HTTP/1.1\r\n'
+              'user-agent: Watchools/1.0\r\n'
+              ...
+  1 test failed, for the right reason: the key arrived lowercased.
+
+Green phase (after the fix)
+----------------------------
+  $ flutter test test/network/preserve_header_case_test.dart
+  00:00 +1: All tests passed!
+
+Full verification
+------------------
+  $ flutter test test/network/          -> 77 tests, all passed
+  $ flutter test                        -> 1441 tests, all passed
+  $ dart format lib/.../dio_network_driver.dart test/.../preserve_header_case_test.dart
+                                         -> no diff
+  $ flutter analyze lib/.../dio_network_driver.dart test/.../preserve_header_case_test.dart
+                                         -> No issues found!
+
+Status for step 4
+------------------
+The flag is set and its test is green in magic's working tree, on an open branch/PR
+(https://github.com/fluttersdk/magic/pull/151). The PR is open and its CI has not been
+observed to completion in this step (opening + waiting on CI is real work but not
+provable by a fast command, per this step's own instructions). Step 4's test should stay
+skip:ped citing PR #151 until it publishes and the `magic:` constraint here is bumped.
+
+Deviation from magic's own CLAUDE.md
+--------------------------------------
+magic's CLAUDE.md requires a CHANGELOG.md / doc/ / skills/ "post-change sync" in the same
+change set as any lib/ change. Not done here: this step's Files list authorized only the
+driver file and test/network/, and the sync was out of that scope. Noted in the PR body as
+"Not done in this PR" so it is not silently dropped before release.

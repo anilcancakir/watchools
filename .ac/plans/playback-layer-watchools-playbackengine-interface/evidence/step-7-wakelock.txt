@@ -1,0 +1,41 @@
+Step 7: Hold the display awake while a core is alive
+
+Command: flutter test test/app/playback/
+Result: 37 passed (was 33; +4 new wakelock tests)
+
+00:00 +23: redaction, the single filter a log line naming the stream URL loses both secrets and reaches no consumer
+00:00 +24: redaction, the single filter an error line is reported at error rather than downgraded to debug
+00:00 +25: redaction, the single filter a platform failure naming the URL arrives redacted
+00:00 +26: one upstream subscription, fanned out two consumers of the engine stream both receive every tick
+00:00 +27: one upstream subscription, fanned out dispose stops the core and cancels the subscription, so a later event reaches nobody
+00:00 +28: the session stamp, which the transport cannot supply each load raises the stamp, though the transport reuses playlist_entry_id 1
+00:00 +29: the session stamp, which the transport cannot supply every counter survives the re-stamp
+00:00 +30: health, from the detector and nowhere else is idle between a load and its first tick, and playing once one advances
+00:00 +31: health, from the detector and nowhere else a frozen position past the grace is a stall
+00:00 +32: health, from the detector and nowhere else a tick arriving after stop reaches nobody and revives no verdict
+00:00 +33: the wakelock, held for the core's lifetime a load enables the hold exactly once, not once per tick
+00:00 +34: the wakelock, held for the core's lifetime stop releases the hold
+00:00 +35: the wakelock, held for the core's lifetime dispose releases the hold
+00:00 +36: the wakelock, held for the core's lifetime a second load without an intervening stop does not leak a second hold
+00:00 +37: All tests passed!
+
+Guard command: ! grep -rqE 'setEnabledSystemUIMode|setPreferredOrientations' lib/
+Result: PASS (no matches). Run with the leading `!` and `-r` exactly as specified; without `-r`
+grep would exit 2 on a directory argument and the leading `!` would turn that failure into a
+false pass regardless of the code's content.
+
+Mutation check (manual, not part of CI):
+- Deleted the release block from stop() -> "stop releases the hold" and "a second load without
+  an intervening stop does not leak a second hold" both failed (Expected [false], Actual []).
+- Deleted the release block from dispose() -> "dispose releases the hold" failed the same way.
+- Both deletions reverted; suite returned to 37/37 green.
+
+Not verified in this step: real macOS display behaviour. No test here touches a real display or
+compiles Swift; the assertions above only exercise the injected `toggleWakelock` seam. The claim
+that an idle display stalls libmpv is prior wave measurement (player-layer.md:585-590), not
+something this step's test suite can observe.
+
+flutter analyze --fatal-infos --fatal-warnings: No issues found.
+flutter test (full suite): 430 passed, 1 skipped (was 426 passed, 1 skipped).
+dart format lib test: 1 file reformatted (mpv_playback_engine.dart, constructor collapsed
+onto one line by the formatter; no semantic change).

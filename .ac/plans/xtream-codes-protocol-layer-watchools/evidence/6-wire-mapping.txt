@@ -1,0 +1,23 @@
+00:00 +0: loading /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart
+00:00 +0: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Channel.fromXtream maps num, name, the resolved category and the stream id
+00:00 +1: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Channel.fromXtream turns an empty stream_icon into a null logoUrl
+00:00 +2: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Channel.fromXtream yields an empty schedule and hasSchedule false when the provider sent no EPG
+00:00 +3: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Channel.fromXtream computes live against a clock inside a programme and idle against one outside every programme
+00:00 +4: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Programme.fromXtream never wraps a programme that runs past midnight
+00:00 +5: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/channel_test.dart: Programme.fromXtream returns null when the listing has no parsable start or end
+00:00 +6: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: Episode codes a season and number the way a Turkish catalogue does
+00:00 +7: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: Episode treats an accidental tap as unstarted and the credits as finished
+00:00 +8: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.upNext is null when the provider sent no episodes
+00:00 +9: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.upNext prefers the part-watched episode over the next unwatched one
+00:00 +10: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.upNext falls to the first unwatched episode when nothing is part-watched
+00:00 +11: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.upNext falls to the very first episode when everything is finished
+00:00 +12: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem reports seasons ascending and deduplicated
+00:00 +13: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem is in progress when any episode is, not when the container is
+00:00 +14: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem labels length as hours and minutes for a film and seasons for a series
+00:00 +15: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem labels a rating with the decimal comma Turkish uses
+00:00 +16: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem toggling a favourite keeps every other field
+00:00 +17: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.fromXtream maps name, resolved category, provider id and the quoted rating
+00:00 +18: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.fromXtream turns an empty stream_icon into a null posterUrl
+00:00 +19: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.fromXtream keeps a container_extension of mkv as a fact
+00:00 +20: /Users/anilcan/Code/watchools/.claude/worktrees/player-reconnect/test/app/models/title_item_test.dart: TitleItem.fromXtream reads a series provider id from series_id rather than stream_id
+00:00 +21: All tests passed!

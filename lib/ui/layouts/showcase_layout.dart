@@ -3,11 +3,13 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/library_controller.dart';
+import '../../app/models/provider_fault.dart';
 import '../../app/models/title_item.dart';
 import '../components/artwork/index.dart';
 import '../components/fact_chip/index.dart';
 import '../components/favourite_button/index.dart';
 import '../components/play_progress/index.dart';
+import '../components/provider_notice/index.dart';
 import '../components/rail/index.dart';
 import '../components/scrim/index.dart';
 import '../components/section_header/index.dart';
@@ -63,29 +65,46 @@ class ShowcaseLayout extends StatelessWidget {
             // the catalogue.
             LibraryCategories(controller: controller),
             PageGutter.gap,
-            WDiv(
-              className: 'flex-1 w-full',
-              child: controller.matches.isEmpty
-                  ? _emptyBody()
-                  : CustomScrollView(
-                      slivers: <Widget>[
-                        SliverToBoxAdapter(child: _heroScope(wide: wide)),
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                        if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
-                        SliverList.builder(
-                          itemCount: controller.sections.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            final (String name, List<TitleItem> items) = controller.sections[index];
-
-                            return _posterRail(name, items, wide);
-                          },
-                        ),
-                        const SliverToBoxAdapter(child: PageGutter.gap),
-                      ],
-                    ),
-            ),
+            WDiv(className: 'flex-1 w-full', child: _body(wide)),
           ],
         ),
+      ],
+    );
+  }
+
+  /// A provider fault, an empty result, or the hero plus the rails.
+  ///
+  /// A fault takes precedence over an empty result, because they are
+  /// different statements: an empty [LibraryController.matches] can mean a
+  /// search found nothing while the catalogue is healthy, while a fault means
+  /// the provider itself is the problem, and the fault is the more specific
+  /// of the two.
+  Widget _body(bool wide) {
+    final ProviderFault? fault = controller.fault;
+    if (fault != null) {
+      return ProviderNotice(
+        fault: fault,
+        onRetry: controller.reload,
+        onOpenSettings: () => MagicRoute.to('/saglayici'),
+      );
+    }
+
+    if (controller.matches.isEmpty) return _emptyBody();
+
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverToBoxAdapter(child: _heroScope(wide: wide)),
+        const SliverToBoxAdapter(child: PageGutter.gap),
+        if (controller.continueWatching.isNotEmpty) SliverToBoxAdapter(child: _resumeRail(wide)),
+        SliverList.builder(
+          itemCount: controller.sections.length,
+          itemBuilder: (BuildContext context, int index) {
+            final (String name, List<TitleItem> items) = controller.sections[index];
+
+            return _posterRail(name, items, wide);
+          },
+        ),
+        const SliverToBoxAdapter(child: PageGutter.gap),
       ],
     );
   }
@@ -201,8 +220,11 @@ class ShowcaseLayout extends StatelessWidget {
       children: <Widget>[
         WText(title.isSeries ? 'DİZİ' : 'FİLM', className: 'text-xs font-bold tracking-widest text-primary'),
         WText(title.name, className: 'text-3xl sm:text-5xl font-bold text-fg line-clamp-2'),
+        // Composed from the parts, not interpolated: a provider entry carries
+        // no year and no runtime, and `0 · 0 dk` states two facts it never
+        // sent. See `TitleItem.metaLabel`.
         WText(
-          rating == null ? '${title.year} · ${title.lengthLabel}' : '${title.year} · ${title.lengthLabel} · ★ $rating',
+          <String>[if (title.metaLabel.isNotEmpty) title.metaLabel, if (rating != null) '★ $rating'].join(' · '),
           className: 'text-sm font-medium text-fg-muted',
         ),
         if (title.synopsis != null && wide)
@@ -315,7 +337,7 @@ class ShowcaseLayout extends StatelessWidget {
   Widget _resumeCard(TitleItem title, double width) {
     final Episode? next = title.upNext;
     final double progress = title.isSeries ? (next?.progress ?? 0) : title.progress;
-    final String caption = title.isSeries && next != null ? '${next.code} · ${next.title}' : title.lengthLabel;
+    final String caption = title.isSeries && next != null ? '${next.code} · ${next.title}' : title.lengthLabel ?? '';
 
     return SizedBox(
       width: width,
