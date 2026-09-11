@@ -16,9 +16,13 @@ import '../../support/wind_test_app.dart';
 /// password. Collapsing them into "bir şeyler ters gitti" is what makes people
 /// re-type a working credential.
 ///
-/// The exhaustiveness case is the one that keeps this true over time. It reads
-/// `ProviderFault.values`, so a fourth fault added without copy or without an
-/// action fails here rather than shipping as a blank panel.
+/// Two cases keep this true over time and both walk `ProviderFault.values`, so
+/// a member added later fails here rather than shipping. One covers the copy: a
+/// fault with no title, no explanation or a title borrowed from a neighbour.
+/// The other covers the action, against the fault's own `needsCredentials`,
+/// which is the half that was missing when `wrongAddress` was added: the
+/// routing was a bare `== ProviderFault.expired` at the call site, so the new
+/// member shipped a button reading "Bilgileri güncelle" wired to a retry.
 void main() {
   setUp(WindParser.clearCache);
 
@@ -77,6 +81,28 @@ void main() {
     }
 
     expect(titles.length, ProviderFault.values.length, reason: 'two faults share a title');
+  });
+
+  testWidgets('the action every fault offers is the one its own recovery says it should', (tester) async {
+    // Walks `ProviderFault.values` against `needsCredentials` rather than
+    // naming members, which is what the three tests below did and why adding
+    // `wrongAddress` left the panel offering a retry that could only ever fail
+    // the same way: the routing was a bare `== ProviderFault.expired` at the
+    // call site and nothing said a new member had to answer that question.
+    for (final ProviderFault fault in ProviderFault.values) {
+      final ({List<String> retries, List<String> settings}) fired = await pump(tester, fault);
+
+      await tester.tap(action());
+      await tester.pump();
+
+      if (fault.needsCredentials) {
+        expect(fired.settings, <String>[fault.name], reason: '${fault.name} must send the user to their credentials');
+        expect(fired.retries, isEmpty, reason: 'retrying ${fault.name} fails identically every time');
+      } else {
+        expect(fired.retries, <String>[fault.name], reason: '${fault.name} must offer a retry');
+        expect(fired.settings, isEmpty, reason: '${fault.name} is not about what the user typed');
+      }
+    }
   });
 
   testWidgets('a lapsed subscription sends the user to their credentials, not to a retry', (tester) async {

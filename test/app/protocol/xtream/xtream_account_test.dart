@@ -207,6 +207,56 @@ void main() {
       expect(classifyProviderFault(account: lapsed, statusCode: 200, body: '{"user_info":{}}'), ProviderFault.expired);
     });
 
+    test('a 404 with no parsable body is wrongAddress, not throttled', () {
+      // The case a user typing their own address makes ordinary, and what it
+      // used to report: `throttled`, whose copy states a rate limit and asks
+      // them to wait a few seconds, forever, for a port that will never
+      // answer. Before onboarding the base URL came from a define a developer
+      // had already verified, so this arm had no way to fire.
+      expect(
+        classifyProviderFault(account: null, statusCode: 404, body: '<html>Not Found</html>'),
+        ProviderFault.wrongAddress,
+      );
+    });
+
+    test('a 301 is wrongAddress, since the driver refuses to follow it', () {
+      // `AppServiceProvider` sets `followRedirects = false`, because a panel
+      // URL carries the credential in its path and the target host is the
+      // panel's choice. That decision only means something if the redirect
+      // then becomes a fault the user can act on.
+      expect(classifyProviderFault(account: null, statusCode: 301, body: ''), ProviderFault.wrongAddress);
+    });
+
+    test('a live account does not rescue a 404: the address is wrong whatever the subscription says', () {
+      // Deliberately ahead of every account-based arm. A redirect or a missing
+      // path is a statement about the ADDRESS, and it arrives the same way
+      // whether the credential is a day old or three years old.
+      final XtreamAccount healthy = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+
+      expect(classifyProviderFault(account: healthy, statusCode: 404, body: 'nope'), ProviderFault.wrongAddress);
+    });
+
+    test('403 and 500 stay on the arms that offer a retry', () {
+      // The narrowness is the point. A 403 is what a reseller answers to a
+      // blocked address or a blocked user agent, and a 5xx is the panel's own
+      // bad day; both clear on their own or with a different `User-Agent`, so
+      // sending the user back to a field they typed correctly would be wrong.
+      final XtreamAccount healthy = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+
+      expect(classifyProviderFault(account: healthy, statusCode: 403, body: 'blocked'), ProviderFault.throttled);
+      expect(classifyProviderFault(account: healthy, statusCode: 502, body: 'bad gateway'), ProviderFault.throttled);
+    });
+
+    test('a 404 that still answers with a healthy handshake is not a fault at all', () {
+      // The body wins over the status when the body is Xtream JSON, which is
+      // the order that was already there: a body that decoded is a body that
+      // spoke. A panel behind an odd proxy that mislabels its status is still
+      // a panel.
+      final XtreamAccount healthy = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));
+
+      expect(classifyProviderFault(account: healthy, statusCode: 404, body: '{"user_info":{}}'), isNull);
+    });
+
     test('a healthy account behind the generic non-JSON denial, under its connection limit, is '
         'throttled', () {
       final XtreamAccount healthy = XtreamAccount.fromHandshake(_handshake(auth: 1, status: 'Active'));

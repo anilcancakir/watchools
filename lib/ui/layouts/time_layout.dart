@@ -13,6 +13,7 @@ import '../components/provider_notice/index.dart';
 import '../components/status_badge/index.dart';
 import 'support/category_strip.dart';
 import 'support/guide_empty.dart';
+import 'support/guide_toolbar_metrics.dart';
 import 'support/guide_view_switch.dart';
 import 'support/nav_rail.dart';
 import 'support/page_gutter.dart';
@@ -141,7 +142,13 @@ class _TimeLayoutState extends State<TimeLayout> {
               // the one above it, and the grid's own ruler carries the last of
               // those gaps as its top padding rather than butting against the
               // strip.
-              _toolbar(wide: wide),
+              // The toolbar reads its OWN width, not the window's: it sits inside a
+              // column the nav rail has narrowed, and `wide` is the rail's own
+              // viewport breakpoint. See `guideToolbarOneLineAt`.
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    _toolbar(oneLine: constraints.maxWidth >= guideToolbarOneLineAt),
+              ),
               PageGutter.gap,
               CategoryStrip(controller: controller),
               PageGutter.gap,
@@ -169,24 +176,36 @@ class _TimeLayoutState extends State<TimeLayout> {
   /// beside it: `flex-1` is an `Expanded` and its tight minimum beats the
   /// maximum. `w-full shrink-0` is what the first version wrote and it
   /// overflowed by exactly the count's width, because `w-full` claims the whole
-  /// row and `shrink-0` then refuses to give any of it back.
-  Widget _toolbar({required bool wide}) {
+  /// row and `shrink-0` then refuses to give any of it back. The count then
+  /// repeated that mistake one element along; see its own comment below.
+  Widget _toolbar({required bool oneLine}) {
     final String? note = controller.noGuideNote;
 
     final Widget search = WDiv(
-      className: wide ? 'w-[470px] shrink-0' : 'w-full',
+      className: oneLine ? 'w-[470px] shrink-0' : 'w-full',
       child: SearchField(value: controller.query, onChanged: controller.search),
     );
 
-    final Widget count = WDiv(
-      className: 'shrink-0',
+    // `flex-1 min-w-0` and not `shrink-0`, the same correction `Şimdi`'s
+    // toolbar took and for the same reason: the count is the only element on
+    // this row with no width of its own, so it has to be the one that gives.
+    // `shrink-0` made `line-clamp-1` decorative, because a clamp with no
+    // bounded width has nothing to clamp against, and the row overflowed by
+    // the amount the sentence exceeded the space left over. Measured at 110
+    // pixels on `Şimdi` at an 800 pixel window; this view carries the same
+    // sentence in the same arrangement.
+    //
+    // The alignment is per branch: the count sits against the switch on one
+    // line and against the left edge on two.
+    Widget count({required String align}) => WDiv(
+      className: 'flex-1 min-w-0',
       child: WText(
         note == null ? controller.countLabel : '${controller.countLabel} · $note',
-        className: 'text-xs text-fg-muted line-clamp-1',
+        className: 'text-xs text-fg-muted $align line-clamp-1',
       ),
     );
 
-    if (!wide) {
+    if (!oneLine) {
       return WDiv(
         className: 'flex flex-col items-start gap-2 w-full ${PageGutter.x} ${PageGutter.top}',
         children: <Widget>[
@@ -194,8 +213,7 @@ class _TimeLayoutState extends State<TimeLayout> {
           WDiv(
             className: 'flex flex-row items-center gap-2 w-full',
             children: <Widget>[
-              count,
-              const WDiv(className: 'flex-1'),
+              count(align: 'text-left'),
               GuideViewSwitch(controller: controller),
             ],
           ),
@@ -206,9 +224,11 @@ class _TimeLayoutState extends State<TimeLayout> {
     return WDiv(
       className: 'flex flex-row items-center gap-3 w-full ${PageGutter.x} ${PageGutter.top}',
       children: <Widget>[
+        // No bare spacer: the count is the flexible child now, and a second
+        // one would split the free space and start truncating the sentence
+        // while half the row stood empty.
         search,
-        const WDiv(className: 'flex-1'),
-        count,
+        count(align: 'text-right'),
         GuideViewSwitch(controller: controller),
       ],
     );

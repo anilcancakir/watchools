@@ -52,6 +52,7 @@ class ProviderNoticePreview extends StatelessWidget {
           children: <Widget>[
             _panel(ProviderFault.unreachable),
             _panel(ProviderFault.expired, detail: 'HTTP 401, tr.example-provider.com'),
+            _panel(ProviderFault.wrongAddress, detail: 'HTTP 404, tr.example-provider.com:8080'),
             _panel(ProviderFault.throttled),
             _panel(ProviderFault.evicted),
           ],

@@ -55,11 +55,16 @@ class ProviderNotice extends StatelessWidget {
   final String? detail;
 
   /// Asks for the request to be made again. Used for every fault a retry can
-  /// fix, which is all of them except [ProviderFault.expired].
+  /// fix, which is every one whose
+  /// [ProviderFaultRecovery.needsCredentials] is false.
   final VoidCallback onRetry;
 
-  /// Takes the user to their provider credentials. Used for
-  /// [ProviderFault.expired] alone.
+  /// Takes the user to their provider credentials. Used for the faults whose
+  /// [ProviderFaultRecovery.needsCredentials] is true, currently
+  /// [ProviderFault.expired] and [ProviderFault.wrongAddress]. Named here
+  /// through the predicate rather than by member, because naming the member
+  /// is what let `wrongAddress` ship a button reading "Bilgileri güncelle"
+  /// wired to a retry.
   final VoidCallback onOpenSettings;
 
   /// Creates a [ProviderNotice].
@@ -76,8 +81,8 @@ class ProviderNotice extends StatelessWidget {
     // 1. Resolve the per-fault slot classNames.
     final Map<String, String> slots = providerNoticeRecipe()(variants: <String, String?>{'fault': fault.name});
 
-    // 2. Pick the copy and the verb. Exhaustive on purpose: a fourth fault has
-    //    to answer all four questions here before it can compile.
+    // 2. Pick the copy and the verb. Exhaustive on purpose: a new fault has to
+    //    answer all four questions here before it can compile.
     final (IconData icon, String title, String body, String verb) said = switch (fault) {
       ProviderFault.unreachable => (
         Icons.cloud_off_outlined,
@@ -99,6 +104,13 @@ class ProviderNotice extends StatelessWidget {
         'Sağlayıcı isteklerinizi hız sınırına takıldığı için reddediyor. '
             'Birkaç saniye içinde tekrar deneyin.',
         'Yeniden dene',
+      ),
+      ProviderFault.wrongAddress => (
+        Icons.link_off_outlined,
+        'Bu adres bir panel gibi yanıt vermiyor',
+        'Adreste bir şey var, ama Xtream paneli değil. Adresi ve port '
+            'numarasını kontrol edin.',
+        'Bilgileri güncelle',
       ),
       ProviderFault.evicted => (
         Icons.devices_other_outlined,
@@ -122,7 +134,12 @@ class ProviderNotice extends StatelessWidget {
         WDiv(
           className: 'shrink-0',
           child: WAnchor(
-            onTap: fault == ProviderFault.expired ? onOpenSettings : onRetry,
+            // Two faults out of five send the user to their credentials rather
+            // than repeat the request, and they are the two whose request will
+            // fail identically every time: a lapsed subscription and an
+            // address that is not a panel. The other three are conditions that
+            // may well clear on their own, so a retry there is a real offer.
+            onTap: fault.needsCredentials ? onOpenSettings : onRetry,
             semanticLabel: said.$4,
             child: WDiv(
               className: slots['action'],

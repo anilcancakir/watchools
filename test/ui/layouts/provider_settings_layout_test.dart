@@ -376,6 +376,54 @@ void main() {
       expect(find.byType(ProviderNotice), findsOneWidget);
     });
 
+    testWidgets('every fault whose recovery is the credential gets a sentence, and none gets a panel', (
+      WidgetTester tester,
+    ) async {
+      // Load-bearing rather than a completeness test, and worth saying out
+      // loud: `_faultPanel` wires BOTH of `ProviderNotice`'s callbacks to the
+      // same `_run(_submit)`, so the sentence branch is the only thing keeping
+      // a credential-recovery fault from rendering a button that reads
+      // "Bilgileri güncelle" and resubmits the value that just failed.
+      //
+      // Walks `ProviderFault.values` rather than naming the two members, so a
+      // sixth fault added to `needsCredentials` without a sentence on this
+      // screen fails here. Without it the new member would render as a
+      // `ProviderNotice` whose action reads "Bilgileri güncelle" and is wired
+      // straight back to `_submit`, which is the defect this screen already
+      // shipped once for `expired`.
+      // Every sentence rendered with no fault at all, so the assertion below
+      // is about what the FAULT added rather than about what the screen always
+      // says. A `contains` over the whole screen was the first version and it
+      // discriminated only by luck: the word it looked for happened to appear
+      // nowhere else, so the first label containing it would have turned this
+      // into a pass-always.
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+      final Set<String> always = tester.widgetList<WText>(find.byType(WText)).map((WText each) => each.data).toSet();
+
+      for (final ProviderFault fault in ProviderFault.values.where((ProviderFault each) => each.needsCredentials)) {
+        await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider(fault: fault)));
+
+        expect(find.byType(ProviderNotice), findsNothing, reason: '$fault must not render a panel here');
+
+        final Set<String> added = tester
+            .widgetList<WText>(find.byType(WText))
+            .map((WText each) => each.data)
+            .toSet()
+            .difference(always);
+
+        expect(added, hasLength(1), reason: '$fault must add exactly one sentence of its own');
+        expect(added.single, isNotEmpty);
+      }
+    });
+
+    testWidgets('a fault whose recovery is a retry still gets the panel', (WidgetTester tester) async {
+      for (final ProviderFault fault in ProviderFault.values.where((ProviderFault each) => !each.needsCredentials)) {
+        await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider(fault: fault)));
+
+        expect(find.byType(ProviderNotice), findsOneWidget, reason: '$fault renders as a panel');
+      }
+    });
+
     testWidgets('expired is a sentence about the two fields, not the panel that offers a pointless retry', (
       WidgetTester tester,
     ) async {

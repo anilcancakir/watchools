@@ -91,6 +91,15 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       'Panel bu kullanıcı adı ve şifreyi kabul etmedi. İkisini de kontrol edip '
       'tekrar kaydedin.';
 
+  /// What the form says when the address answered but is not a panel.
+  ///
+  /// Names the port, because that is what is wrong most of the time: a panel
+  /// address a reseller sends by message carries one, and it is the part a
+  /// user drops when they retype the host from memory.
+  static const String _addressNotAPanel =
+      'Bu adres yanıt verdi ama bir Xtream paneli değil. Adresi ve port '
+      'numarasını kontrol edin.';
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final FocusNode _userAgentFocusNode;
@@ -118,6 +127,7 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   Widget build(BuildContext context) {
     final ProviderFault? fault = widget.provider.fault;
     final String? fieldError = widget.provider.fieldError;
+    final String? sentence = fault == null ? null : _sentenceFor(fault);
 
     return WDiv(
       className: 'w-full h-full bg-surface ${PageGutter.x} ${PageGutter.top} flex flex-col items-start gap-6',
@@ -161,18 +171,17 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                   _disclosure(),
                   if (_advancedOpen) _userAgentField(),
                   if (fieldError != null) _fieldErrorBanner(fieldError),
-                  // `expired` is the only fault whose `ProviderNotice` action
-                  // is `onOpenSettings` rather than `onRetry`
-                  // (`provider_notice.dart:125`), and on THIS screen the
-                  // settings are the thing the user is already looking at. Its
+                  // The two faults whose recovery is the credential itself
+                  // never render as a panel HERE, because on this screen the
+                  // settings are what the user is already looking at: the
                   // panel would offer a button reading "Bilgileri güncelle"
                   // over copy saying that retrying will not help, wired to a
-                  // resubmit of the same rejected credential. It is also the
-                  // most likely fault here, because it is what a mistyped
-                  // password returns, so it gets the sentence that names the
-                  // two fields instead.
-                  if (fault == ProviderFault.expired) _fieldErrorBanner(_credentialRejected),
-                  if (fault != null && fault != ProviderFault.expired) _faultPanel(fault),
+                  // resubmit of the same rejected values. They are also the two
+                  // most likely faults on this screen, being what a mistyped
+                  // password and a mistyped port return, so each gets a
+                  // sentence naming the field to fix instead.
+                  if (sentence != null) _fieldErrorBanner(sentence),
+                  if (fault != null && sentence == null) _faultPanel(fault),
                   _submitButton(),
                   if (widget.provider.hasCredential) _signOutButton(),
                 ],
@@ -290,6 +299,20 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       ),
     );
   }
+
+  /// The sentence this screen renders in place of [fault]'s own panel, or null
+  /// when the panel is the right rendering.
+  ///
+  /// Exhaustive rather than defaulted, so a sixth fault has to state which of
+  /// the two it is before it can compile. Which member gets a sentence is
+  /// exactly [ProviderFaultRecovery.needsCredentials], and the two are kept in
+  /// step by a test that walks `ProviderFault.values` rather than by an
+  /// unreachable arm here.
+  static String? _sentenceFor(ProviderFault fault) => switch (fault) {
+    ProviderFault.expired => _credentialRejected,
+    ProviderFault.wrongAddress => _addressNotAPanel,
+    ProviderFault.unreachable || ProviderFault.throttled || ProviderFault.evicted => null,
+  };
 
   /// What is wrong with the form itself: a panel URL `XtreamCredentials`
   /// refused, or a vault that would not store what the panel accepted.
