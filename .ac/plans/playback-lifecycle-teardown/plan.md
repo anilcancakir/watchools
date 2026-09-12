@@ -236,7 +236,7 @@ over the store at the composition root. Neither is useful alone.
 
 ### Wave 2: the observer
 
-- [ ] **Step 2**: Observe the lifecycle on the engine and branch on the choice
+- [x] **Step 2**: Observe the lifecycle on the engine and branch on the choice
     - **Type**: code
     - **Tier**: senior
     - **Why this tier**: rule-3-codebase-state: a never-removed observer is a strong reference the binding holds
@@ -681,10 +681,19 @@ over the store at the composition root. Neither is useful alone.
 
 ## Cross-Project Observations
 
-**wind, gap**: `WFormSelect` has no way to mark an option as degraded or unavailable on the current platform.
-This plan works around it with a prose note beside the picker, which is the right answer for one field and the
-wrong one for the fourth such field. A `SelectOption.note` or a disabled-with-reason state would carry it in the
-component. Not filed yet; worth raising if a second screen needs it.
+**wind, gap**: `SelectOption` carries `disabled` (`wind/lib/src/widgets/select_option.dart:48-51`, read at
+source), so marking an option unavailable IS supported. What it has no field for is the REASON: no `note`, no
+`description`, no secondary text, and `==`/`hashCode` cover only `value`, `label` and `disabled`. So an option
+can be greyed out and cannot say why, and the caller's only route is prose somewhere else on the screen.
+
+That is the gap this plan hits, and `disabled` would be the wrong tool here anyway: the user asked explicitly
+that an unsupported option still be selectable ("desteklemiyorsa bile kullanıcı ayarlayabilsin"), so the note
+has to sit beside a live control rather than explain a dead one. A `SelectOption.note` rendered under the label
+would carry both cases in the component. Worth filing; not filed yet.
+
+An earlier version of this paragraph said `WFormSelect` had no way to mark an option unavailable at all. That
+was wrong, caught by reading the sibling source before filing, which is the rule CLAUDE.md states for exactly
+this reason.
 
 **watchools, gap**: the nav rail's "Ayarlar" item at `lib/ui/layouts/support/nav_rail.dart:44` navigates
 nowhere. `/saglayici` (`lib/routes/app.dart:44`) is the only settings route in the app, and it is reachable only

@@ -18,3 +18,25 @@
   the default is what stops every credential blob gaining a key for users who never chose. A non-nullable
   getter would have made the omission dead code, and the test that was supposed to catch it did not, because it
   bypassed the getter.
+
+## Wave 2
+
+- **`AppLifecycleListener.dispose` throws on a second call**, `assert(_debugAssertNotDisposed())` at
+  `app_lifecycle_listener.dart:179`, verified at source. `PlaybackEngine` promise 7 makes `dispose`
+  idempotent, so the field has to be nullable and cleared rather than `late final`. The plan did not
+  anticipate this and the worker found it; without the clear, four tests go red, two of them pre-existing.
+- **A declared `tearDown` runs AFTER an `addTearDown` registered inside the test.** Declared ones register
+  before the body (`declarer.dart:241-248`) and tearDowns run LIFO (`invoker.dart:296`). That ordering is what
+  lets the binding be walked back to `resumed` after `engine.dispose` has removed the listener, rather than
+  past a live one. My briefing had said `addTearDown`; the worker's shape is the correct one.
+- **The binding's lifecycle state outlives a case in a plain-`test()` file.** `postTest`, which resets it, is
+  registered only by `WidgetTester` (`widget_tester.dart:183`). The symptom is NOT the
+  `Invalid state transition` I predicted: left at `paused`, the next case's walker drives no transition at all
+  and its engine simply never hears one, so two arm cases fail silently. Same cause, quieter failure, which
+  makes it worse rather than better.
+- **The discriminating assertion for "did the core stay open" is a tick pushed afterwards**, not a method-call
+  list. `expect(calls, isEmpty)` alone would pass for an engine that never had a core; `push(_tickEvent(...))`
+  then `expect(health, playing)` is what separates "still open" from "never was".
+- **A doc-block sentence that a change falsifies is part of the change.** The class doc said this engine "owns
+  no policy the others would have to copy"; the lifecycle branch makes that false, and the worker corrected it
+  in the same diff rather than leaving it for a later reader to trip over.

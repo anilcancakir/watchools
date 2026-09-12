@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:watchools_player/watchools_player.dart';
 
+import '../models/background_playback.dart';
 import 'playback_engine.dart';
 
 /// The [PlaybackEngine] over libmpv, through the `watchools_player` plugin.
@@ -65,6 +67,17 @@ import 'playback_engine.dart';
 /// `captureSelf` is deliberately unreachable from here. It captures the app's
 /// own window as a compositing proof, it is a spike affordance, and a product
 /// surface has no business offering it.
+///
+/// ### The one thing the others do have to copy
+///
+/// The app-lifecycle branch at [_background] is the exception to the sentence
+/// at the top of this doc, and it is written down rather than left to be
+/// noticed. [PlaybackEngine] gains no member for backgrounding: the branch acts
+/// on state only a transport holds (the core it opened, the display hold it
+/// took), and the user's choice reaches it as a closure exactly like the
+/// redactor. The cost is that each of the five implementations coming after
+/// this one needs its own observer, and the day the second exists is the day to
+/// ask whether the observer belongs above the interface instead.
 class MpvPlaybackEngine implements PlaybackEngine {
   /// Turns any native text into something that can be written down.
   ///
@@ -161,11 +174,50 @@ class MpvPlaybackEngine implements PlaybackEngine {
   /// neither one ever asks for a release nothing granted.
   bool _awake = false;
 
+  /// What the user wants a playing stream to do when the app leaves the
+  /// foreground, asked at the moment it matters rather than held.
+  ///
+  /// A closure for the same reason [_redact] is one: the engine holds no
+  /// provider concept, and the choice lives on the credential. Asking on each
+  /// event is also what makes a change take effect mid-session with nothing
+  /// pushed down here.
+  final BackgroundPlayback Function() _backgroundPlayback;
+
+  /// The default [_backgroundPlayback], which is what every install has in
+  /// effect today: nothing keeps the connection alive on purpose.
+  ///
+  /// A static method rather than the `() => BackgroundPlayback.stop` it reads
+  /// as, because a default value has to be a constant expression and a function
+  /// literal is not one. [WakelockPlus.toggle] above is the same shape.
+  static BackgroundPlayback _alwaysStop() => BackgroundPlayback.stop;
+
+  /// The app-lifecycle observer, or null once [dispose] has removed it.
+  ///
+  /// Nullable rather than `late final`, and the null is load-bearing.
+  /// [PlaybackEngine] promise 7 makes `dispose` idempotent, and
+  /// `AppLifecycleListener.dispose` throws on a second call
+  /// (`app_lifecycle_listener.dart:179-187` asserts it was not disposed), so
+  /// the reference is let go rather than kept and disposed twice.
+  AppLifecycleListener? _lifecycle;
+
   /// Takes the redactor under its public name, `redact:`, which is what a
   /// private initializing formal is spelled as at a call site. `toggleWakelock`
-  /// follows the same shape, defaulting to the real plugin.
-  MpvPlaybackEngine({required this._redact, this._toggleWakelock = WakelockPlus.toggle}) {
+  /// and `backgroundPlayback` follow the same shape, defaulting to the real
+  /// plugin and to [BackgroundPlayback.stop].
+  ///
+  /// The observer is built here, beside the upstream subscription, and for the
+  /// same reason: both need `WidgetsBinding.instance` to exist, which is
+  /// already why `PlaybackController` holds an engine factory rather than an
+  /// engine. `onPause` is a [VoidCallback], so [_background] runs as a future
+  /// nobody holds; a failure out of it reaches the zone rather than being
+  /// swallowed here, because there is no caller left to hand it to.
+  MpvPlaybackEngine({
+    required this._redact,
+    this._toggleWakelock = WakelockPlus.toggle,
+    this._backgroundPlayback = _alwaysStop,
+  }) {
     _upstream = WatchoolsPlayer.events.listen(_receive);
+    _lifecycle = AppLifecycleListener(onPause: () => unawaited(_background()));
   }
 
   @override
@@ -287,6 +339,50 @@ class MpvPlaybackEngine implements PlaybackEngine {
     await _toggleWakelock(enable: false);
   }
 
+  /// Acts on the user's [BackgroundPlayback] choice, on `paused` and on
+  /// nothing else.
+  ///
+  /// ### There is no platform check here, deliberately
+  ///
+  /// `paused` "is only entered on iOS and Android"
+  /// (`platform_dispatcher.dart:2444`); the macOS embedder maps an occluded or
+  /// minimised window to `resumed`, `inactive` and `hidden` and never reaches
+  /// this. Reacting to `paused` **is** reacting to a mobile backgrounding, so a
+  /// `Platform.isAndroid` test would add nothing and would go stale as targets
+  /// land. The absence is the mechanism, and the macOS case in
+  /// `mpv_playback_engine_test.dart` is its proof.
+  ///
+  /// ### `audio` and `pictureInPicture` are one arm on purpose
+  ///
+  /// The Dart half of both is "do not stop the core", and everything that
+  /// separates them is platform work that exists on no target yet: Android's
+  /// `PictureInPictureParams` and, on iOS, an AVFoundation engine libmpv
+  /// cannot feed. Two identical arms would read as two behaviours.
+  ///
+  /// ### Nothing happens on `resumed`, and that is the harder half
+  ///
+  /// A reload on the way back in retakes the account's single connection slot
+  /// (measured `max_connections: 1`, a second stream evicted the first at
+  /// 5.79 s, `player-layer.md:218-231`), evicting whichever device picked it up
+  /// while the user was away, which is the exact harm stopping on background
+  /// exists to prevent. It is also the only honest option: [load] is a full
+  /// fresh open by design (`playback_engine.dart:169-174`), and a lapsed token
+  /// is indistinguishable from a healthy wait (`player-layer.md:591-613`), so
+  /// an engine reopening on its own would be guessing on the user's behalf.
+  /// The user asking for a picture is what calls [load].
+  Future<void> _background() async {
+    switch (_backgroundPlayback()) {
+      case BackgroundPlayback.stop:
+        await stop();
+      case BackgroundPlayback.audio:
+      case BackgroundPlayback.pictureInPicture:
+        // The core stays; the display hold does not. Nobody is looking at a
+        // screen that is not on top, and [_release] is guarded, so an engine
+        // holding nothing asks the platform for nothing.
+        await _release();
+    }
+  }
+
   /// Runs [call] and cleans anything it throws back.
   ///
   /// Every plugin call goes through here, not just `play`. An earlier version
@@ -369,10 +465,19 @@ class MpvPlaybackEngine implements PlaybackEngine {
   /// subscription or the controller, so it is guarded by [_awake] and released
   /// as early as the rest of the local bookkeeping rather than reordering
   /// anything that sequence relies on.
+  ///
+  /// The observer removal joins it there, for the same reason and with more at
+  /// stake. `WidgetsBinding.addObserver` appends to a list the binding holds
+  /// for the process's life (`binding.dart:859-878`), so a listener left behind
+  /// is a live reference to a torn-down engine that still answers the next
+  /// `paused` with a platform call.
   @override
   Future<void> dispose() async {
     _loaded = null;
     _reading = false;
+
+    _lifecycle?.dispose();
+    _lifecycle = null;
 
     await _release();
 
