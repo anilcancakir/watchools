@@ -258,6 +258,23 @@ void main() {
       expect(text, contains('bob'));
       expect(text, isNot(contains('s3cret')));
     });
+
+    test('redacts a custom resolver, whose secret can sit in the path', () {
+      // `https://dns.nextdns.io/<profile-id>` is a shape `ResolverSetting`
+      // accepts, and that segment identifies the user. Redacting the whole
+      // value rather than its query is the only rule that does not have to know
+      // which shape it was handed.
+      final String text = _record(resolver: 'https://dns.nextdns.io/abc123').toString();
+
+      expect(text, isNot(contains('abc123')));
+      expect(text, isNot(contains('nextdns')));
+    });
+
+    test('says the resolver is null when it is, rather than redacting nothing', () {
+      // A user who never opened the setting has no resolver, and printing a
+      // redaction there would suggest a value exists.
+      expect(_record().toString(), contains('resolver: null'));
+    });
   });
 
   group('redact', () {

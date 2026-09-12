@@ -386,9 +386,13 @@ rather than because one needs the other's output.
       fluctuates between one and two in BOTH states because a playlist reload and a segment fetch
       are separate contexts that briefly coexist whatever `http_multiple` says; the mock serves
       segments off local disk in milliseconds, so the window the option governs is far below a two
-      second sample. And, found on the way, **the app cannot reach the HLS demuxer at all today**:
-      `Channel` carries no formats and `streamUrlFor` passes no `channelFormats`, so `ts` always
-      wins and a channel whose catalogue entry says `formats: ['m3u8']` still gets a `.ts` URL. The
+      second sample. And, found on the way, **the app ignores the per-channel format list**:
+      `Channel` carries no formats and `streamUrlFor` passes no `channelFormats`, so the account's
+      `allowed_output_formats` decides alone and a channel whose catalogue entry says
+      `formats: ['m3u8']` still gets a `.ts` URL wherever the account also allows `ts`. **A later
+      review corrected this passage**, which first said the app could not reach the HLS demuxer at
+      all: an empty `served` admits everything (`xtream_stream_url.dart:96-98`), so an account whose
+      formats exclude `ts` selects m3u8 today and step 1's option is live rather than latent. The
       option is correct and free; what is unproved is that FFmpeg accepts the inner key. Both
       follow-ups are in Deferred Ideas.
     - **Type**: verification
@@ -509,11 +513,15 @@ only, but it turns a confusing failure into a sentence that names the cause.
 
 **Plumb the per-channel format list through to the URL builder.** `XtreamStreamUrl.live` takes a
 `channelFormats` argument and nothing ever passes one, because `Channel` has no formats field, so
-`served` is always empty and `ts` always wins. The consequence found during step 9: a channel whose
-catalogue entry says `formats: ['m3u8']` is still asked for as `.ts`. On the mock the panel answers
-anyway; a real panel that serves only HLS for that channel would not. This needs a field on
-`Channel`, a column in `CatalogueStore` and the argument at the `streamUrlFor` call site. It is also
-what would make step 1's `http_multiple=0` reachable rather than latent.
+`served` is always empty, so the account's `allowed_output_formats` decides alone. The consequence
+found during step 9: on an account that allows both, a channel whose catalogue entry says
+`formats: ['m3u8']` is still asked for as `.ts`. On the mock the panel answers anyway; a real panel
+that serves only HLS for that channel would not. This needs a field on `Channel`, a column in
+`CatalogueStore` and the argument at the `streamUrlFor` call site.
+
+**Fold it into the variant-ladder plan rather than raising it alone.** That plan has to touch
+`Channel`, the live-entry parser and `provider_session.dart` anyway, so doing this separately pays
+the same three-file cost twice and unblocks nothing in the meantime.
 
 **Make the `http_multiple` claim provable.** Two routes, either of which turns step 9's inconclusive
 attempt into evidence: hold each mock segment response open for a second or two, which widens the

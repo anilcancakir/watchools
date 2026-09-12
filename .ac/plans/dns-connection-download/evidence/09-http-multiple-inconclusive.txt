@@ -12,7 +12,7 @@ is not evidence.
 
 ## What had to be worked around first, and it is a finding of its own
 
-The app could not reach the HLS demuxer at all. `XtreamStreamUrl.live` takes a
+The app ignores the per-channel format list. `XtreamStreamUrl.live` takes a
 `channelFormats` argument, `Channel` carries no formats field, and
 `ProviderSession.streamUrlFor` never passes one, so `served` is always empty,
 `allowed` decides alone, and `ts` leads the preference
@@ -21,9 +21,16 @@ entry is `formats: ['m3u8']`, produced
 
     GET /live/demo/demo/10007.ts
 
-So **step 1's fix is not merely latent for most channels, it is unreachable from
-the app as it stands.** The option is still correct and costs nothing; what is
-missing is the plumbing that would ever select an m3u8 URL.
+CORRECTION, added after a later review. The first version of this section said
+step 1's fix was "unreachable from the app as it stands", and that is wrong.
+`_extension` skips the `served` check entirely when `served` is empty
+(`xtream_stream_url.dart:96-98`), so the ACCOUNT decides: an account whose
+`allowed_output_formats` excludes `ts` selects m3u8 today, with no app change,
+and step 1's option is live for it. The evidence was already in this file, two
+paragraphs down, since narrowing the mock's account is exactly how the HLS path
+was reached. What is genuinely missing is the per-channel plumbing, and it costs
+a channel that serves only m3u8 being asked for as `.ts` on an account that also
+allows `ts`.
 
 To reach the HLS path at all, the mock's account was temporarily narrowed to
 `allowed_output_formats: ['m3u8']` (`server.mjs:174`), which is a legitimate
