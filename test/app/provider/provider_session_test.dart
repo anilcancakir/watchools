@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic/testing.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:watchools/app/models/background_playback.dart';
 import 'package:watchools/app/models/channel.dart';
 import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/models/title_item.dart';
@@ -1056,6 +1057,51 @@ void main() {
 
       await session.adopt(credentials);
       expect(session.channels, isNotEmpty);
+    });
+  });
+
+  group('backgroundPlayback, and the writer that changes it with no handshake', () {
+    test('reads stop before any credential is loaded', () async {
+      Vault.fake();
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      expect(session.backgroundPlayback, BackgroundPlayback.stop);
+    });
+
+    test('setBackgroundPlayback persists the choice and the getter reads it back, with no handshake', () async {
+      await seedCredentials();
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      await session.setBackgroundPlayback(BackgroundPlayback.audio);
+
+      expect(session.backgroundPlayback, BackgroundPlayback.audio);
+      expect((await XtreamCredentials.load())?.backgroundPlayback, 'audio');
+      expect(panel.handshakeCalls, 0);
+    });
+
+    test('reads stop again after signOut()', () async {
+      await seedCredentials();
+      final ProviderSession session = ProviderSession();
+      await session.start();
+      await session.setBackgroundPlayback(BackgroundPlayback.audio);
+      expect(session.backgroundPlayback, BackgroundPlayback.audio);
+
+      await session.signOut();
+
+      expect(session.backgroundPlayback, BackgroundPlayback.stop);
+    });
+
+    test('writes nothing and throws nothing with no credential loaded', () async {
+      Vault.fake();
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      await session.setBackgroundPlayback(BackgroundPlayback.audio);
+
+      expect(session.backgroundPlayback, BackgroundPlayback.stop);
+      expect(await Vault.get(XtreamCredentials.vaultKey), isNull);
     });
   });
 }

@@ -40,3 +40,25 @@
 - **A doc-block sentence that a change falsifies is part of the change.** The class doc said this engine "owns
   no policy the others would have to copy"; the lifecycle branch makes that false, and the worker corrected it
   in the same diff rather than leaving it for a later reader to trip over.
+
+## Wave 3
+
+- **[REMEDIATION] `withBackgroundPlayback` shipped with no test of its own**, because the credential test file
+  was not in the step's Files list. The worker flagged it rather than expanding scope, which is the right
+  call, and the gap was real: dropping `resolver:` from the rebuild turns nothing red without it. Added three
+  cases, the first proved red by dropping exactly that line. Second wave running in a row where a new member
+  went untested because a Files list did not name its test file.
+- **A rebuild-through-the-constructor is a field-dropping bug waiting to happen.** The assertion that matters
+  is not "the new value is set" but "every OTHER field came through", and the one most likely to be dropped is
+  the other optional one, because it is the one a user chose deliberately.
+- **`setBackgroundPlayback` can throw `MagicVaultException`**, since `save()` is a keychain write and macOS
+  refuses it on a build with no entitlement (OSStatus -34018). `submit` already catches it and renders a field
+  message. The picker in the next wave must AWAIT this call and surface a failure rather than fire-and-forget
+  from `onChange`, or a user on a refusing keychain sees the picker move and nothing persist.
+- **The composition root stays untestable on purpose, and that is the argument for keeping it a
+  one-expression delegation.** `app_service_provider.dart` is outside the CI coverage denominator; the wiring
+  is `backgroundPlayback: () => session.backgroundPlayback`, so the behaviour is asserted where it can be, on
+  `ProviderSession.backgroundPlayback` itself. The failure this avoids is the one CLAUDE.md records: two
+  transcriptions of the connection gate drifted apart and deleting a clause of the real gate turned nothing red.
+- **An unused constructor parameter on a test double is an analyzer error here**, `unused_element_parameter`
+  under `--fatal-warnings`. A field default is the shape that satisfies "settable, defaults to X" without one.

@@ -353,7 +353,7 @@ over the store at the composition root. Neither is useful alone.
 
 ### Wave 3: the wiring
 
-- [ ] **Step 3**: Thread the real setting from the vault to the engine
+- [x] **Step 3**: Thread the real setting from the vault to the engine
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-1-cross-layer: five source files across the credential, the composition root, the

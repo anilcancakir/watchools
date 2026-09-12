@@ -103,9 +103,21 @@ class AppServiceProvider extends ServiceProvider {
     // constructor subscribes to the plugin's `EventChannel`. Building one here
     // threw `Binding has not yet been initialized` in every test that boots the
     // providers, the provider driver's own security test included.
+    //
+    // `backgroundPlayback` is a closure over the session for the same reason
+    // `redact` is: the read has to happen when the app is backgrounded rather
+    // than when the engine is built, so a user who changes the setting
+    // mid-session needs no push and the binding order above stays irrelevant.
     final ProviderSession session = Magic.find<ProviderSession>();
 
-    Magic.put(PlaybackController(engine: () => MpvPlaybackEngine(redact: session.redactProviderSecrets)));
+    Magic.put(
+      PlaybackController(
+        engine: () => MpvPlaybackEngine(
+          redact: session.redactProviderSecrets,
+          backgroundPlayback: () => session.backgroundPlayback,
+        ),
+      ),
+    );
 
     // The other half of the same rule as the gate above, from the other
     // direction: a sign-out has to stop the core BEFORE the session forgets the

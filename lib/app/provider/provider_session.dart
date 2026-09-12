@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:magic/magic.dart';
 
+import '../models/background_playback.dart';
 import '../models/channel.dart';
 import '../models/programme.dart';
 import '../models/provider_fault.dart';
@@ -254,6 +255,19 @@ class ProviderSession extends ChangeNotifier {
     return (host: Uri.parse(credentials.baseUrl).host, setting: ResolverSetting.parse(credentials.resolver));
   }
 
+  /// What a playing stream does when the app leaves the foreground, read from
+  /// the loaded credential, or [BackgroundPlayback.stop] before one is loaded.
+  ///
+  /// Public where the credential is not, for the reason [providerResolution]
+  /// is: the field is not a secret and the playback engine has to read it.
+  ///
+  /// Derived here on every read rather than cached, which is what makes
+  /// [signOut] (nulling [_credentials]) return this to [BackgroundPlayback.stop]
+  /// with no push of any kind: unlike [providerResolution], there is no
+  /// `HostResolver`-shaped cache elsewhere in the process for this value to go
+  /// stale in.
+  BackgroundPlayback get backgroundPlayback => BackgroundPlayback.parse(_credentials?.backgroundPlayback);
+
   /// The playable URL for [channel], or null when this session cannot produce
   /// one.
   ///
@@ -395,6 +409,34 @@ class ProviderSession extends ChangeNotifier {
     _channels = _store.channelsFor(account);
     _titles = _store.titlesFor(account);
 
+    notifyListeners();
+  }
+
+  /// Changes what a playing stream does when the app leaves the foreground,
+  /// for the currently loaded credential. A no-op with no credential loaded:
+  /// there is no record to write it onto.
+  ///
+  /// **Deliberately not [adopt].** The only caller of [adopt] is
+  /// [ProviderSetupController.submit], reached after a live panel handshake
+  /// succeeds, and the three credential fields start empty on every open of
+  /// the settings screen. Routing this setting through it would mean a user
+  /// can only change what happens on backgrounding by retyping their base
+  /// URL, username and password and having a reachable, unexpired panel at
+  /// that moment, re-sending their password over what is usually plaintext
+  /// HTTP. A user whose subscription had lapsed could not turn off the thing
+  /// holding their connection.
+  ///
+  /// No handshake, no [adopt], no [refresh], no resolver push: none of them
+  /// depends on this field, and [adopt]'s own doc block lists five things it
+  /// does that this write has no business repeating.
+  Future<void> setBackgroundPlayback(BackgroundPlayback choice) async {
+    final XtreamCredentials? credentials = _credentials;
+    if (credentials == null) return;
+
+    final XtreamCredentials updated = credentials.withBackgroundPlayback(choice.storedValue);
+    await updated.save();
+
+    _credentials = updated;
     notifyListeners();
   }
 

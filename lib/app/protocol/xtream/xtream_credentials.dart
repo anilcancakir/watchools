@@ -118,6 +118,25 @@ class XtreamCredentials {
   /// Writes the record over whatever [vaultKey] held before.
   Future<void> save() => Vault.put(vaultKey, jsonEncode(_toJson()));
 
+  /// A copy of this record with [backgroundPlayback] replaced by [value].
+  ///
+  /// Purpose-named rather than a general `copyWith`: [BackgroundPlayback.stop]
+  /// stores as null (`background_playback.dart:56`), and a `copyWith` taking a
+  /// nullable parameter cannot tell "leave this field alone" from "set it to
+  /// null". [ProviderSession.setBackgroundPlayback] is the one caller.
+  ///
+  /// [baseUrl] passes straight back through the public constructor rather than
+  /// through a private field: [_normaliseBaseUrl] only trims, strips trailing
+  /// slashes and validates, so it is idempotent on a value it already produced.
+  XtreamCredentials withBackgroundPlayback(String? value) => XtreamCredentials(
+    baseUrl: baseUrl,
+    username: username,
+    password: password,
+    userAgent: userAgent,
+    resolver: resolver,
+    backgroundPlayback: value,
+  );
+
   /// A credential handed in at compile time, or null when none was.
   ///
   /// The development way in, and it exists because there is currently **no

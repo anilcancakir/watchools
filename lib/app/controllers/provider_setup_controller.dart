@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:magic/magic.dart';
 
+import '../models/background_playback.dart';
 import '../models/provider_fault.dart';
 import '../network/host_resolver.dart';
 import '../network/resolver_setting.dart';
@@ -51,6 +52,10 @@ abstract interface class ProviderSetupFacade {
   /// override" every time the form reopens.
   ResolverSetting get resolver;
 
+  /// What a playing stream does when the app leaves the foreground, read from
+  /// the loaded credential, or [BackgroundPlayback.stop] before one is loaded.
+  BackgroundPlayback get backgroundPlayback;
+
   /// The resolver's cached answer for the loaded credential's panel host, or
   /// null when nothing has resolved yet, or before a credential is loaded.
   ///
@@ -71,6 +76,11 @@ abstract interface class ProviderSetupFacade {
     required String userAgent,
     String? resolver,
   });
+
+  /// Changes what a playing stream does when the app leaves the foreground.
+  /// No handshake and no panel round trip: see [ProviderSession.setBackgroundPlayback],
+  /// which this delegates to.
+  Future<void> setBackgroundPlayback(BackgroundPlayback choice);
 
   /// Ends playback and forgets the current provider, in that order.
   Future<void> signOut();
@@ -245,6 +255,18 @@ class ProviderSetupController extends SimpleMagicController implements ProviderS
   /// which is exactly [ResolverSetting.system]'s own meaning here.
   @override
   ResolverSetting get resolver => _session.providerResolution?.setting ?? ResolverSetting.system;
+
+  /// Read through to the session for the same reason [resolver] is: it is
+  /// derived from the loaded credential on every read, so a copy held here
+  /// would be stale for exactly as long as it takes a listener to run.
+  @override
+  BackgroundPlayback get backgroundPlayback => _session.backgroundPlayback;
+
+  /// Delegates straight to [ProviderSession.setBackgroundPlayback]. No
+  /// handshake, no [submit]: see that method's own doc block for why this
+  /// setting must not go through the panel.
+  @override
+  Future<void> setBackgroundPlayback(BackgroundPlayback choice) => _session.setBackgroundPlayback(choice);
 
   /// Null before a credential is loaded, for the same reason [resolver]'s
   /// system default is: there is no host yet to ask [HostResolver.cached]

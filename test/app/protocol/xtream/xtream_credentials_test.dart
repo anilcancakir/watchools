@@ -298,6 +298,37 @@ void main() {
     });
   });
 
+  group('withBackgroundPlayback', () {
+    test('replaces the one field and carries every other one through', () {
+      final XtreamCredentials before = _record(resolver: 'cloudflare');
+
+      final XtreamCredentials after = before.withBackgroundPlayback('audio');
+
+      expect(after.backgroundPlayback, 'audio');
+      // The resolver is the field a rebuild is most likely to drop, because it
+      // is the other optional one and it is the one a user paid attention to.
+      expect(after.resolver, 'cloudflare');
+      expect(after.baseUrl, before.baseUrl);
+      expect(after.username, before.username);
+      expect(after.password, before.password);
+      expect(after.userAgent, before.userAgent);
+    });
+
+    test('takes null back, which is what choosing the default writes', () {
+      expect(_record(backgroundPlayback: 'audio').withBackgroundPlayback(null).backgroundPlayback, isNull);
+    });
+
+    test('re-normalising an already-normalised baseUrl leaves it alone', () {
+      // The rebuild goes back through the public constructor, so `baseUrl` is
+      // trimmed and stripped a second time. Idempotent, which is the property
+      // that makes reusing the constructor safe rather than a private field.
+      expect(
+        _record(baseUrl: 'http://panel.example:8080/').withBackgroundPlayback('audio').baseUrl,
+        'http://panel.example:8080',
+      );
+    });
+  });
+
   group('toString', () {
     test('names the provider and the user, and redacts the password', () {
       final String text = _record().toString();

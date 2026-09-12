@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluttersdk_wind/fluttersdk_wind.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
+import 'package:watchools/app/models/background_playback.dart';
 import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/ui/components/provider_notice/provider_notice.dart';
@@ -44,9 +45,14 @@ class _FakeProvider implements ProviderSetupFacade {
   ResolverSetting resolver;
 
   @override
+  BackgroundPlayback backgroundPlayback = BackgroundPlayback.stop;
+
+  @override
   String? resolvedAddress;
 
   int signOuts = 0;
+
+  int backgroundPlaybackSets = 0;
 
   ({String baseUrl, String username, String password, String userAgent, String? resolver})? submitted;
 
@@ -79,6 +85,12 @@ class _FakeProvider implements ProviderSetupFacade {
 
   @override
   Future<void> signOut() async => signOuts++;
+
+  @override
+  Future<void> setBackgroundPlayback(BackgroundPlayback choice) async {
+    backgroundPlaybackSets++;
+    backgroundPlayback = choice;
+  }
 }
 
 void main() {
