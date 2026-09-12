@@ -1,0 +1,102 @@
+Step 6, the dusk walk over /saglayici
+Worktree: /Users/anilcan/Code/watchools/.claude/worktrees/playback-lifecycle
+Date: 2026-09-13
+HEAD at walk time: bcf7707
+
+WHAT THE PLAN EXPECTED, AND WHAT ACTUALLY HAPPENED
+
+The plan said the vault round trip would probably have to be recorded NOT RUN, because `.env.local` is
+absent from this worktree and `ProviderSetupController.submit` stores only past a live panel handshake.
+
+It ran in full. The repository ships its own Xtream panel (`tool/xtream-mock/`), so the walk went against
+`http://127.0.0.1:3300` with the demo credential and cost the real subscription NOTHING. Zero requests
+reached any real provider. The mock's log recorded 30 `player_api.php` requests, which is what proves the
+app was reading a catalogue rather than the fixture.
+
+SETUP
+
+  $ node tool/xtream-mock/encode.mjs        # media/ was missing; ~4 s, gitignored, 48 MB
+  $ node tool/xtream-mock/server.mjs        # http://127.0.0.1:3300
+  $ curl .../player_api.php?username=demo&password=demo
+    {"user_info":{...,"auth":1,"status":"Active","max_connections":"2",...}}
+
+  $ ./bin/fsa start --device macos --vm-service-port 8199 \
+      --flutter-arg=--dart-define=XTREAM_BASE_URL=http://127.0.0.1:3300 \
+      --flutter-arg=--dart-define=XTREAM_USERNAME=demo \
+      --flutter-arg=--dart-define=XTREAM_PASSWORD=demo
+    flutter run pid=97209
+
+  The defines reach the app through `XtreamCredentials.fromEnvironment`, which is debug-only and fires only
+  when the Vault is empty. It was: `security find-generic-password` found no credential under
+  `xtream_credentials`, `com.watchools.app` or that account name. Checked BEFORE starting the app, because
+  a stored real credential would have made the launch fire a catalogue refresh at the user's own panel, and
+  the standing instruction on that subscription is to spare it.
+
+1. THE PICKER RENDERS, AND THE HONESTY NOTE WITH IT
+
+  $ ./bin/fsa dusk:navigate --route /saglayici
+  $ ./bin/fsa dusk:tap --ref e5                    # "Gelişmiş ayarlar"
+  $ ./bin/fsa dusk:snap
+
+    - text "Uygulama arka plana alındığında"
+      - button "Arka plan davranışını seçin" [ref=e12]
+        - button "Durdur" [ref=e13]
+    - text "Durdur seçeneği her platformda çalışır. Sesi sürdür ve resim içinde resim, bağlantıyı açık
+      tutmayı hedefler ama platform tarafı henüz hiçbir cihazda tamamlanmadı: bu yüzden macOS'ta uygulama
+      bu ikisinde de oynatmaya devam eder, mobilde ise şu anda ikisi de aynı şekilde davranır, yalnızca
+      bağlantıyı açık tutar."
+
+  Default is `Durdur`. The Turkish placeholder is what the semantics label reads, which is the reason
+  `WFormSelect` is given one: `WSelect` prefers it over the selected option's label and its own default is
+  the English "Select an option".
+
+  Screenshot: evidence/06-picker.png
+
+2. ALL THREE OPTIONS ARE OFFERED, INCLUDING THE ONE NO PLATFORM CAN HONOUR
+
+  $ ./bin/fsa dusk:tap --ref e12
+
+    - button "Durdur" [ref=e15]
+    - button "Sesi sürdür" [ref=e16]
+    - button "Resim içinde resim" [ref=e17]
+
+3. THE ROUND TRIP, AND KAYDET WAS NEVER PRESSED
+
+  $ ./bin/fsa dusk:tap --ref e16                   # "Sesi sürdür"
+    picker reads "Sesi sürdür", no error banner
+
+  No "Kaydet" tap, deliberately. That is the whole claim of step 3 and step 4: this setting writes on
+  change through `ProviderSession.setBackgroundPlayback`, with no panel handshake and no `submit`.
+
+  $ ./bin/fsa stop                                 # SIGTERM to pid=97209, state.json removed
+  $ ./bin/fsa start --device macos ...             # cold process, pid=3517
+  $ ./bin/fsa dusk:navigate --route /saglayici
+  $ ./bin/fsa dusk:tap --ref e5
+  $ ./bin/fsa dusk:snap
+
+    - text "Uygulama arka plana alındığında"
+      - button "Arka plan davranışını seçin" [ref=e12]
+        - button "Sesi sürdür" [ref=e13]
+
+  The choice survived a full process restart, read back out of the Vault by `XtreamCredentials.load()` and
+  parsed by `BackgroundPlayback.parse`. A different pid, so this is not a hot reload holding state.
+
+  Screenshot: evidence/06-picker-after-restart.png
+
+4. NOTHING THREW
+
+  $ ./bin/fsa dusk:exceptions
+    {"exceptions":[],"count":0}
+
+  Checked before the restart and after it.
+
+WHAT THIS WALK STILL CANNOT PROVE
+
+The `paused` branch itself. macOS never delivers `AppLifecycleState.paused`
+(`sky_engine/lib/ui/platform_dispatcher.dart:2444`) and no mobile target is wired, so no running app in this
+repository can exercise it. The seven cases in `test/app/playback/mpv_playback_engine_test.dart` are the
+entire assurance for that half, which is why step 2 was tiered `senior`.
+
+The `hasCredential == false` branch was also not walked: reaching it would mean signing out of the mock,
+which is a different screen state than the one under test here. It is covered by the widget test "is absent
+when there is no credential to write to".

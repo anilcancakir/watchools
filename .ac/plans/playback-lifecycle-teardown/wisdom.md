@@ -92,3 +92,24 @@
   cost four lines and the retry did not repeat the failure.
 - **`git diff --stat` is the cheap check that a prose worker only ADDED.** 15 insertions, 0 deletions is the
   whole proof that nothing surrounding was reflowed, which is the failure mode a documentation edit has.
+
+## Wave 6
+
+- **The walk the plan expected to skip actually ran, and cost the real subscription nothing.** The plan said
+  the vault round trip would have to be recorded NOT RUN because `.env.local` is absent. The repository ships
+  its own Xtream panel (`tool/xtream-mock/`), so the walk went against `127.0.0.1:3300` with `demo/demo` and
+  proved the whole path. Read the repo's own tooling before recording a verification as impossible.
+- **Check the keychain BEFORE starting the app against a real-credential build.** `security
+  find-generic-password -s xtream_credentials` was empty, which is what made it safe to launch: a stored
+  credential would have made the launch fire a catalogue refresh at the user's own panel, and the standing
+  instruction on that subscription is to spare it. The `--dart-define` path only wins when the Vault is empty,
+  so an occupied Vault silently changes what the walk is testing AND who it is testing it against.
+- **The mock refuses to start without `media/`**, which `node tool/xtream-mock/encode.mjs` generates in about
+  four seconds from ffmpeg. Gitignored, 48 MB, no network.
+- **Not pressing Kaydet is the assertion.** The round trip was: change the picker, never submit, SIGTERM the
+  process, start a new one, reopen the screen, read the value back. A different pid is what makes it a vault
+  read rather than retained state.
+- **A macOS run leaves two untracked `Package.resolved` files** under
+  `macos/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/` and `macos/Runner.xcworkspace/...`.
+  `.gitignore:12` ignores `.swiftpm/` with a leading dot, which does not match these. Removed rather than
+  committed: whether to pin Swift package versions is a project decision, not this plan's.

@@ -583,7 +583,7 @@ over the store at the composition root. Neither is useful alone.
 
 ### Wave 6: the gates
 
-- [ ] **Step 6**: Run every gate and prove the branch on a real app
+- [x] **Step 6**: Run every gate and prove the branch on a real app
     - **Type**: verification
     - **Files**: (no source edits; runs commands)
     - **Description**:

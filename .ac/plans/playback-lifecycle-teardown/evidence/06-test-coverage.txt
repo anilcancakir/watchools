@@ -1,0 +1,3 @@
+Wind alias 'text-focus-ring' shadows a built-in token; the built-in is now unreachable.
+Wind alias 'bg-focus-ring' shadows a built-in token; the built-in is now unreachable.
+00:25 +688 ~1: All tests passed!
