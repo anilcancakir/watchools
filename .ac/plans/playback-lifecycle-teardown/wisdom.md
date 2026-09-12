@@ -62,3 +62,20 @@
   transcriptions of the connection gate drifted apart and deleting a clause of the real gate turned nothing red.
 - **An unused constructor parameter on a test double is an analyzer error here**, `unused_element_parameter`
   under `--fatal-warnings`. A field default is the shape that satisfies "settable, defaults to X" without one.
+
+## Wave 4
+
+- **The honesty line shipped and it is checkable.** `_backgroundPlaybackScope` says stop works everywhere,
+  and that audio and picture-in-picture aim to keep the connection open but the platform half is finished on
+  no device, so macOS keeps playing either way and mobile treats the two identically today. The test greps
+  `'platform tarafı'`, so deleting the sentence turns a test red rather than quietly shipping a lie.
+- **An async `onChange` needs an extra `pump()` past `pumpAndSettle()`.** The handler awaits the facade, so
+  the state it writes back (a revert, or the recorded write) lands a microtask after the tap that
+  `pumpAndSettle` alone does not guarantee to flush. The test file's own helper records this.
+- **The refusal path renders through a seam that already existed.** `fieldError` at
+  `provider_settings_layout.dart:232` is `_localFieldError ?? widget.provider.fieldError`, so a screen-local
+  refusal reaches the same banner a facade refusal does, with nothing new built.
+- **[MINOR, not fixed] The honesty note is wrapped in a `WDiv(className: 'flex flex-col gap-1')` holding a
+  single `WText`.** `gap-1` does nothing with one child. It mirrors `_resolverScopeNote`, which has a
+  conditional second child and needs the wrapper; this one does not. Cosmetic, left alone deliberately rather
+  than diverging from the sibling shape for one line.

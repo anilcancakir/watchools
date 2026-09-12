@@ -1,0 +1,47 @@
+=== flutter test test/ui/layouts/provider_settings_layout_test.dart ===
+00:02 +35: All tests passed!
+
+=== flutter test test/ui/ ===
+00:07 +173: All tests passed!
+
+=== flutter analyze --fatal-infos --fatal-warnings ===
+Analyzing playback-lifecycle...
+No issues found! (ran in 4.6s)
+
+=== rg -n 'BackgroundPlayback' lib/ui/layouts/provider_settings_layout.dart ===
+144:  /// [BackgroundPlayback.pictureInPicture] reads as a shipped feature and
+145:  /// behaves as [BackgroundPlayback.audio]. Waves 1 to 3 built the storage, the
+184:  /// same way [_resolverChoice] is: a fresh install reads [BackgroundPlayback.
+187:  /// what keeps a user who already chose [BackgroundPlayback.audio] from
+189:  late BackgroundPlayback _backgroundPlayback;
+467:  /// setBackgroundPlayback] returns early on a null credential), and a control
+479:  /// the user just configured. [_changeBackgroundPlayback] writes straight to
+480:  /// [ProviderSetupFacade.setBackgroundPlayback] instead, which needs no
+486:        WFormSelect<BackgroundPlayback>(
+488:          options: const <SelectOption<BackgroundPlayback>>[
+489:            SelectOption(value: BackgroundPlayback.stop, label: 'Durdur'),
+490:            SelectOption(value: BackgroundPlayback.audio, label: 'Sesi sürdür'),
+491:            SelectOption(value: BackgroundPlayback.pictureInPicture, label: 'Resim içinde resim'),
+493:          onChange: _changeBackgroundPlayback,
+514:  /// setBackgroundPlayback] is a `Vault.put`, and a build with no
+526:  Future<void> _changeBackgroundPlayback(BackgroundPlayback? value) async {
+529:    final BackgroundPlayback previous = _backgroundPlayback;
+536:      await widget.provider.setBackgroundPlayback(value);
+
+=== rg -n -A8 'WFormSelect<BackgroundPlayback>' lib/ui/layouts/provider_settings_layout.dart | rg -c 'onSaved' ===
+0 (no matches, exit code 1 from rg -c is the expected zero-count result)
+
+=== TDD discriminating proofs (each broken on purpose, watched red, then reverted) ===
+1. Seeding: `_backgroundPlayback = widget.provider.backgroundPlayback;` replaced with a literal
+   `BackgroundPlayback.stop;`. Test `a fake reporting audio seeds the picker to audio` failed:
+   Expected: BackgroundPlayback:<BackgroundPlayback.audio>
+   Actual: BackgroundPlayback:<BackgroundPlayback.stop>
+   Reverted; suite green again.
+
+2. Submit isolation: `_changeBackgroundPlayback` given an extra
+   `await widget.provider.submit(baseUrl: _baseUrl, username: _username, password: _password, userAgent: '');`
+   after the successful `setBackgroundPlayback` call. Test
+   `changing the picker calls setBackgroundPlayback and never submit` failed on `expect(provider.submits, 0)`:
+   Actual: <1>
+   Reverted; suite green again.
+</content>

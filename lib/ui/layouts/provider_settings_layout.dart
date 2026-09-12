@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../../app/controllers/provider_setup_controller.dart';
+import '../../app/models/background_playback.dart';
 import '../../app/models/provider_fault.dart';
 import '../../app/network/resolver_setting.dart';
 import '../components/provider_notice/provider_notice.dart';
@@ -136,6 +137,32 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
       'panelinki de dahil, o yüzden katalog açıldığı hâlde bir kanal yine de '
       'açılmayabilir.';
 
+  /// What the background playback picker can honestly promise today.
+  ///
+  /// Stated rather than left implied, because an option that silently behaves
+  /// as another is worse than no option at all: without this sentence,
+  /// [BackgroundPlayback.pictureInPicture] reads as a shipped feature and
+  /// behaves as [BackgroundPlayback.audio]. Waves 1 to 3 built the storage, the
+  /// engine's lifecycle branch and a writer, none of it the platform half: on
+  /// macOS the core keeps playing regardless of the choice, and on mobile the
+  /// two non-stop choices currently do the same thing, keep the connection
+  /// open.
+  static const String _backgroundPlaybackScope =
+      'Durdur seçeneği her platformda çalışır. Sesi sürdür ve resim içinde '
+      'resim, bağlantıyı açık tutmayı hedefler ama platform tarafı henüz '
+      'hiçbir cihazda tamamlanmadı: bu yüzden macOS\'ta uygulama bu ikisinde '
+      'de oynatmaya devam eder, mobilde ise şu anda ikisi de aynı şekilde '
+      'davranır, yalnızca bağlantıyı açık tutar.';
+
+  /// What the picker says when the vault refused to store the choice just
+  /// made. A separate sentence from [ProviderSetupController._storeRefused]
+  /// on purpose: that one belongs to the credential form and describes a
+  /// panel that already said yes, while this field never talks to the panel
+  /// at all.
+  static const String _backgroundPlaybackStoreRefused =
+      'Bu tercih cihazın güvenli deposuna yazılamadı, önceki seçim geçerliliğini '
+      'korudu.';
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final FocusNode _userAgentFocusNode;
@@ -152,6 +179,14 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
   /// for why this pair is the one exception to it.
   late ResolverChoice _resolverChoice;
   late String _customResolver;
+
+  /// The background playback picker's own state, seeded in [initState] the
+  /// same way [_resolverChoice] is: a fresh install reads [BackgroundPlayback.
+  /// stop] from a credential that never set the field, so seeding from
+  /// [ProviderSetupFacade.backgroundPlayback] rather than a literal default is
+  /// what keeps a user who already chose [BackgroundPlayback.audio] from
+  /// seeing the picker silently reset on reopen.
+  late BackgroundPlayback _backgroundPlayback;
 
   /// A refusal this screen decided for itself, rather than one the facade
   /// reported back from a handshake.
@@ -178,6 +213,8 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
     final ResolverSetting seeded = widget.provider.resolver;
     _resolverChoice = seeded.choice;
     _customResolver = seeded.customValue ?? '';
+
+    _backgroundPlayback = widget.provider.backgroundPlayback;
   }
 
   @override
@@ -238,6 +275,7 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
                   if (_advancedOpen) _userAgentField(),
                   if (_advancedOpen) _resolverField(),
                   if (_advancedOpen) _resolverScopeNote(),
+                  if (_advancedOpen && widget.provider.hasCredential) _backgroundPlaybackField(),
                   if (fieldError != null) _fieldErrorBanner(fieldError),
                   // The two faults whose recovery is the credential itself
                   // never render as a panel HERE, because on this screen the
@@ -421,6 +459,89 @@ class _ProviderSettingsLayoutState extends State<ProviderSettingsLayout> {
         const WText(_resolverScope, className: 'text-xs text-fg-muted'),
       ],
     );
+  }
+
+  /// The background playback picker, behind the disclosure and hidden until
+  /// [ProviderSetupFacade.hasCredential], beside [_resolverField]: there is
+  /// nothing to write to before a credential exists ([ProviderSession.
+  /// setBackgroundPlayback] returns early on a null credential), and a control
+  /// that accepts a choice and discards it is the exact failure this field
+  /// exists to avoid.
+  ///
+  /// `onChange` rather than `onSaved`, and this field parts company with
+  /// every other field on this screen further than [_resolverField] does: it
+  /// never touches [_submit] at all. [ProviderSetupController.submit] only
+  /// stores after a live panel handshake, and the three credential fields
+  /// start empty on every open of this screen (see the class doc block and
+  /// [initState]), so a setting that rode `submit` could only be changed by a
+  /// user who retyped their whole credential against a reachable panel.
+  /// `_handleSubmit` also navigates away on success, closing the very screen
+  /// the user just configured. [_changeBackgroundPlayback] writes straight to
+  /// [ProviderSetupFacade.setBackgroundPlayback] instead, which needs no
+  /// handshake and no panel.
+  Widget _backgroundPlaybackField() {
+    return WDiv(
+      className: 'w-full flex flex-col gap-4',
+      children: <Widget>[
+        WFormSelect<BackgroundPlayback>(
+          value: _backgroundPlayback,
+          options: const <SelectOption<BackgroundPlayback>>[
+            SelectOption(value: BackgroundPlayback.stop, label: 'Durdur'),
+            SelectOption(value: BackgroundPlayback.audio, label: 'Sesi sürdür'),
+            SelectOption(value: BackgroundPlayback.pictureInPicture, label: 'Resim içinde resim'),
+          ],
+          onChange: _changeBackgroundPlayback,
+          label: 'Uygulama arka plana alındığında',
+          labelClassName: _labelClassName,
+          // Turkish, explicit, for the same reason the resolver picker's own
+          // placeholder is: `WSelect`'s semantics label always prefers this
+          // over the selected option's label (`w_select.dart:517-529`).
+          placeholder: 'Arka plan davranışını seçin',
+          className: _fieldClassName,
+        ),
+        const WDiv(
+          className: 'flex flex-col gap-1',
+          children: <Widget>[WText(_backgroundPlaybackScope, className: 'text-xs text-fg-muted')],
+        ),
+      ],
+    );
+  }
+
+  /// Writes [value] to the facade the moment the picker changes, and reverts
+  /// on a refusal.
+  ///
+  /// Awaited rather than fired and forgotten: [ProviderSetupFacade.
+  /// setBackgroundPlayback] is a `Vault.put`, and a build with no
+  /// `keychain-access-groups` entitlement fails it with OSStatus -34018,
+  /// wrapped as [MagicVaultException] (`provider_setup_controller.dart:
+  /// 360-363`). Left unawaited, this callback would leave the user watching
+  /// the picker move while nothing persisted, with the exception landing in
+  /// the zone as an unhandled error.
+  ///
+  /// [MagicVaultException] alone is caught, nothing wider: any other
+  /// exception is a bug this screen has no vocabulary for and should not
+  /// pretend to. On that one refusal the picker is set back to [previous],
+  /// because the stored value did not change and a picker showing a choice
+  /// the vault refused is the exact lie this whole feature exists to avoid.
+  Future<void> _changeBackgroundPlayback(BackgroundPlayback? value) async {
+    if (value == null) return;
+
+    final BackgroundPlayback previous = _backgroundPlayback;
+    setState(() {
+      _backgroundPlayback = value;
+      _localFieldError = null;
+    });
+
+    try {
+      await widget.provider.setBackgroundPlayback(value);
+    } on MagicVaultException {
+      if (!mounted) return;
+
+      setState(() {
+        _backgroundPlayback = previous;
+        _localFieldError = _backgroundPlaybackStoreRefused;
+      });
+    }
   }
 
   /// The one thing a client that cannot fix the transport can honestly say.

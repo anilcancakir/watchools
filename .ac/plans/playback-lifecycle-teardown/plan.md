@@ -472,7 +472,7 @@ over the store at the composition root. Neither is useful alone.
 
 ### Wave 4: the screen
 
-- [ ] **Step 4**: Put the three options on the settings screen, with the platform truth beside them
+- [x] **Step 4**: Put the three options on the settings screen, with the platform truth beside them
     - **Type**: code
     - **Tier**: junior-high
     - **Why this tier**: rule-4-detail: the picker is mechanical, and the form-state trap it has to avoid is one
