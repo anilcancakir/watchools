@@ -9,7 +9,23 @@ import 'host_resolver.dart';
 /// no-op. [panelHost] is a callback rather than a value because the override
 /// lives for the process while the credential under it can be replaced.
 void installResolvingHttpOverrides({required HostResolver resolver, required String? Function() panelHost}) {
-  HttpOverrides.global = ResolvingHttpOverrides(resolver: resolver, panelHost: panelHost);
+  HttpOverrides.global = ResolvingHttpOverrides(
+    resolver: resolver,
+    panelHost: panelHost,
+    // Whatever was already installed, kept rather than replaced. Null in the
+    // app, because nothing else installs one; not null under a test binding
+    // that put its own there. See [ResolvingHttpOverrides.inner].
+    //
+    // A previous layer of our own is UNWRAPPED rather than kept, so a second
+    // call replaces it instead of stacking on it. Stacking would leave the
+    // older layer holding a `panelHost` closure over a `ProviderSession` the
+    // second call has already replaced, and every request would then walk a
+    // chain that grows by one on each install.
+    inner: switch (HttpOverrides.current) {
+      final ResolvingHttpOverrides ours => ours.inner,
+      final HttpOverrides? other => other,
+    },
+  );
 }
 
 /// Connects the user's panel through the address [HostResolver] chose, and
@@ -64,11 +80,26 @@ class ResolvingHttpOverrides extends HttpOverrides {
   /// can replace the credential at any point in the process's life.
   final String? Function() panelHost;
 
-  ResolvingHttpOverrides({required this.resolver, required this.panelHost});
+  /// Whatever was installed before this one, or null.
+  ///
+  /// This class composes rather than replaces, and the reason is a failure
+  /// mode that is quiet rather than loud. `flutter_test`'s binding installs an
+  /// override whose client answers every request with a canned 400, which is
+  /// what keeps a test suite off the network. Taking `super.createHttpClient`
+  /// as the base threw that away for the rest of the isolate, so a widget test
+  /// that booted the composition root and rendered a network image would make
+  /// a REAL outbound request and go green. A test that fails is doing its job;
+  /// one that silently reaches the internet is not.
+  ///
+  /// Null in the app, where nothing else installs an override, so production
+  /// behaviour is byte for byte what `super` gave before.
+  final HttpOverrides? inner;
+
+  ResolvingHttpOverrides({required this.resolver, required this.panelHost, this.inner});
 
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    final HttpClient client = super.createHttpClient(context);
+    final HttpClient client = inner?.createHttpClient(context) ?? super.createHttpClient(context);
 
     // Captured per client rather than read off a field: a caller that built its
     // client with its own [SecurityContext] (a pinned root, a client

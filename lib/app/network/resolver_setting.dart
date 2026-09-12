@@ -137,9 +137,24 @@ class ResolverSetting {
     return _validIpLiteral(trimmed) ? trimmed : null;
   }
 
-  /// Whether [candidate] is an `https` URL with a non-empty host. The host
-  /// itself may be a hostname here: the endpoint is what the user typed
-  /// rather than what a bootstrap resolver would have to look up.
+  /// Whether [candidate] is an `https` URL with a non-empty host.
+  ///
+  /// The host inside it may be a hostname, unlike a bare custom value, which
+  /// [_normaliseCustom] refuses when it is one. The asymmetry is deliberate and
+  /// an earlier version of this comment justified it wrongly, by saying the
+  /// endpoint is "what the user typed rather than what a bootstrap resolver
+  /// would have to look up". It is both: `DohHostLookup` opens an `HttpClient`
+  /// against this host, so a hostname here IS looked up by the system resolver
+  /// first, and the two endpoints this app ships (`cloudflare-dns.com`,
+  /// `dns.google`) are hostnames. What the refusal on a BARE value prevents is
+  /// narrower and still worth it: a bare hostname would be the whole setting,
+  /// leaving the ladder with nothing but a name it cannot resolve when the
+  /// system resolver is the thing that is broken.
+  ///
+  /// A user facing a wholesale hijack has an escape and it is measured rather
+  /// than assumed: `https://1.1.1.1/dns-query` and `https://8.8.8.8/resolve`
+  /// both answered 200 with a valid chain from Dart's own TLS on 2026-09-12,
+  /// so an IP-literal endpoint needs no name resolved at all.
   static bool _validHttpsUrl(String candidate) {
     final Uri? parsed = Uri.tryParse(candidate);
 
@@ -211,6 +226,25 @@ class ResolverSetting {
   @override
   int get hashCode => Object.hash(choice, customValue);
 
+  /// Names the choice and redacts a custom literal.
+  ///
+  /// `XtreamCredentials.toString()` redacts the resolver, and redacting it
+  /// there alone was not enough: this type is reachable on its own through
+  /// `ProviderSession.providerResolution` and `ProviderSetupFacade.resolver`,
+  /// so a value type printed by an assertion failure or an IDE inspector would
+  /// have carried the literal anyway. A custom endpoint can identify the user
+  /// in its path, `https://dns.nextdns.io/<profile-id>` being the shape this
+  /// class accepts, so the whole literal goes rather than its query.
+  ///
+  /// The three named choices print as themselves. `cloudflare` is not a secret
+  /// and a debug line that cannot tell them apart is worth less than one that
+  /// can.
   @override
-  String toString() => 'ResolverSetting(choice: $choice, customValue: $customValue)';
+  String toString() =>
+      'ResolverSetting(choice: $choice, '
+      'customValue: ${customValue == null ? null : _redaction})';
+
+  /// What a custom literal prints as, matching `XtreamCredentials`'s own
+  /// redaction so the two read alike in one log line.
+  static const String _redaction = '***';
 }

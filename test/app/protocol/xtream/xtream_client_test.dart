@@ -134,9 +134,37 @@ class _RawPanel {
 }
 
 void main() {
+  /// Whatever was installed before a test in this file booted the real service
+  /// provider, put back afterwards.
+  ///
+  /// `AppServiceProvider.register()` assigns `HttpOverrides.global`, and five
+  /// tests below call it. Without this the last one leaves a live override
+  /// installed for the rest of the isolate, holding a `panelHost` closure over
+  /// a `ProviderSession` that `MagicApp.reset()` has since thrown away.
+  ///
+  /// **No mock binding is involved here, and an earlier version of this comment
+  /// said there was.** This file never calls `ensureInitialized()` and runs no
+  /// widget test, so `flutter_test`'s network-blocking override is not
+  /// installed in this isolate at all; the loopback tests below would answer
+  /// 400 and fail if it were. That hazard is real, and it belongs to a widget
+  /// test that boots the composition root, which is covered at
+  /// `test/app/providers/app_service_provider_test.dart`. What this guards is
+  /// the narrower thing: the global, put back the way it was found.
+  ///
+  /// `HttpOverrides` exposes `global` as a setter only, so what is put back is
+  /// what `current` reads. Identical outside a zone that installed its own, and
+  /// this file installs none.
+  HttpOverrides? previousOverrides;
+
   setUp(() {
+    previousOverrides = HttpOverrides.current;
+
     MagicApp.reset();
     Magic.flush();
+  });
+
+  tearDown(() {
+    HttpOverrides.global = previousOverrides;
   });
 
   // ---------------------------------------------------------------------------

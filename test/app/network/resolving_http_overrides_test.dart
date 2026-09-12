@@ -375,6 +375,27 @@ void main() {
       expect(system.calls, isEmpty, reason: 'no panel to pin, so the resolver is never consulted');
     });
 
+    test('a second install replaces our layer rather than stacking on it', () async {
+      final (HostResolver first, _) = resolverAnswering('203.0.113.5');
+      final (HostResolver second, _) = resolverAnswering('203.0.113.6');
+
+      final HttpOverrides? before = HttpOverrides.current;
+
+      installResolvingHttpOverrides(resolver: first, panelHost: () => null);
+      installResolvingHttpOverrides(resolver: second, panelHost: () => null);
+
+      final HttpOverrides? installed = HttpOverrides.current;
+
+      expect(installed, isA<ResolvingHttpOverrides>());
+      expect((installed! as ResolvingHttpOverrides).resolver, same(second));
+
+      // The first layer is gone rather than wrapped. Stacking would leave it
+      // holding a `panelHost` closure over a session the second call already
+      // replaced, and the chain would grow by one on every install.
+      expect((installed as ResolvingHttpOverrides).inner, same(before));
+      expect(installed.inner, isNot(isA<ResolvingHttpOverrides>()));
+    });
+
     test('does not pin the resolver own DoH endpoint, which would re-enter forever', () async {
       final _RawPanel panel = await _RawPanel.start();
       addTearDown(panel.close);

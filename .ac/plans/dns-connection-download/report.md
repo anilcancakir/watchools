@@ -79,10 +79,21 @@ Step 9's runtime demonstration that FFmpeg accepts `http_multiple=0` was attempt
 failed to discriminate. `evidence/09-http-multiple-inconclusive.txt` carries it. Two findings came
 out of the attempt:
 
-- **The app cannot reach the HLS demuxer at all today.** `Channel` carries no formats and
-  `streamUrlFor` passes no `channelFormats`, so `ts` always wins and a channel whose catalogue entry
-  says `formats: ['m3u8']` is still requested as `.ts`. Step 1's option is correct and free, and
-  fully latent until that is plumbed.
+- **The app ignores the per-channel format list, and this paragraph first said something stronger
+  and wrong.** `Channel` carries no formats and `streamUrlFor` passes no `channelFormats`, so the
+  ACCOUNT's `allowed_output_formats` decides alone: an empty `served` admits everything
+  (`xtream_stream_url.dart:96-98`). What that costs is a channel whose catalogue entry says
+  `formats: ['m3u8']` being requested as `.ts` on an account that also allows `ts`, which a real
+  panel may refuse. What it does NOT mean, which the first version of this claimed, is that the app
+  cannot reach the HLS demuxer at all: on an account whose formats exclude `ts`, m3u8 is selected
+  today and step 1's option is live rather than latent. The evidence for the correction was already
+  in this plan, since the way the runtime attempt reached real HLS was by narrowing the mock's
+  account with no app change at all. **On the one real subscription this project has measured, that
+  condition does not hold**: it reports `allowed_output_formats: ["m3u8", "ts"]`
+  (`.ac/plans/playback-layer-watchools-playbackengine-interface/research/explore-existing-player-research.md:83`),
+  so `ts` wins for that account and step 1 stays latent there until the per-channel plumbing lands.
+  The option is live for an m3u8-only account and latent for the account we can actually observe,
+  which is the honest shape of it.
 - **The instrument was too coarse.** With the mock narrowed to an m3u8-only account, real HLS flowed,
   but concurrent TCP connections fluctuate between one and two in BOTH states, because a playlist
   reload and a segment fetch briefly coexist regardless. The mock serves segments in milliseconds, so

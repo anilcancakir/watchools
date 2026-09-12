@@ -382,15 +382,33 @@ class XtreamCredentials {
   @override
   int get hashCode => Object.hash(baseUrl, username, password, userAgent, resolver);
 
-  /// Names the provider and the user, and redacts the password.
+  /// Names the provider and the user, and redacts the password and the
+  /// resolver.
   ///
   /// A value type's `toString` is what an assertion failure, a `Log` line and
   /// an IDE inspector all print, so this is the reason the password is not
   /// interpolated anywhere in this class.
+  ///
+  /// [resolver] joins it, at the whole value rather than at its query. A named
+  /// choice (`cloudflare`) is not a secret, but a custom endpoint can be one in
+  /// its PATH rather than after the `?`: `https://dns.nextdns.io/<profile-id>`
+  /// is a shape [ResolverSetting] accepts and that segment identifies the user.
+  /// Redacting the whole value is the only rule that does not have to know
+  /// which shape it was handed, and what it costs is a debug line that says
+  /// less about a setting nobody debugs from a `toString`.
+  ///
+  /// **Not added to [redact], deliberately.** That helper exists for mpv's log
+  /// lines, and mpv never sees a resolver: the ladder runs in Dart, over the
+  /// app's own HTTP client. The only other interpolation is
+  /// `HostLookupException`, which `HostResolver` catches and drops without
+  /// logging. Adding a third secret to the loop would defend a path that does
+  /// not exist, and would do it badly, because a short literal like `1.1.1.1`
+  /// would start rewriting any log line that happened to contain it.
   @override
   String toString() =>
       'XtreamCredentials(baseUrl: $baseUrl, username: $username, '
-      'password: $_redaction, userAgent: $userAgent, resolver: $resolver)';
+      'password: $_redaction, userAgent: $userAgent, '
+      'resolver: ${resolver == null ? null : _redaction})';
 
   /// The wire shape stored under [vaultKey].
   ///
