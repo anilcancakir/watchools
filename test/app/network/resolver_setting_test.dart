@@ -102,4 +102,23 @@ void main() {
       expect(ResolverSetting.system.dohEndpoint, isNull);
     });
   });
+
+  group('toString', () {
+    test('redacts a custom literal, whose secret can sit in the path', () {
+      // Redacting this only on `XtreamCredentials` was not enough: this type is
+      // reachable on its own through `ProviderSession.providerResolution` and
+      // `ProviderSetupFacade.resolver`, so a value type printed by an assertion
+      // failure would have carried the literal anyway.
+      final String text = ResolverSetting.parse('https://dns.nextdns.io/abc123').toString();
+
+      expect(text, isNot(contains('abc123')));
+      expect(text, isNot(contains('nextdns')));
+      expect(text, contains('custom'), reason: 'the choice itself is not a secret and is worth printing');
+    });
+
+    test('prints a named choice as itself, because none of them is a secret', () {
+      expect(ResolverSetting.cloudflare.toString(), contains('cloudflare'));
+      expect(ResolverSetting.system.toString(), contains('customValue: null'));
+    });
+  });
 }

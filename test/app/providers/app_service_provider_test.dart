@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
+import 'package:watchools/app/network/resolving_http_overrides.dart';
 import 'package:watchools/app/providers/app_service_provider.dart';
 
 /// A host that cannot resolve, anywhere, ever.
@@ -52,6 +53,13 @@ void main() {
       // escapes. A mocked stack answers with a status code; a real one cannot
       // resolve `.invalid` and throws.
       AppServiceProvider(Magic.app).register();
+
+      // The positive half. Without it this test passes unchanged on the day
+      // somebody deletes the install entirely, because "the binding still
+      // answers 400" is exactly what a process with no override of ours looks
+      // like. Asserting both halves is what makes it a gate rather than a
+      // description.
+      expect(HttpOverrides.current, isA<ResolvingHttpOverrides>());
 
       final HttpClient client = HttpClient();
       addTearDown(client.close);

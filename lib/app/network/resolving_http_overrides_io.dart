@@ -13,10 +13,18 @@ void installResolvingHttpOverrides({required HostResolver resolver, required Str
     resolver: resolver,
     panelHost: panelHost,
     // Whatever was already installed, kept rather than replaced. Null in the
-    // app, because nothing else installs one; not null under `flutter_test`,
-    // whose binding puts a mock there to keep a test off the network. See
-    // [ResolvingHttpOverrides.inner].
-    inner: HttpOverrides.current,
+    // app, because nothing else installs one; not null under a test binding
+    // that put its own there. See [ResolvingHttpOverrides.inner].
+    //
+    // A previous layer of our own is UNWRAPPED rather than kept, so a second
+    // call replaces it instead of stacking on it. Stacking would leave the
+    // older layer holding a `panelHost` closure over a `ProviderSession` the
+    // second call has already replaced, and every request would then walk a
+    // chain that grows by one on each install.
+    inner: switch (HttpOverrides.current) {
+      final ResolvingHttpOverrides ours => ours.inner,
+      final HttpOverrides? other => other,
+    },
   );
 }
 

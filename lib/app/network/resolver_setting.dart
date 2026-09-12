@@ -226,6 +226,25 @@ class ResolverSetting {
   @override
   int get hashCode => Object.hash(choice, customValue);
 
+  /// Names the choice and redacts a custom literal.
+  ///
+  /// `XtreamCredentials.toString()` redacts the resolver, and redacting it
+  /// there alone was not enough: this type is reachable on its own through
+  /// `ProviderSession.providerResolution` and `ProviderSetupFacade.resolver`,
+  /// so a value type printed by an assertion failure or an IDE inspector would
+  /// have carried the literal anyway. A custom endpoint can identify the user
+  /// in its path, `https://dns.nextdns.io/<profile-id>` being the shape this
+  /// class accepts, so the whole literal goes rather than its query.
+  ///
+  /// The three named choices print as themselves. `cloudflare` is not a secret
+  /// and a debug line that cannot tell them apart is worth less than one that
+  /// can.
   @override
-  String toString() => 'ResolverSetting(choice: $choice, customValue: $customValue)';
+  String toString() =>
+      'ResolverSetting(choice: $choice, '
+      'customValue: ${customValue == null ? null : _redaction})';
+
+  /// What a custom literal prints as, matching `XtreamCredentials`'s own
+  /// redaction so the two read alike in one log line.
+  static const String _redaction = '***';
 }

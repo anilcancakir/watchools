@@ -138,13 +138,18 @@ void main() {
   /// provider, put back afterwards.
   ///
   /// `AppServiceProvider.register()` assigns `HttpOverrides.global`, and five
-  /// tests below call it. Without this the LAST one leaves the app's resolving
-  /// override installed for the rest of the isolate, on top of whatever
-  /// `flutter_test` had there. The failure that causes is quiet rather than
-  /// loud: the binding's own override is what answers a network image with a
-  /// canned 400, so a later widget test would make a REAL outbound request and
-  /// pass. A test that fails is a test doing its job; a test that reaches the
-  /// network and goes green is the one worth ten lines to prevent.
+  /// tests below call it. Without this the last one leaves a live override
+  /// installed for the rest of the isolate, holding a `panelHost` closure over
+  /// a `ProviderSession` that `MagicApp.reset()` has since thrown away.
+  ///
+  /// **No mock binding is involved here, and an earlier version of this comment
+  /// said there was.** This file never calls `ensureInitialized()` and runs no
+  /// widget test, so `flutter_test`'s network-blocking override is not
+  /// installed in this isolate at all; the loopback tests below would answer
+  /// 400 and fail if it were. That hazard is real, and it belongs to a widget
+  /// test that boots the composition root, which is covered at
+  /// `test/app/providers/app_service_provider_test.dart`. What this guards is
+  /// the narrower thing: the global, put back the way it was found.
   ///
   /// `HttpOverrides` exposes `global` as a setter only, so what is put back is
   /// what `current` reads. Identical outside a zone that installed its own, and
