@@ -442,6 +442,19 @@ Not as a codec path. As four capabilities libmpv cannot have:
 Select it by capability, never by sniffing an extension: the measurements above
 are exactly the story of a URL that does not say what it contains.
 
+### Background playback records the block rather than works around it
+
+`BackgroundPlayback.pictureInPicture` (`lib/app/models/background_playback.dart`) is stored today with no
+platform behind it: iOS picture in picture stays blocked on the `AVPictureInPictureController` requirement
+above, since libmpv produces neither an `AVPlayerLayer` nor an `AVSampleBufferDisplayLayer`. The enum is the
+storage rather than a boolean, so Android's PiP and a later iOS AVFoundation engine each add an arm to a
+`switch` instead of forcing a migration off a yes/no flag the day either lands.
+
+Read against `MpvPlaybackEngine`: `AppLifecycleListener.dispose` throws on a second call
+(`app_lifecycle_listener.dart:179` asserts it was not already disposed), so the engine keeps its listener in
+a nullable field (`_lifecycle`) and clears it on `dispose`, which is what keeps the interface's
+idempotent-`dispose` promise holding for this implementation too.
+
 ## Buffer, bandwidth and stability, measured on the real channel
 
 Three configs against the HEVC variant, 45 s each, strictly serial, `vo=null`

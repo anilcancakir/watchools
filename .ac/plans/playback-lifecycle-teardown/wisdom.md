@@ -79,3 +79,16 @@
   single `WText`.** `gap-1` does nothing with one child. It mirrors `_resolverScopeNote`, which has a
   conditional second child and needs the wrapper; this one does not. Cosmetic, left alone deliberately rather
   than diverging from the sibling shape for one line.
+
+## Wave 5
+
+- **A `quick`/haiku worker stalled for fifteen minutes on a two-paragraph prose step and wrote nothing.** It
+  never got past its first sentence. Neither target file was large (210 and 714 lines). Escalating to
+  `junior` finished the same briefing in 43 seconds with 11 tool calls. The signal that decided it was
+  `git status --porcelain` staying empty: for a step whose whole output is file edits, an empty working tree
+  after fifteen minutes is a stall, not slow progress.
+- **The retry briefing is worth a Section 0.** Saying "a previous worker stalled, nothing survives, you are
+  starting from scratch" plus an explicit efficiency instruction ("grep the 714-line file, do not read it")
+  cost four lines and the retry did not repeat the failure.
+- **`git diff --stat` is the cheap check that a prose worker only ADDED.** 15 insertions, 0 deletions is the
+  whole proof that nothing surrounding was reflowed, which is the failure mode a documentation edit has.

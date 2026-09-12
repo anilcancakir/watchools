@@ -548,7 +548,7 @@ over the store at the composition root. Neither is useful alone.
 
 ### Wave 5: the record
 
-- [ ] **Step 5**: Record what shipped and what it is still waiting on
+- [x] **Step 5**: Record what shipped and what it is still waiting on
     - **Type**: code
     - **Tier**: quick
     - **Why this tier**: rule-none: prose in two files that already have the section it belongs in.

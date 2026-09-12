@@ -1,0 +1,9 @@
+Step 5 verification: rg -c 'BackgroundPlayback' CLAUDE.md .ac/research/player-layer.md
+CLAUDE.md:1
+.ac/research/player-layer.md:1
+
+rg -n '[—–]' CLAUDE.md .ac/research/player-layer.md
+(no matches, exit 1)
+
+rg -n 'platform_dispatcher.dart:2444' CLAUDE.md
+204:The engine observes `AppLifecycleState.paused` and branches on a per-credential `BackgroundPlayback` (...)
