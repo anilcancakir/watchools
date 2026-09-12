@@ -7,12 +7,17 @@ import 'package:watchools/app/protocol/xtream/xtream_account.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
 import 'package:watchools/app/protocol/xtream/xtream_stream_url.dart';
 
-XtreamCredentials _record({String baseUrl = 'http://panel.example:8080', String? resolver}) => XtreamCredentials(
+XtreamCredentials _record({
+  String baseUrl = 'http://panel.example:8080',
+  String? resolver,
+  String? backgroundPlayback,
+}) => XtreamCredentials(
   baseUrl: baseUrl,
   username: 'bob',
   password: 's3cret',
   userAgent: 'Watchools/1.0',
   resolver: resolver,
+  backgroundPlayback: backgroundPlayback,
 );
 
 /// A credential whose secrets need escaping, so the three spellings of one
@@ -170,6 +175,42 @@ void main() {
       expect(jsonDecode(payload), isNot(contains('resolver')));
     });
 
+    test('save() then load() round-trips a backgroundPlayback value', () async {
+      Vault.fake();
+
+      await _record(backgroundPlayback: 'audio').save();
+
+      expect((await XtreamCredentials.load())?.backgroundPlayback, 'audio');
+    });
+
+    test(
+      'load() reads backgroundPlayback null, throwing neither FormatException nor TypeError, when it is a number',
+      () async {
+        Vault.fake({
+          XtreamCredentials.vaultKey: jsonEncode(<String, Object>{
+            'base_url': 'http://host:8080',
+            'username': 'bob',
+            'password': 's3cret',
+            'user_agent': 'Watchools/1.0',
+            'background_playback': 42,
+          }),
+        });
+
+        final XtreamCredentials? loaded = await XtreamCredentials.load();
+
+        expect(loaded?.backgroundPlayback, isNull);
+      },
+    );
+
+    test('save() omits the background_playback key entirely when the setting is the system default', () async {
+      Vault.fake();
+
+      await _record().save();
+
+      final String payload = (await Vault.get(XtreamCredentials.vaultKey))!;
+      expect(jsonDecode(payload), isNot(contains('background_playback')));
+    });
+
     test('load() throws when a field is missing or not a string', () async {
       Vault.fake({
         XtreamCredentials.vaultKey: jsonEncode(<String, Object>{'base_url': 'http://host', 'username': 7}),
@@ -250,6 +291,13 @@ void main() {
     });
   });
 
+  group('equality', () {
+    test('two records differing only in backgroundPlayback are not equal', () {
+      expect(_record(backgroundPlayback: 'audio') == _record(backgroundPlayback: 'stop'), isFalse);
+      expect(_record(backgroundPlayback: 'audio') == _record(backgroundPlayback: 'audio'), isTrue);
+    });
+  });
+
   group('toString', () {
     test('names the provider and the user, and redacts the password', () {
       final String text = _record().toString();
@@ -257,6 +305,12 @@ void main() {
       expect(text, contains('http://panel.example:8080'));
       expect(text, contains('bob'));
       expect(text, isNot(contains('s3cret')));
+    });
+
+    test('prints backgroundPlayback literally, since it names no secret', () {
+      final String text = _record(backgroundPlayback: 'pictureInPicture').toString();
+
+      expect(text, contains('pictureInPicture'));
     });
 
     test('redacts a custom resolver, whose secret can sit in the path', () {
