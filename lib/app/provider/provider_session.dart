@@ -429,12 +429,45 @@ class ProviderSession extends ChangeNotifier {
   /// No handshake, no [adopt], no [refresh], no resolver push: none of them
   /// depends on this field, and [adopt]'s own doc block lists five things it
   /// does that this write has no business repeating.
+  /// The session can move under the `save()` below, and this is the only
+  /// writer here that has already touched the vault by the time it notices.
+  /// [signOut] deletes the key and nulls the record; [adopt] writes a different
+  /// account's record and assigns it. Either one landing first leaves the
+  /// Keychain holding what this call wrote rather than what the session now
+  /// believes, so the guard is followed by a repair rather than a bare return.
+  ///
+  /// Both orderings were reproduced before this existed
+  /// (`provider_session_test.dart`, the two cases naming "inside the write",
+  /// through `StallingVaultService`). Unguarded, a sign-out arriving here left
+  /// `hasCredentials` true with the user's password written back to the device
+  /// behind the delete, and an adopt arriving here left the session on the
+  /// PREVIOUS account, which is the one the next launch would have signed the
+  /// user in as.
+  ///
+  /// The `identical` check is this file's existing idiom for a session that
+  /// moved under an await (`:618`, `:669`, `:807`, `:853`, `:892`); what is new
+  /// is that those five can simply stop and this one has a write to undo.
   Future<void> setBackgroundPlayback(BackgroundPlayback choice) async {
     final XtreamCredentials? credentials = _credentials;
     if (credentials == null) return;
 
     final XtreamCredentials updated = credentials.withBackgroundPlayback(choice.storedValue);
     await updated.save();
+
+    if (!identical(_credentials, credentials)) {
+      final XtreamCredentials? current = _credentials;
+
+      // Make the vault agree with the session again. Null means a sign-out
+      // won, so the key this call re-created goes; anything else means an
+      // adopt won, so its record is written back over the stale one.
+      if (current == null) {
+        await XtreamCredentials.clear();
+      } else {
+        await current.save();
+      }
+
+      return;
+    }
 
     _credentials = updated;
     notifyListeners();

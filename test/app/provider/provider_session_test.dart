@@ -1093,6 +1093,69 @@ void main() {
       expect(session.backgroundPlayback, BackgroundPlayback.stop);
     });
 
+    test('a sign-out landing inside the write is not undone by it', () async {
+      // The write reads `_credentials`, awaits a vault put, and then assigns.
+      // A sign-out arriving inside that await deletes the key and nulls the
+      // record, so an unguarded assign resurrects a credential the user just
+      // asked to be forgotten, and the put itself has already written the
+      // password back to the Keychain behind the delete.
+      //
+      // [StallingVaultService] is what makes that ordering reachable: on the
+      // plain fake both operations complete in call order, so the write always
+      // finishes first and the race cannot be reproduced. See that class's own
+      // doc block for why the slow-write ordering is the one to expect on a
+      // device rather than the exotic one.
+      final StallingVaultService vault = StallingVaultService.install();
+      await credentials.save();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      vault.stallNextPut();
+      final Future<void> write = session.setBackgroundPlayback(BackgroundPlayback.audio);
+
+      await session.signOut();
+
+      vault.release();
+      await write;
+
+      expect(session.hasCredentials, isFalse, reason: 'a signed-out session must not hold a resurrected record');
+      expect(
+        await Vault.get(XtreamCredentials.vaultKey),
+        isNull,
+        reason: 'the password must not be back on disk behind the sign-out',
+      );
+    });
+
+    test('a credential adopted inside the write is not overwritten by it', () async {
+      final StallingVaultService vault = StallingVaultService.install();
+      await credentials.save();
+
+      final ProviderSession session = ProviderSession();
+      await session.start();
+
+      final XtreamCredentials next = XtreamCredentials(
+        baseUrl: 'http://second.example:8080',
+        username: 'carol',
+        password: 'other',
+        userAgent: 'Watchools/1.0',
+      );
+
+      vault.stallNextPut();
+      final Future<void> write = session.setBackgroundPlayback(BackgroundPlayback.audio);
+
+      await session.adopt(next);
+
+      vault.release();
+      await write;
+
+      // Last writer wins is fine between two adopts; it is not fine when the
+      // loser is a stale record carrying a different account's password, which
+      // is what the user would be signed in as on the next launch.
+      expect(session.providerResolution?.host, 'second.example');
+      expect((await XtreamCredentials.load())?.username, 'carol');
+    });
+
     test('writes nothing and throws nothing with no credential loaded', () async {
       Vault.fake();
       final ProviderSession session = ProviderSession();

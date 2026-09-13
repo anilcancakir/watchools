@@ -113,3 +113,28 @@
   `macos/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/` and `macos/Runner.xcworkspace/...`.
   `.gitignore:12` ignores `.swiftpm/` with a leading dot, which does not match these. Removed rather than
   committed: whether to pin Swift package versions is a project decision, not this plan's.
+
+## Phase 3, the review round
+
+- **[CRITICAL, mine] The new vault writer had no post-await staleness guard, and both races were real.**
+  `ProviderSession.setBackgroundPlayback` read `_credentials`, awaited `save()`, then assigned
+  unconditionally. Reproduced: a `signOut` landing inside that await left `hasCredentials` TRUE with the
+  user's password written back to the Keychain behind the delete; an `adopt` landing there left the session
+  on the PREVIOUS account, which is the one the next launch signs the user in as. The file already had the
+  idiom, `if (!identical(_credentials, credentials)) return;`, five times over; the step 3 briefing I wrote
+  never named it, which is why the worker did not use it.
+- **This writer needed more than the idiom.** The other five can simply stop, because they have not written
+  anything yet. This one has already touched the vault by the time it checks, so the guard is followed by a
+  repair: clear the key when a sign-out won, re-save the current record when an adopt won.
+- **`FakeVaultService` cannot reproduce either race, and that is a property worth knowing.** It completes
+  every operation in the microtask the caller queued it in, so two suspended writers always resume in call
+  order, which is the SAFE ordering. The first version of both tests passed against the unfixed code. A real
+  Keychain makes no such promise, and a write is slower than a delete, so the dangerous ordering is the one
+  to expect on a device. `StallingVaultService` in `test/support/throwing_vault.dart` forces it.
+- **My own test double deadlocked first.** It nulled the gate on the way into `put`, so `release()` had no
+  reference to the completer the stalled call was waiting on and the test hung to its 30 second timeout
+  rather than failing an assertion. A 30 second failure is a hang, not a red test; read the message before
+  believing a slow failure is the one you wanted.
+- **Both reviewers died with the session interruption**, 9 hours "running" with one sentence of output
+  apiece. The finding above is one I made by re-reading the writer myself while waiting for them, which is
+  the argument for not treating a spawned review as the only gate.
