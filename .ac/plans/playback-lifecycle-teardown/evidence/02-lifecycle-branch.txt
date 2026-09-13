@@ -1,0 +1,77 @@
+Step 2, observe the lifecycle on the engine and branch on the choice
+Worktree: /Users/anilcan/Code/watchools/.claude/worktrees/playback-lifecycle
+Date: 2026-09-13
+
+FILES
+  lib/app/playback/mpv_playback_engine.dart
+  test/app/playback/mpv_playback_engine_test.dart
+
+DONE WHEN
+  $ rg -n 'AppLifecycleListener' lib/app/playback/mpv_playback_engine.dart | wc -l
+  3                       (doc reference, the field, the construction)
+  $ rg -c 'testWidgets' test/app/playback/mpv_playback_engine_test.dart
+  (no matches, exit 1)
+  $ flutter test test/app/playback/mpv_playback_engine_test.dart
+  00:00 +27: All tests passed!
+  $ flutter analyze --fatal-infos --fatal-warnings
+  No issues found! (ran in 4.5s)      [whole project, not only the two files]
+
+QA
+  $ flutter test                      [whole suite, because a leaked binding
+                                       observer fails a LATER file, not its own]
+  00:12 +673 ~1: All tests passed!
+
+RED PHASE, IN TWO STAGES
+  1. Tests written first. `flutter test <file>` failed to compile:
+     "No named parameter with the name 'backgroundPlayback'".
+  2. The constructor seam added WITHOUT the listener, so the three arm cases
+     fail behaviourally rather than at compile time:
+       the default tears the core down ...   Expected: ['stop']   Actual: []
+       audio keeps the core ...              Expected: [true, false] Actual: [true]
+       pictureInPicture is the same arm ...  Expected: [true, false] Actual: [true]
+  3. The listener, the branch and the disposal added. 27 pass.
+
+DELIBERATE BREAKS, one at a time, each restored afterwards
+  Every case below was proved to fail with its fix removed. Four of the seven
+  cases assert an ABSENCE (no call, no reaction) and so pass trivially while
+  nothing is wired at all; those are the ones the breaks matter most for.
+
+  BREAK  stop arm calls _release() instead of stop()
+  RED    the default tears the core down and drops the display hold
+
+  BREAK  audio/pictureInPicture arm calls stop()
+  RED    audio keeps the core and drops only the display hold
+         pictureInPicture is the same arm as audio, and that is the point
+
+  BREAK  the branch fires on onHide instead of onPause
+  RED    the macOS occlusion sequence is not a backgrounding
+         (and nothing else: the other arms walk through `hidden` on their way
+         to `paused`, so this one case is the whole macOS guarantee)
+
+  BREAK  the engine also acts on onResume
+  RED    coming back to the foreground reloads nothing
+
+  BREAK  dispose() leaves the observer on the binding
+  RED    a disposed engine hears no lifecycle event at all
+         audio keeps the core and drops only the display hold
+         pictureInPicture is the same arm as audio, and that is the point
+         the default tears the core down and drops the display hold
+         (the three extra reds ARE the leak: one case's abandoned listener
+         answers the next case's `paused` on a dead engine)
+
+  BREAK  dispose() disposes the listener without letting go of it
+  RED    a second dispose is the no-op the interface promises
+         a disposed engine hears no lifecycle event at all
+         dispose stops the core and cancels the subscription (pre-existing)
+         dispose releases the hold                          (pre-existing)
+         (AppLifecycleListener.dispose throws on a second call, and every case
+         in the file disposes once more from its own tearDown)
+
+  BREAK  the tearDown no longer walks the binding back up to `resumed`
+  RED    audio keeps the core and drops only the display hold
+         pictureInPicture is the same arm as audio, and that is the point
+         Symptom note: the briefing predicted `Invalid state transition`. With
+         the depth-tracking walker the binding is simply left at `paused`, so
+         the next case drives NO transition at all and its engine never hears
+         one, which is a silent miss rather than a throw. Same cause (the
+         binding's lifecycle state outlives a case here), same fix.

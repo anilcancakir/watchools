@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_wind/fluttersdk_wind.dart';
+import 'package:magic/magic.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
+import 'package:watchools/app/models/background_playback.dart';
 import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/network/resolver_setting.dart';
 import 'package:watchools/ui/components/provider_notice/provider_notice.dart';
@@ -26,6 +27,7 @@ class _FakeProvider implements ProviderSetupFacade {
     this.busy = false,
     this.resolver = ResolverSetting.system,
     this.resolvedAddress,
+    this.backgroundPlayback = BackgroundPlayback.stop,
   });
 
   @override
@@ -44,13 +46,25 @@ class _FakeProvider implements ProviderSetupFacade {
   ResolverSetting resolver;
 
   @override
+  BackgroundPlayback backgroundPlayback;
+
+  @override
   String? resolvedAddress;
 
   int signOuts = 0;
 
+  int backgroundPlaybackSets = 0;
+
   ({String baseUrl, String username, String password, String userAgent, String? resolver})? submitted;
 
   int submits = 0;
+
+  /// When set, [setBackgroundPlayback] throws this instead of writing, which
+  /// is what a `Vault.put` from a build with no `keychain-access-groups`
+  /// entitlement does on macOS. The shape [gate] above already establishes: a
+  /// nullable field rather than a constructor parameter, because only one test
+  /// needs to arm it.
+  MagicVaultException? backgroundPlaybackFailure;
 
   /// When set, [submit] sets [busy] and hangs on this future, which is what a
   /// real handshake does. The only way to reach the one-frame window where the
@@ -79,6 +93,15 @@ class _FakeProvider implements ProviderSetupFacade {
 
   @override
   Future<void> signOut() async => signOuts++;
+
+  @override
+  Future<void> setBackgroundPlayback(BackgroundPlayback choice) async {
+    final MagicVaultException? failure = backgroundPlaybackFailure;
+    if (failure != null) throw failure;
+
+    backgroundPlaybackSets++;
+    backgroundPlayback = choice;
+  }
 }
 
 void main() {
@@ -690,6 +713,120 @@ void main() {
 
       expect(find.textContaining('şifrelenmez'), findsOneWidget);
       expect(find.textContaining('Başka bir yerde kullandığınız'), findsOneWidget);
+    });
+  });
+
+  group('the background playback picker', () {
+    /// Opens the picker and taps [optionLabel]. The extra `pump()` beyond
+    /// `pickResolver`'s own shape is what this field adds: its `onChange` is
+    /// `async` and awaits `setBackgroundPlayback`, so the state it writes back
+    /// (a revert on refusal, or the write count on success) lands a microtask
+    /// after the tap that `pumpAndSettle` alone is not guaranteed to flush.
+    Future<void> pickBackgroundPlayback(WidgetTester tester, String optionLabel) async {
+      await tester.tap(find.bySemanticsLabel('Arka plan davranışını seçin'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(optionLabel));
+      await tester.pumpAndSettle();
+      await tester.pump();
+    }
+
+    testWidgets('renders with stop selected by default', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider(hasCredential: true)));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      final WFormSelect<BackgroundPlayback> picker = tester.widget<WFormSelect<BackgroundPlayback>>(
+        find.byType(WFormSelect<BackgroundPlayback>),
+      );
+
+      expect(picker.initialValue, BackgroundPlayback.stop);
+    });
+
+    testWidgets('a fake reporting audio seeds the picker to audio', (WidgetTester tester) async {
+      // Proved to discriminate by removing the `initState` seeding (leaving
+      // the field to default-construct at `BackgroundPlayback.stop`) and
+      // watching this fail with `picker.initialValue` arriving as `stop`.
+      await pumpScreen(
+        tester,
+        ProviderSettingsLayout(
+          provider: _FakeProvider(hasCredential: true, backgroundPlayback: BackgroundPlayback.audio),
+        ),
+      );
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      final WFormSelect<BackgroundPlayback> picker = tester.widget<WFormSelect<BackgroundPlayback>>(
+        find.byType(WFormSelect<BackgroundPlayback>),
+      );
+
+      expect(picker.initialValue, BackgroundPlayback.audio);
+    });
+
+    testWidgets('changing the picker calls setBackgroundPlayback and never submit', (WidgetTester tester) async {
+      // The discriminating assertion: not merely that the picker shows
+      // `audio` afterwards (which a picker routed through `submit` would also
+      // show, since `submit` never runs with no fields filled and would leave
+      // the picker showing whatever it was locally set to), but that the
+      // facade recorded a `setBackgroundPlayback` call AND `submits` is still
+      // zero. Proved to discriminate by routing `onChange` through
+      // `_handleSubmit` instead and watching `submits` arrive as 1.
+      final _FakeProvider provider = _FakeProvider(hasCredential: true);
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickBackgroundPlayback(tester, 'Sesi sürdür');
+
+      expect(provider.backgroundPlaybackSets, 1);
+      expect(provider.backgroundPlayback, BackgroundPlayback.audio);
+      expect(provider.submits, 0);
+    });
+
+    testWidgets('is absent when there is no credential to write to', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider()));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.byType(WFormSelect<BackgroundPlayback>), findsNothing);
+    });
+
+    testWidgets('the honesty note is on screen whenever the picker is', (WidgetTester tester) async {
+      await pumpScreen(tester, ProviderSettingsLayout(provider: _FakeProvider(hasCredential: true)));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      expect(find.byType(WFormSelect<BackgroundPlayback>), findsOneWidget);
+      expect(find.textContaining('platform tarafı'), findsOneWidget);
+    });
+
+    testWidgets('a vault refusal leaves a message on screen and the picker back on its previous value', (
+      WidgetTester tester,
+    ) async {
+      final _FakeProvider provider = _FakeProvider(hasCredential: true)
+        ..backgroundPlaybackFailure = MagicVaultException('Keychain write failed', 'simulated OSStatus -34018');
+
+      await pumpScreen(tester, ProviderSettingsLayout(provider: provider));
+
+      await tester.tap(find.bySemanticsLabel('Gelişmiş ayarlar'));
+      await tester.pump();
+
+      await pickBackgroundPlayback(tester, 'Sesi sürdür');
+
+      expect(provider.backgroundPlaybackSets, 0, reason: 'the vault refused, nothing was written');
+      expect(provider.backgroundPlayback, BackgroundPlayback.stop);
+
+      final WFormSelect<BackgroundPlayback> picker = tester.widget<WFormSelect<BackgroundPlayback>>(
+        find.byType(WFormSelect<BackgroundPlayback>),
+      );
+      expect(picker.initialValue, BackgroundPlayback.stop, reason: 'the picker must not keep a refused choice');
+
+      expect(find.textContaining('güvenli deposuna yazılamadı'), findsOneWidget);
     });
   });
 }

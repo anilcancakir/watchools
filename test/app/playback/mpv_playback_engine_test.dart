@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
+import 'package:watchools/app/models/background_playback.dart';
 import 'package:watchools/app/playback/mpv_playback_engine.dart';
 import 'package:watchools/app/playback/playback_engine.dart';
 import 'package:watchools/app/protocol/xtream/xtream_credentials.dart';
@@ -72,7 +74,7 @@ Map<String, Object?> _tickEvent({
 };
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
 
   const String eventChannel = 'watchools_player/events';
   const MethodChannel commandChannel = MethodChannel('watchools_player');
@@ -83,6 +85,46 @@ void main() {
   late List<MethodCall> calls;
   late FakeLogManager log;
   late List<bool> wakelockCalls;
+
+  /// The lifecycle chain [AppLifecycleListener] asserts, foreground first.
+  ///
+  /// `resumed <-> inactive <-> hidden <-> paused`
+  /// (`app_lifecycle_listener.dart:222-269`, one assert per member). `detached`
+  /// sits past `paused` and nothing here needs it.
+  const List<AppLifecycleState> chain = <AppLifecycleState>[
+    AppLifecycleState.resumed,
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+  ];
+
+  /// Where the binding currently sits in [chain], for the whole file.
+  ///
+  /// File-wide rather than per case because the binding is: see the tearDown.
+  int depth = 0;
+
+  /// Drives the binding to [target], one valid transition at a time.
+  ///
+  /// `handleAppLifecycleStateChanged` is public and fans out to every observer
+  /// (`binding.dart:1329-1334`), which is what a plain `test()` has instead of
+  /// a tester. One step at a time because a jump asserts: an engine's listener
+  /// tracks its own previous state and throws `Invalid state transition` rather
+  /// than synthesising the states in between.
+  ///
+  /// The trailing wait is what lets the engine's branch finish. Its
+  /// `onPause` is a [VoidCallback], so the work it starts is a future nobody
+  /// holds, and an assertion in the same microtask would read the state before
+  /// it.
+  Future<void> lifecycle(AppLifecycleState target) async {
+    final int destination = chain.indexOf(target);
+
+    while (depth != destination) {
+      depth += depth < destination ? 1 : -1;
+      binding.handleAppLifecycleStateChanged(chain[depth]);
+    }
+
+    await Future<void>.delayed(Duration.zero);
+  }
 
   setUp(() {
     calls = <MethodCall>[];
@@ -98,7 +140,22 @@ void main() {
     });
   });
 
-  tearDown(() {
+  tearDown(() async {
+    // The binding's lifecycle state outlives a case in this file. `postTest`,
+    // which resets it, is registered only by the `WidgetTester` harness
+    // (`widget_tester.dart:183`), which this file does not use and must not:
+    // `push` waits on a real `Future.delayed`, and that harness's fake clock
+    // stalls it. Left at `paused`, the next case's engine seeds its listener
+    // from the binding (`app_lifecycle_listener.dart:78`) and either misses the
+    // transition it never makes or throws `Invalid state transition` on its
+    // first `resumed`.
+    //
+    // A declared tearDown rather than an `addTearDown`: declared ones are
+    // registered before the body runs (`declarer.dart:241-248`) and tearDowns
+    // run last-in first-out (`invoker.dart:296`), so this walks back up after
+    // `engine.dispose` has removed the listener rather than past a live one.
+    await lifecycle(AppLifecycleState.resumed);
+
     messenger.setMockMethodCallHandler(const MethodChannel(eventChannel), null);
     messenger.setMockMethodCallHandler(commandChannel, null);
     Log.unfake();
@@ -120,10 +177,15 @@ void main() {
   ///
   /// The handler goes in from an async `onListen`, so a push issued in the same
   /// microtask as the constructor would reach a channel nobody is holding.
-  Future<MpvPlaybackEngine> engine() async {
+  ///
+  /// [background] is the choice the injected closure reports, read fresh on
+  /// every lifecycle event rather than stored, so a case needs neither a
+  /// database nor a vault to reach an arm.
+  Future<MpvPlaybackEngine> engine({BackgroundPlayback background = BackgroundPlayback.stop}) async {
     final MpvPlaybackEngine engine = MpvPlaybackEngine(
       redact: _credentials.redact,
       toggleWakelock: ({required bool enable}) async => wakelockCalls.add(enable),
+      backgroundPlayback: () => background,
     );
 
     addTearDown(engine.dispose);
@@ -134,8 +196,8 @@ void main() {
 
   /// An engine with a surface and one open load, which is where every health
   /// and tick case starts.
-  Future<MpvPlaybackEngine> loaded() async {
-    final MpvPlaybackEngine started = await engine();
+  Future<MpvPlaybackEngine> loaded({BackgroundPlayback background = BackgroundPlayback.stop}) async {
+    final MpvPlaybackEngine started = await engine(background: background);
 
     await started.attach(_surface);
     await started.load(_source);
@@ -520,6 +582,126 @@ void main() {
       // One release is all a boolean hold can ever owe, regardless of how
       // many loads opened it.
       expect(wakelockCalls, <bool>[false]);
+    });
+  });
+
+  // The `true` every case here starts from is the hold `loaded()` took, kept in
+  // the assertion rather than cleared so the release is read against it.
+  group('backgrounding, on the choice the user made', () {
+    test('the default tears the core down and drops the display hold', () async {
+      final MpvPlaybackEngine started = await loaded();
+
+      await lifecycle(AppLifecycleState.paused);
+
+      expect(methods(), <String>['stop']);
+      expect(wakelockCalls, <bool>[true, false]);
+
+      // The session is closed, so the straggler a terminated core still
+      // produces is dropped rather than reviving a verdict.
+      await push(_tickEvent(atSeconds: 1, timePos: 10));
+      expect(started.health, PlaybackHealth.idle);
+    });
+
+    test('audio keeps the core and drops only the display hold', () async {
+      final MpvPlaybackEngine started = await loaded(background: BackgroundPlayback.audio);
+
+      await lifecycle(AppLifecycleState.paused);
+
+      // Nothing crossed to the platform. Stopping the core is the one thing
+      // this choice exists to prevent, and the display hold is what a
+      // backgrounded app has no business keeping.
+      expect(calls, isEmpty);
+      expect(wakelockCalls, <bool>[true, false]);
+
+      // The load is still open, which a closed session would not be: a tick
+      // arriving while the app is away is still accepted.
+      await push(_tickEvent(atSeconds: 1, timePos: 10));
+      expect(started.health, PlaybackHealth.playing);
+    });
+
+    test('pictureInPicture is the same arm as audio, and that is the point', () async {
+      final MpvPlaybackEngine started = await loaded(background: BackgroundPlayback.pictureInPicture);
+
+      await lifecycle(AppLifecycleState.paused);
+
+      // Everything that separates the two is platform work on targets that do
+      // not exist yet (Android's `PictureInPictureParams`, on iOS an
+      // AVFoundation engine libmpv cannot feed). The Dart half of both is
+      // "do not stop the core".
+      expect(calls, isEmpty);
+      expect(wakelockCalls, <bool>[true, false]);
+
+      await push(_tickEvent(atSeconds: 1, timePos: 10));
+      expect(started.health, PlaybackHealth.playing);
+    });
+
+    test('coming back to the foreground reloads nothing', () async {
+      final MpvPlaybackEngine started = await loaded();
+
+      await lifecycle(AppLifecycleState.paused);
+      calls.clear();
+      wakelockCalls.clear();
+
+      await lifecycle(AppLifecycleState.resumed);
+
+      // The tempting case, and the wrong one: the core was stopped on the way
+      // out, so a reload here would retake the account's single connection slot
+      // (measured `max_connections: 1`) and evict whichever device picked it up
+      // while the user was away, which is the harm stopping exists to prevent.
+      // The user asking for a picture is what calls `load`.
+      expect(calls, isEmpty);
+      expect(wakelockCalls, isEmpty);
+      expect(started.health, PlaybackHealth.idle);
+    });
+
+    test('the macOS occlusion sequence is not a backgrounding', () async {
+      final MpvPlaybackEngine started = await loaded();
+
+      // `resumed -> inactive -> hidden` and no further, which is the whole
+      // sequence a desktop embedder can deliver: `paused` "is only entered on
+      // iOS and Android" (`platform_dispatcher.dart:2444`). This is the only
+      // mechanical proof that no macOS behaviour changed, and the reason no
+      // `Platform.isAndroid` check is written anywhere.
+      await lifecycle(AppLifecycleState.hidden);
+
+      expect(calls, isEmpty);
+      expect(wakelockCalls, <bool>[true]);
+
+      await push(_tickEvent(atSeconds: 1, timePos: 10));
+      expect(started.health, PlaybackHealth.playing);
+    });
+
+    test('a disposed engine hears no lifecycle event at all', () async {
+      final MpvPlaybackEngine started = await loaded();
+
+      await started.dispose();
+      calls.clear();
+      wakelockCalls.clear();
+
+      await lifecycle(AppLifecycleState.paused);
+
+      // The binding holds an observer by a strong reference for the process's
+      // life (`binding.dart:859-878`), so an engine that did not remove its own
+      // would answer this with a platform call after its own teardown. In this
+      // file it would answer the NEXT case's backgrounding too.
+      expect(calls, isEmpty);
+      expect(wakelockCalls, isEmpty);
+      expect(started.health, PlaybackHealth.idle);
+    });
+
+    test('a second dispose is the no-op the interface promises', () async {
+      final MpvPlaybackEngine started = await loaded();
+
+      await started.dispose();
+
+      // Promise 7: `stop` and `dispose` are idempotent, and
+      // `PlaybackController.detach` calls into an engine the platform may
+      // already have torn down. `AppLifecycleListener.dispose` throws on a
+      // second call (`app_lifecycle_listener.dart:179-187` asserts it was not
+      // disposed), so the engine lets go of its listener rather than holding
+      // one it cannot dispose twice. Every case in this file also disposes from
+      // its own tearDown, so without this the whole file would go red.
+      await expectLater(started.dispose(), completes);
     });
   });
 }

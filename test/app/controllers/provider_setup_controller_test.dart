@@ -3,6 +3,7 @@ import 'package:magic/magic.dart';
 import 'package:magic/testing.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:watchools/app/controllers/provider_setup_controller.dart';
+import 'package:watchools/app/models/background_playback.dart';
 import 'package:watchools/app/models/provider_fault.dart';
 import 'package:watchools/app/network/host_resolver.dart';
 import 'package:watchools/app/network/resolver_setting.dart';
@@ -529,6 +530,26 @@ void main() {
       // so it staying true is what keeps the retry on screen.
       expect(session.hasCredentials, isTrue);
       expect(controller.hasCredential, isTrue);
+    });
+  });
+
+  group('backgroundPlayback', () {
+    test('setBackgroundPlayback writes through to the vault with no handshake at all', () async {
+      final ProviderSession session = await configuredSession();
+      final ProviderSetupController controller = controllerFor(session);
+
+      await controller.setBackgroundPlayback(BackgroundPlayback.audio);
+
+      expect((await XtreamCredentials.load())?.backgroundPlayback, 'audio');
+      expect(controller.backgroundPlayback, BackgroundPlayback.audio);
+      expect(panel.handshakeCalls, 0);
+    });
+
+    test('reads stop before any credential is loaded', () async {
+      final ProviderSession session = await emptySession();
+      final ProviderSetupController controller = controllerFor(session);
+
+      expect(controller.backgroundPlayback, BackgroundPlayback.stop);
     });
   });
 }

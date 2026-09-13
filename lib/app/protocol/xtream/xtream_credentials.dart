@@ -87,6 +87,17 @@ class XtreamCredentials {
   /// see [_optionalString].
   final String? resolver;
 
+  /// The user's chosen background-playback behaviour, or null for the
+  /// default (tear the core down).
+  ///
+  /// A raw stored string exactly as `BackgroundPlayback.storedValue` wrote it
+  /// (`'audio'`, `'pictureInPicture'`), left unparsed here for the same
+  /// reason as [resolver]: this class is only the storage boundary, and
+  /// `BackgroundPlayback.parse` is what turns it back into a validated
+  /// choice. Null is also what a wrong-typed or missing stored value reads
+  /// back as; see [_optionalString].
+  final String? backgroundPlayback;
+
   /// Creates a credential, normalising and validating [baseUrl].
   ///
   /// Throws [ArgumentError] when [baseUrl] carries no `http`/`https` scheme,
@@ -101,10 +112,30 @@ class XtreamCredentials {
     required this.password,
     required this.userAgent,
     this.resolver,
+    this.backgroundPlayback,
   }) : baseUrl = _normaliseBaseUrl(baseUrl);
 
   /// Writes the record over whatever [vaultKey] held before.
   Future<void> save() => Vault.put(vaultKey, jsonEncode(_toJson()));
+
+  /// A copy of this record with [backgroundPlayback] replaced by [value].
+  ///
+  /// Purpose-named rather than a general `copyWith`: [BackgroundPlayback.stop]
+  /// stores as null (`background_playback.dart:56`), and a `copyWith` taking a
+  /// nullable parameter cannot tell "leave this field alone" from "set it to
+  /// null". [ProviderSession.setBackgroundPlayback] is the one caller.
+  ///
+  /// [baseUrl] passes straight back through the public constructor rather than
+  /// through a private field: [_normaliseBaseUrl] only trims, strips trailing
+  /// slashes and validates, so it is idempotent on a value it already produced.
+  XtreamCredentials withBackgroundPlayback(String? value) => XtreamCredentials(
+    baseUrl: baseUrl,
+    username: username,
+    password: password,
+    userAgent: userAgent,
+    resolver: resolver,
+    backgroundPlayback: value,
+  );
 
   /// A credential handed in at compile time, or null when none was.
   ///
@@ -188,6 +219,7 @@ class XtreamCredentials {
       password: _requireString(decoded, 'password'),
       userAgent: _requireString(decoded, 'user_agent'),
       resolver: _optionalString(decoded, 'resolver'),
+      backgroundPlayback: _optionalString(decoded, 'background_playback'),
     );
   }
 
@@ -377,10 +409,11 @@ class XtreamCredentials {
       other.username == username &&
       other.password == password &&
       other.userAgent == userAgent &&
-      other.resolver == resolver;
+      other.resolver == resolver &&
+      other.backgroundPlayback == backgroundPlayback;
 
   @override
-  int get hashCode => Object.hash(baseUrl, username, password, userAgent, resolver);
+  int get hashCode => Object.hash(baseUrl, username, password, userAgent, resolver, backgroundPlayback);
 
   /// Names the provider and the user, and redacts the password and the
   /// resolver.
@@ -404,11 +437,16 @@ class XtreamCredentials {
   /// logging. Adding a third secret to the loop would defend a path that does
   /// not exist, and would do it badly, because a short literal like `1.1.1.1`
   /// would start rewriting any log line that happened to contain it.
+  ///
+  /// [backgroundPlayback] is written literally, unlike [resolver]. A
+  /// `BackgroundPlayback` name is one of three fixed constants and carries
+  /// nothing about the user, so there is nothing here to redact.
   @override
   String toString() =>
       'XtreamCredentials(baseUrl: $baseUrl, username: $username, '
       'password: $_redaction, userAgent: $userAgent, '
-      'resolver: ${resolver == null ? null : _redaction})';
+      'resolver: ${resolver == null ? null : _redaction}, '
+      'backgroundPlayback: $backgroundPlayback)';
 
   /// The wire shape stored under [vaultKey].
   ///
@@ -421,6 +459,7 @@ class XtreamCredentials {
     'password': password,
     'user_agent': userAgent,
     'resolver': ?resolver,
+    'background_playback': ?backgroundPlayback,
   };
 
   /// Trims, strips trailing slashes, and rejects anything Dio would treat as a
